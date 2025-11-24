@@ -1,0 +1,451 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\BankAccount;
+use App\Models\ChartOfAccount;
+use App\Models\JournalEntry;
+use App\Models\JournalItem;
+use App\Models\TransactionLines;
+use App\Models\User;
+use App\Models\Utility;
+use Illuminate\Http\Request;
+use DB;
+
+class CashReciptVoucherController extends Controller
+{
+
+    public function index(Request $request)
+    {
+        if(\Auth::user()->can('manage journal entry'))
+        {
+            if (\Auth::user()->type == 'company') {
+                $branches = User::where('type', '=', 'branch')->get()->pluck('name', 'id');
+                $branches->prepend(\Auth::user()->name, \Auth::user()->id);               
+                $branches->prepend('Select Branch', '');
+                $query = JournalEntry::where('created_by', '=', \Auth::user()->creatorId())->where('voucher_type','CRV');
+            }else{
+                $branches = User::where('id', '=', \Auth::user()->ownedId())->get()->pluck('name', 'id');
+                $branches->prepend('Select Branch', '');
+                $query = JournalEntry::where('owned_by', '=', \Auth::user()->ownedId())->where('voucher_type','CRV');
+            }
+            if (!empty($request->branches)) {
+                $query->where('owned_by', '=', $request->branches);
+            }
+            $journalEntries = $query->paginate(20);
+            
+            return view('cash-recipt-voucher.index', compact('journalEntries','branches'));
+        }
+        else
+        {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+    }
+
+
+    public function create()
+    {
+        if(\Auth::user()->can('create journal entry'))
+        {
+            $chartAccounts = ChartOfAccount::select(\DB::raw('CONCAT(chart_of_accounts.code, " - ", chart_of_accounts.name) AS code_name,chart_of_accounts.id, chart_of_accounts.code,  chart_of_accounts.parent'))
+                ->where('parent', '=', 0)
+                ->where('created_by', \Auth::user()->creatorId())->get()
+                ->toarray();
+
+            $subAccounts = ChartOfAccount::select(\DB::raw('CONCAT(chart_of_accounts.code, " - ", chart_of_accounts.name) AS code_name , chart_of_accounts.id, chart_of_accounts.code , chart_of_account_parents.account'));
+            $subAccounts->leftjoin('chart_of_account_parents', 'chart_of_accounts.parent', 'chart_of_account_parents.id');
+            $subAccounts->where('chart_of_accounts.parent', '!=', 0);
+            $subAccounts->where('chart_of_accounts.created_by', \Auth::user()->creatorId());
+            $subAccounts = $subAccounts->get()->toArray();
+
+            $journalId = $this->CRVNumber();
+
+            return view('cash-recipt-voucher.create', compact('chartAccounts', 'subAccounts', 'journalId'));
+        }
+        else
+        {
+            return response()->json(['error' => __('Permission denied.')], 401);
+        }
+    }
+
+
+    public function store(Request $request)
+    {
+        DB::beginTransaction();
+        try {
+        if(\Auth::user()->can('create journal entry'))
+        {
+            $validator = \Validator::make(
+                $request->all(), [
+                                   'date' => 'required',
+                                   'accounts' => 'required',
+                               ]
+            );
+            if($validator->fails())
+            {
+                $messages = $validator->getMessageBag();
+
+                return redirect()->back()->with('error', $messages->first());
+            }
+
+            $accounts = $request->accounts;
+
+            $totalDebit  = 0;
+            $totalCredit = 0;
+            for($i = 0; $i < count($accounts); $i++)
+            {
+                $debit       = isset($accounts[$i]['debit']) ? $accounts[$i]['debit'] : 0;
+                $credit      = isset($accounts[$i]['credit']) ? $accounts[$i]['credit'] : 0;
+                $totalDebit  += $debit;
+                $totalCredit += $credit;
+            }
+
+            if($totalCredit != $totalDebit)
+            {
+                return redirect()->back()->with('error', __('Debit and Credit must be Equal.'));
+            }
+
+            $journal               = new JournalEntry();
+            $journal->journal_id   = $this->CRVNumber();
+            $journal->date         = $request->date;
+            $journal->reference    = $request->reference;
+            $journal->description  = $request->description;
+            $journal->voucher_type = 'CRV';
+            $journal->owned_by     = \Auth::user()->ownedId();
+            $journal->created_by   = \Auth::user()->creatorId();
+            $journal->save();
+
+
+            for($i = 0; $i < count($accounts); $i++)
+
+            {
+                $journalItem              = new JournalItem();
+                $journalItem->journal     = $journal->id;
+                $journalItem->account     = $accounts[$i]['account'];
+                $journalItem->description = $accounts[$i]['description'];
+                $journalItem->debit       = isset($accounts[$i]['debit']) ? $accounts[$i]['debit'] : 0;
+                $journalItem->credit      = isset($accounts[$i]['credit']) ? $accounts[$i]['credit'] : 0;
+                $journalItem->save();
+
+                $bankAccounts = BankAccount::where('chart_account_id','=',$accounts[$i]['account'])->get();
+                if(!empty($bankAccounts))
+                {
+                    foreach ($bankAccounts as $bankAccount)
+                    {
+                        $old_balance = $bankAccount->opening_balance;
+                        if ($journalItem->debit > 0) {
+                            $new_balance = $old_balance - $journalItem->debit;
+                        }
+                        if ($journalItem->credit > 0) {
+                            $new_balance = $old_balance + $journalItem->credit;
+                        }
+                        if (isset($new_balance)) {
+                            $bankAccount->opening_balance = $new_balance;
+                            $bankAccount->save();
+                        }
+                    }
+                }
+                 
+                if (isset($accounts[$i]['debit'])) {
+                    $data = [
+                        'account_id' => $accounts[$i]['account'],
+                        'transaction_type' => 'Debit',
+                        'transaction_amount' => $accounts[$i]['debit'],
+                        'reference' => 'CRV',
+                        'reference_id' => $journal->id,
+                        'reference_sub_id' => $journalItem->id,
+                        'date' => $journal->date,
+                    ];
+                } else {
+                    $data = [ 
+                        'account_id' => $accounts[$i]['account'],
+                        'transaction_type' => 'Credit',
+                        'transaction_amount' => $accounts[$i]['credit'],
+                        'reference' => 'CRV',
+                        'reference_id' => $journal->id,
+                        'reference_sub_id' => $journalItem->id,
+                        'date' => $journal->date,
+                    ];
+                }
+            }
+            Utility::addTransactionLines($data , 'create');
+            DB::commit();
+            return redirect()->route('cash-recipt-voucher.index')->with('success', __('Cash Recipt Voucher successfully created.'));
+        }
+        else
+        {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+        } catch (\Exception $e) {
+                DB::rollback();
+                dd($e);
+                return redirect()->back()->with('error', __('Something went wrong.'));
+        } 
+    }
+
+
+    public function show($journalEntry)
+    {
+        if(\Auth::user()->can('show journal entry'))
+        {
+            $journalEntry = JournalEntry::with('accounts.receiptheads.challan.student','accounts.receiptheads.challan.enrollstudent')->where('id', $journalEntry)->first();
+            if($journalEntry->created_by == \Auth::user()->creatorId())
+            {
+                $accounts = $journalEntry->accounts;
+                $settings = Utility::settings();
+
+                return view('cash-recipt-voucher.view', compact('journalEntry', 'accounts', 'settings'));
+            }
+            else
+            {
+                return redirect()->back()->with('error', __('Permission denied.'));
+            }
+        }
+        else
+        {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+    }
+
+
+    public function edit($journalEntry)
+    {
+        if(\Auth::user()->can('edit journal entry'))
+        {
+            $journalEntry = JournalEntry::where('id', $journalEntry)->first();
+            $chartAccounts = ChartOfAccount::select(\DB::raw('CONCAT(chart_of_accounts.code, " - ", chart_of_accounts.name) AS code_name,chart_of_accounts.id, chart_of_accounts.code,  chart_of_accounts.parent'))
+            ->where('parent', '=', 0)
+            ->where('created_by', \Auth::user()->creatorId())->get()
+            ->toarray();
+
+            $subAccounts = ChartOfAccount::select(\DB::raw('CONCAT(chart_of_accounts.code, " - ", chart_of_accounts.name) AS code_name , chart_of_accounts.id, chart_of_accounts.code , chart_of_account_parents.account'));
+            $subAccounts->leftjoin('chart_of_account_parents', 'chart_of_accounts.parent', 'chart_of_account_parents.id');
+            $subAccounts->where('chart_of_accounts.parent', '!=', 0);
+            $subAccounts->where('chart_of_accounts.created_by', \Auth::user()->creatorId());
+            $subAccounts = $subAccounts->get()->toArray();
+            return view('cash-recipt-voucher.edit', compact('chartAccounts', 'journalEntry' , 'subAccounts'));
+        }
+        else
+        {
+            return response()->json(['error' => __('Permission denied.')], 401);
+        }
+    }
+
+
+    public function update(Request $request, $journalEntry)
+    {
+        if(\Auth::user()->can('edit journal entry'))
+        {
+            $journalEntry = JournalEntry::where('id', $journalEntry)->first();
+            if($journalEntry->created_by == \Auth::user()->creatorId())
+            {
+                $validator = \Validator::make(
+                    $request->all(), [
+                                       'date' => 'required',
+                                       'accounts' => 'required',
+                                   ]
+                );
+                if($validator->fails())
+                {
+                    $messages = $validator->getMessageBag();
+
+                    return redirect()->back()->with('error', $messages->first());
+                }
+
+                $accounts = $request->accounts;
+
+                $totalDebit  = 0;
+                $totalCredit = 0;
+                for($i = 0; $i < count($accounts); $i++)
+                {
+                    $debit       = isset($accounts[$i]['debit']) ? $accounts[$i]['debit'] : 0;
+                    $credit      = isset($accounts[$i]['credit']) ? $accounts[$i]['credit'] : 0;
+                    $totalDebit  += $debit;
+                    $totalCredit += $credit;
+                }
+
+                if($totalCredit != $totalDebit)
+                {
+                    return redirect()->back()->with('error', __('Debit and Credit must be Equal.'));
+                }
+
+                $journalEntry->date        = $request->date;
+                $journalEntry->reference   = $request->reference;
+                $journalEntry->description = $request->description;
+                // $journalEntry->created_by  = \Auth::user()->creatorId();
+                $journalEntry->save();
+                                                   
+                $old = 'no';
+                $old_entry = '';
+                $old_val = 0;
+                $old_type = '';
+
+                for($i = 0; $i < count($accounts); $i++)
+                {
+                    $journalItem = JournalItem::find($accounts[$i]['id']);
+
+                    if ($journalItem == null) {
+                        $journalItem = new JournalItem();
+                        $journalItem->journal = $journalEntry->id;
+                    }else{
+                        $old = 'yes';
+                        $old_entry = $journalItem;
+                    }
+
+                    if(isset($accounts[$i]['account']))
+                    {
+                        $journalItem->account = $accounts[$i]['account'];
+                    }
+
+                    $journalItem->description = $accounts[$i]['description'];
+                    $journalItem->debit  = isset($accounts[$i]['debit']) ? $accounts[$i]['debit'] : 0;
+                    $journalItem->credit = isset($accounts[$i]['credit']) ? $accounts[$i]['credit'] : 0;
+                    $journalItem->save();
+
+
+                    $bankAccounts = BankAccount::where('chart_account_id','=',$accounts[$i]['account'])->get();
+                    if(!empty($bankAccounts))
+                    {
+                        if($old == 'yes'){
+                            if($old_entry->debit > 0) {
+                                $old_val = $journalItem->debit;
+                                $old_type = 'dr';
+                            }else{
+                                $old_val = $journalItem->credit;
+                                $old_type = 'cr';
+                            }
+                        }
+
+                        foreach ($bankAccounts as $bankAccount)
+                        {
+                            $new_val =0;
+                            $old_balance = $bankAccount->opening_balance;
+                            if ($journalItem->debit > 0) {
+                                if($old_type == 'dr'){
+                                    $new_val =$journalItem->debit - $old_val;
+                                }elseif($old_type == 'cr'){
+                                    $new_val =$journalItem->debit + $old_val;
+                                }
+                                $new_balance = $old_balance - $new_val;
+                            }
+                            if ($journalItem->credit > 0) {
+                                if($old_type == 'dr'){
+                                    $new_val =$journalItem->credit + $old_val;
+                                }elseif($old_type == 'cr'){
+                                    $new_val =$journalItem->credit - $old_val;
+                                }
+                                $new_balance = $old_balance + $new_val;
+                            }
+                            if (isset($new_balance)) {
+                                $bankAccount->opening_balance = $new_balance;
+                                $bankAccount->save();
+                            }
+                        }
+                    }
+                    if (isset($accounts[$i]['debit'])) {
+                        $data = [
+                            'account_id' => $accounts[$i]['account'],
+                            'transaction_type' => 'Debit',
+                            'transaction_amount' => $accounts[$i]['debit'],
+                            'reference' => 'CPV',
+                            'reference_id' => $journalEntry->id,
+                            'reference_sub_id' => $journalItem->id,
+                            'date' => $journalEntry->date,
+                        ];
+                    } else {
+                        $data = [
+                            'account_id' => $accounts[$i]['account'],
+                            'transaction_type' => 'Credit',
+                            'transaction_amount' => $accounts[$i]['credit'],
+                            'reference' => 'CPV',
+                            'reference_id' => $journalEntry->id,
+                            'reference_sub_id' => $journalItem->id,
+                            'date' => $journalEntry->date,
+                        ];
+                    }
+                    Utility::addTransactionLines($data , 'edit');
+                }
+
+                return redirect()->route('cash-recipt-voucher.index')->with('success', __('Cash Recipt Voucher successfully updated.'));
+            }
+            else
+            {
+                return redirect()->back()->with('error', __('Permission denied.'));
+            }
+        }
+        else
+        {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+    }
+
+
+    public function destroy($journalEntry)
+    {
+
+        if(\Auth::user()->can('delete journal entry'))
+        {
+            $journalEntry = JournalEntry::where('id', $journalEntry)->first();
+            if($journalEntry->created_by == \Auth::user()->creatorId())
+            {
+                $journalEntry->delete();
+
+
+                JournalItem::where('journal', '=', $journalEntry->id)->delete();
+                TransactionLines::where('reference_id', $journalEntry->id)->where('reference', 'CPV')->delete();    
+
+                return redirect()->route('cash-recipt-voucher.index')->with('success', __('Cash Recipt Voucher successfully deleted.'));
+            }
+            else
+            {
+                return redirect()->back()->with('error', __('Permission denied.'));
+            }
+        }
+        else
+        {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+    }
+
+    function CRVNumber()
+    {
+        // $latest = JournalEntry::where('owned_by', '=', \Auth::user()->ownedId())->where('voucher_type','CRV')->latest()->first();
+        $latest = JournalEntry::where('created_by', '=', \Auth::user()->creatorId())->where('voucher_type','CRV')->latest()->first();
+        if(!$latest)
+        {
+            return 1;
+        }
+
+        return $latest->journal_id + 1;
+    }
+
+    public function accountDestroy(Request $request)
+    {
+
+        if(\Auth::user()->can('delete journal entry'))
+        {
+            JournalItem::where('id', '=', $request->id)->delete();
+
+            return redirect()->back()->with('success', __('Cash Recipt Voucher account successfully deleted.'));
+        }
+        else
+        {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+    }
+
+    public function journalDestroy($item_id)
+    {
+        if(\Auth::user()->can('delete journal entry'))
+        {
+            $journal = JournalItem::find($item_id);
+            $journal->delete();
+
+            return redirect()->back()->with('success', __('Cash Recipt Voucher account successfully deleted.'));
+        }
+        else
+        {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+    }
+}
