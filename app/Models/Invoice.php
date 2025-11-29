@@ -15,7 +15,7 @@ class Invoice extends Model
         'status',
         'category_id',
         'created_by',
-                'is_recurring',
+        'is_recurring',
         'recurring_repeat',
         'recurring_every_n',
         'recurring_end_type',
@@ -23,6 +23,17 @@ class Invoice extends Model
         'recurring_end_date',
         'next_run_at',
         'recurring_parent_id',
+        'subtotal',
+        'taxable_subtotal',
+        'total_discount',
+        'total_tax',
+        'sales_tax_amount',
+        'total_amount',
+        'logo',
+        'attachments',
+        'memo',
+        'terms',
+        'note',
     ];
 
     

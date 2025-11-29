@@ -8,9 +8,534 @@
     <li class="breadcrumb-item"><a href="{{ route('invoice.index') }}">{{ __('Invoice') }}</a></li>
     <li class="breadcrumb-item">{{ __('Invoice Create') }}</li>
 @endsection
+
+@push('css-page')
+    <style>
+        /* Custom Design from invoiceDesign.php */
+        .invoice-container {
+            background: #fff;
+            max-width: 100%;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header Section */
+        .invoice-header {
+            background: #fff;
+            padding: 20px 32px;
+            border-bottom: 1px solid #e4e4e7;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .header-left {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            flex: 1;
+        }
+
+        .invoice-title {
+            font-size: 28px;
+            font-weight: 400;
+            color: #0077c5;
+            margin: 0;
+            letter-spacing: 0.5px;
+        }
+
+        .company-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .company-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #393a3d;
+        }
+
+        .company-email {
+            font-size: 14px;
+            color: #6b6c72;
+        }
+
+        .edit-company-link {
+            color: #0077c5;
+            font-size: 14px;
+            text-decoration: none;
+            margin-top: 8px;
+            display: inline-block;
+            cursor: pointer;
+        }
+
+        .edit-company-link:hover {
+            text-decoration: underline;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+        }
+
+        .balance-due {
+            font-size: 14px;
+            color: #6b6c72;
+            text-align: right;
+        }
+
+        .balance-amount {
+            font-weight: 600;
+            color: #393a3d;
+        }
+
+        .logo-section {
+            width: 120px;
+            height: 120px;
+            border: 2px dashed #d4d4d8;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fafafa;
+            cursor: pointer;
+        }
+
+        /* Customer Section */
+        .customer-section {
+            background: #f7f8fa;
+            padding: 24px 32px;
+            border-bottom: 1px solid #e4e4e7;
+        }
+
+        .customer-row {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 16px;
+        }
+
+        .customer-field {
+            flex: 2;
+        }
+
+        .invoice-field {
+            flex: 1;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 13px;
+            color: #393a3d;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .form-control,
+        .form-select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #c4c4c4;
+            border-radius: 4px;
+            font-size: 14px;
+            background: #fff;
+            color: #393a3d;
+            transition: all 0.2s;
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            outline: none;
+            border-color: #0077c5;
+            box-shadow: 0 0 0 3px rgba(0, 119, 197, 0.1);
+        }
+
+        .form-select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'%3E%3Cpath fill='%23393a3d' d='M12.014 16.018a1 1 0 0 1-.708-.294L5.314 9.715A1.001 1.001 0 0 1 6.73 8.3l5.286 5.3 5.3-5.285a1 1 0 0 1 1.413 1.416l-6.009 5.995a1 1 0 0 1-.706.292'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            background-size: 20px;
+            padding-right: 36px;
+        }
+
+        textarea.form-control {
+            resize: none;
+            font-family: inherit;
+            line-height: 1.5;
+        }
+
+        .link-button {
+            color: #0077c5;
+            font-size: 13px;
+            text-decoration: none;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            margin-top: 8px;
+            display: inline-block;
+        }
+
+        .link-button:hover {
+            text-decoration: underline;
+        }
+
+        /* Transaction Details Grid */
+        .transaction-details {
+            padding: 24px 32px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            background: #f7f8fa;
+            border-bottom: 1px solid #e4e4e7;
+        }
+
+        .detail-group {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .field-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .terms-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .terms-label {
+            font-size: 13px;
+            color: #393a3d;
+            font-weight: 500;
+            min-width: 60px;
+        }
+
+        .terms-field {
+            flex: 1;
+        }
+
+        /* Product Table */
+        .product-section {
+            padding: 24px 32px;
+            background: #fff;
+        }
+
+        .section-heading {
+            font-size: 15px;
+            font-weight: 600;
+            color: #393a3d;
+            margin-bottom: 16px;
+        }
+
+        .product-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+        }
+
+        .product-table thead th {
+            padding: 12px 8px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+            color: #393a3d;
+            border-bottom: 2px solid #e4e4e7;
+            background: #fff;
+        }
+
+        .product-table thead th:first-child {
+            width: 30px;
+        }
+
+        .product-table thead th:nth-child(2) {
+            width: 30px;
+        }
+
+        .product-table thead th:nth-child(3) {
+            width: 40px;
+        }
+
+        .product-table thead th:last-child {
+            text-align: right;
+            width: 120px;
+        }
+
+        .product-table tbody td {
+            padding: 12px 8px;
+            vertical-align: middle;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .product-table tbody td:last-child {
+            text-align: right;
+        }
+
+        .drag-handle {
+            cursor: grab;
+            color: #c4c4c4;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+
+        .line-number {
+            font-size: 13px;
+            color: #6b6c72;
+        }
+
+        .delete-icon {
+            color: #c4c4c4;
+            cursor: pointer;
+            display: none;
+            transition: color 0.2s;
+        }
+
+        .product-table tbody tr:hover .delete-icon {
+            display: block;
+        }
+
+        .delete-icon:hover {
+            color: #e81500;
+        }
+
+        /* Table Actions */
+        .table-actions {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 32px;
+        }
+
+        .btn-action {
+            padding: 8px 16px;
+            border: 1px solid #0077c5;
+            background: #fff;
+            color: #0077c5;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-action:hover {
+            background: #ebf4fa;
+        }
+
+        .btn-action.split-button {
+            padding-right: 36px;
+            position: relative;
+        }
+
+        .btn-action.split-button::after {
+            content: '';
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0;
+            height: 0;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 5px solid #0077c5;
+        }
+
+        /* Bottom Section */
+        .bottom-section {
+            padding: 24px 32px;
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 40px;
+            background: #fff;
+        }
+
+        .left-section {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .info-field {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .info-field label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #393a3d;
+            margin-bottom: 8px;
+        }
+
+        .info-text {
+            font-size: 13px;
+            color: #6b6c72;
+            line-height: 1.6;
+            padding: 12px;
+            background: #f7f8fa;
+            border-radius: 4px;
+            border: 1px solid #e4e4e7;
+        }
+
+        .attachment-zone {
+            border: 2px dashed #c4c4c4;
+            border-radius: 4px;
+            padding: 32px;
+            text-align: center;
+            background: #fafafa;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .attachment-zone:hover {
+            border-color: #0077c5;
+            background: #f7f8fa;
+        }
+
+        .attachment-link {
+            color: #0077c5;
+            font-size: 14px;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .attachment-limit {
+            color: #6b6c72;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        /* Totals Section */
+        .totals-section {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding-top: 24px;
+        }
+
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            font-size: 14px;
+        }
+
+        .total-row.subtotal {
+            color: #393a3d;
+            padding-bottom: 12px;
+        }
+
+        .total-row.final {
+            font-size: 16px;
+            font-weight: 600;
+            color: #393a3d;
+            padding-top: 16px;
+            border-top: 2px solid #e4e4e7;
+        }
+
+        /* Footer */
+        .invoice-footer {
+            background: #f7f8fa;
+            padding: 16px 32px;
+            border-top: 1px solid #e4e4e7;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: auto;
+            position: sticky;
+            bottom: 0;
+        }
+
+        .footer-link {
+            color: #0077c5;
+            font-size: 14px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .footer-link:hover {
+            text-decoration: underline;
+        }
+
+        .footer-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 10px 24px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary {
+            background: #fff;
+            color: #393a3d;
+            border: 1px solid #c4c4c4;
+        }
+
+        .btn-secondary:hover {
+            background: #f7f8fa;
+        }
+
+        .btn-primary {
+            background: #0b7e3a;
+            color: #fff;
+            padding-right: 40px;
+            position: relative;
+        }
+
+        .btn-primary::after {
+            content: '';
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0;
+            height: 0;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 5px solid #fff;
+        }
+
+        .btn-primary:hover {
+            background: #096830;
+        }
+
+        .input-right {
+            text-align: right;
+        }
+    </style>
+@endpush
+
 @push('script-page')
     <script src="{{ asset('js/jquery-ui.min.js') }}"></script>
     <script src="{{ asset('js/jquery.repeater.min.js') }}"></script>
+    <script>
+        $(document).ready(function() {
+            var invoiceModal = new bootstrap.Modal(document.getElementById('invoice-modal'), {
+                backdrop: 'static',
+                keyboard: false
+            });
+            invoiceModal.show();
+        });
+    </script>
     <script>
         var selector = "body";
         if ($(selector + " .repeater").length) {
@@ -66,10 +591,10 @@
         }
 
         $(document).on('change', '#customer', function() {
-            $('#customer_detail').removeClass('d-none');
-            $('#customer_detail').addClass('d-block');
-            $('#customer-box').removeClass('d-block');
-            $('#customer-box').addClass('d-none');
+            // $('#customer_detail').removeClass('d-none');
+            // $('#customer_detail').addClass('d-block');
+            // $('#customer-box').removeClass('d-block');
+            // $('#customer-box').addClass('d-none');
             var id = $(this).val();
             var url = $(this).data('url');
             $.ajax({
@@ -83,8 +608,14 @@
                 },
                 cache: false,
                 success: function(data) {
-                    if (data != '') {
-                        $('#customer_detail').html(data);
+                    if (data.html != '') {
+
+                        // $('#customer_detail').html(data.html);
+
+                        setTimeout(function() {
+                            $('#bill_to').val(data.bill_to);                             
+                        }, 50);
+
                     } else {
                         $('#customer-box').removeClass('d-none');
                         $('#customer-box').addClass('d-block');
@@ -186,6 +717,10 @@
                     $('.totalAmount').html((parseFloat(totalItemPrice) - parseFloat(
                         totalItemDiscountPrice) + parseFloat(totalItemTaxPrice)).toFixed(2));
 
+                    calculateTaxableSubtotal();
+                    calculateSalesTax();
+                    updateTotalAmount();
+
 
                 },
             });
@@ -241,6 +776,10 @@
 
             $('.totalAmount').html((parseFloat(subTotal)).toFixed(2));
 
+            calculateTaxableSubtotal();
+            calculateSalesTax();
+            updateTotalAmount();
+
         })
 
         $(document).on('keyup change', '.price', function() {
@@ -289,6 +828,10 @@
             $('.totalTax').html(totalItemTaxPrice.toFixed(2));
 
             $('.totalAmount').html((parseFloat(subTotal)).toFixed(2));
+
+            calculateTaxableSubtotal();
+            calculateSalesTax();
+            updateTotalAmount();
 
 
         })
@@ -361,6 +904,55 @@
         if (customerId > 0) {
             $('#customer').val(customerId).change();
         }
+
+        // Function to calculate taxable subtotal
+        function calculateTaxableSubtotal() {
+            var taxableSubtotal = 0;
+            $('.taxable-checkbox:checked').each(function() {
+                var row = $(this).closest('tr');
+                var amount = parseFloat(row.find('.amount').html()) || 0;
+                taxableSubtotal += amount;
+            });
+            $('.taxableSubtotal').html('£' + taxableSubtotal.toFixed(2));
+            return taxableSubtotal;
+        }
+
+        // Function to calculate sales tax
+        function calculateSalesTax() {
+            var taxableSubtotal = calculateTaxableSubtotal();
+            var taxRate = 0;
+            var selectedTax = $('#sales_tax_id option:selected');
+            if (selectedTax.length && selectedTax.val()) {
+                taxRate = parseFloat(selectedTax.data('rate')) || 0;
+            }
+            var taxAmount = (taxableSubtotal * taxRate) / 100;
+            $('#sales_tax_amount').val(taxAmount.toFixed(2));
+            $('.totalTax').html('£' + taxAmount.toFixed(2));
+            return taxAmount;
+        }
+
+        // Event for taxable checkbox change
+        $(document).on('change', '.taxable-checkbox', function() {
+            calculateTaxableSubtotal();
+            calculateSalesTax();
+            updateTotalAmount();
+        });
+
+        // Event for sales tax change
+        $(document).on('change', '#sales_tax_id', function() {
+            calculateSalesTax();
+            updateTotalAmount();
+        });
+
+        // Update total amount including tax
+        function updateTotalAmount() {
+            
+            var subTotal = parseFloat($('.subTotal').html().replace('', '')) || 0;
+            var totalDiscount = parseFloat($('.totalDiscount').html().replace('£', '')) || 0;
+            var totalTax = parseFloat($('.totalTax').html().replace('£', '')) || 0;
+            var totalAmount = subTotal - totalDiscount + totalTax;
+            $('.totalAmount').html('£' + totalAmount.toFixed(2));
+        }
     </script>
     <script>
         $(document).on('click', '[data-repeater-delete]', function() {
@@ -421,107 +1013,112 @@
             toggleRecurringPanel();
         });
     </script>
-<script>
-  /** ===== Minimal Schedule Preview =====
-   * Renders:
-   *  - under Start date:  "Next Invoice Date YYYY-MM-DD."
-   *  - under Repeat:      "Last invoice date YYYY-MM-DD"
-   *
-   * Rules:
-   *  - "Next invoice date" is ALWAYS start date + 12 months (1 year)
-   *    (independent of the selected repeat) — per the example:
-   *      start = 2025-01-01 -> next = 2026-01-01 even if user switches to "monthly".
-   *  - "Last invoice date" uses the selected repeat interval and count
-   *    (e.g., monthly/quarterly/6months/yearly with every_n = count).
-   */
+    <script>
+        /** ===== Minimal Schedule Preview =====
+         * Renders:
+         *  - under Start date:  "Next Invoice Date YYYY-MM-DD."
+         *  - under Repeat:      "Last invoice date YYYY-MM-DD"
+         *
+         * Rules:
+         *  - "Next invoice date" is ALWAYS start date + 12 months (1 year)
+         *    (independent of the selected repeat) — per the example:
+         *      start = 2025-01-01 -> next = 2026-01-01 even if user switches to "monthly".
+         *  - "Last invoice date" uses the selected repeat interval and count
+         *    (e.g., monthly/quarterly/6months/yearly with every_n = count).
+         */
 
-  // --- Helpers ---
-  function addMonthsNoOverflow(date, months) {
-    const d = new Date(date.getTime());
-    const day = d.getDate();
-    d.setDate(1);
-    d.setMonth(d.getMonth() + months);
-    // snap to last day if original day doesn't exist in target month
-    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-    d.setDate(Math.min(day, lastDay));
-    return d;
-  }
+        // --- Helpers ---
+        function addMonthsNoOverflow(date, months) {
+            const d = new Date(date.getTime());
+            const day = d.getDate();
+            d.setDate(1);
+            d.setMonth(d.getMonth() + months);
+            // snap to last day if original day doesn't exist in target month
+            const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+            d.setDate(Math.min(day, lastDay));
+            return d;
+        }
 
-  function toISO(d) {
-    // Format as YYYY-MM-DD (avoid TZ drift)
-    const tz = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    return tz.toISOString().slice(0, 10);
-  }
+        function toISO(d) {
+            // Format as YYYY-MM-DD (avoid TZ drift)
+            const tz = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+            return tz.toISOString().slice(0, 10);
+        }
 
-  function monthsForRepeat(repeat) {
-    switch (repeat) {
-      case 'monthly':   return 1;
-      case 'quarterly': return 3;  // typical calendar quarterly = 3 months
-      case '6months':   return 6;
-      case 'yearly':    return 12;
-      default:          return 1;
-    }
-  }
+        function monthsForRepeat(repeat) {
+            switch (repeat) {
+                case 'monthly':
+                    return 1;
+                case 'quarterly':
+                    return 3; // typical calendar quarterly = 3 months
+                case '6months':
+                    return 6;
+                case 'yearly':
+                    return 12;
+                default:
+                    return 1;
+            }
+        }
 
-  function ensurePreviewHolders() {
-    // small under Start date
-    if (!$('#schedule-summary').length) {
-      $('<small id="schedule-summary" class="text-muted d-block mt-1"></small>')
-        .insertAfter('#recurring_start_date');
-    }
-    // small under Repeat
-    if (!$('#schedule-preview').length) {
-      $('<small id="schedule-preview" class="text-muted d-block mt-1"></small>')
-        .insertAfter('#recurring_repeat');
-    }
-  }
+        function ensurePreviewHolders() {
+            // small under Start date
+            if (!$('#schedule-summary').length) {
+                $('<small id="schedule-summary" class="text-muted d-block mt-1"></small>')
+                    .insertAfter('#recurring_start_date');
+            }
+            // small under Repeat
+            if (!$('#schedule-preview').length) {
+                $('<small id="schedule-preview" class="text-muted d-block mt-1"></small>')
+                    .insertAfter('#recurring_repeat');
+            }
+        }
 
-  function computeSchedulePreview() {
-    ensurePreviewHolders();
+        function computeSchedulePreview() {
+            ensurePreviewHolders();
 
-    const startVal = $('#recurring_start_date').val();   // e.g. "2025-01-01"
-    const repeat   = $('#recurring_repeat').val();       // monthly|quarterly|6months|yearly
-    const everyRaw = $('#recurring_every_n').val();      // count
-    let count = parseInt(everyRaw, 10);
+            const startVal = $('#recurring_start_date').val(); // e.g. "2025-01-01"
+            const repeat = $('#recurring_repeat').val(); // monthly|quarterly|6months|yearly
+            const everyRaw = $('#recurring_every_n').val(); // count
+            let count = parseInt(everyRaw, 10);
 
-    if (!startVal) {
-      $('#schedule-summary').text('');
-      $('#schedule-preview').text('');
-      return;
-    }
-    if (isNaN(count) || count < 1) count = 1;
+            if (!startVal) {
+                $('#schedule-summary').text('');
+                $('#schedule-preview').text('');
+                return;
+            }
+            if (isNaN(count) || count < 1) count = 1;
 
-    const start = new Date(startVal + 'T00:00:00');
-
-
-    // --- Last invoice date: based on repeat + count ---
-    // If count = 1 -> last = start; otherwise add (count - 1) * interval
-    const stepMonths = monthsForRepeat(repeat);
-        // --- Next invoice date: ALWAYS start + 12 months (1 year) ---
-    const nextDate = addMonthsNoOverflow(start, stepMonths);
-    $('#schedule-summary').text('Next Invoice Date ' + toISO(nextDate) + '.');
-    let lastDate = new Date(start.getTime());
-    if (count > 1) {
-      lastDate = addMonthsNoOverflow(start, stepMonths * (count));
-    }
-    $('#schedule-preview').text('Last invoice date ' + toISO(lastDate));
+            const start = new Date(startVal + 'T00:00:00');
 
 
-    // --- Next invoice date: based on start + 12 months ---
-    
-  }
+            // --- Last invoice date: based on repeat + count ---
+            // If count = 1 -> last = start; otherwise add (count - 1) * interval
+            const stepMonths = monthsForRepeat(repeat);
+            // --- Next invoice date: ALWAYS start + 12 months (1 year) ---
+            const nextDate = addMonthsNoOverflow(start, stepMonths);
+            $('#schedule-summary').text('Next Invoice Date ' + toISO(nextDate) + '.');
+            let lastDate = new Date(start.getTime());
+            if (count > 1) {
+                lastDate = addMonthsNoOverflow(start, stepMonths * (count));
+            }
+            $('#schedule-preview').text('Last invoice date ' + toISO(lastDate));
 
-  // Hook into changes on only the relevant fields (simple version)
-  $(document).on('change keyup',
-    '#recurring_start_date, #recurring_repeat, #recurring_every_n',
-    computeSchedulePreview
-  );
 
-  // Init on load
-  $(function () {
-    computeSchedulePreview();
-  });
-</script>
+            // --- Next invoice date: based on start + 12 months ---
+
+        }
+
+        // Hook into changes on only the relevant fields (simple version)
+        $(document).on('change keyup',
+            '#recurring_start_date, #recurring_repeat, #recurring_every_n',
+            computeSchedulePreview
+        );
+
+        // Init on load
+        $(function() {
+            computeSchedulePreview();
+        });
+    </script>
 
     <script>
         $(document).ready(function() {
@@ -638,315 +1235,379 @@
         });
     </script>
 @endpush
+
 @section('content')
-    <div class="row">
-        {{ Form::open(['url' => 'invoice', 'class' => 'w-100']) }}
-        <div class="col-12">
-            <input type="hidden" name="_token" id="token" value="{{ csrf_token() }}">
-            <div class="card">
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-xs-12 col-sm-12 col-md-6 col-lg-6">
-                            <div class="form-group" id="customer-box">
-                                {{ Form::label('customer_id', __('Customer'), ['class' => 'form-label']) }}
+    <div class="modal fade" id="invoice-modal" tabindex="-1" aria-labelledby="invoiceModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-fullscreen">
+            <div class="modal-content">
+                <div class="invoice-container">
+                    {{ Form::open(['url' => 'invoice', 'id' => 'invoice-form']) }}
+                    <input type="hidden" name="_token" id="token" value="{{ csrf_token() }}">
+
+                    {{-- Header --}}
+                    <div class="invoice-header">
+                        <div class="header-left">
+                            <h1 class="invoice-title">{{ __('Invoice') }} {{ $invoice_number }}</h1>
+
+                            <div class="company-info">
+                                <div class="company-name">{{ Auth::user()->name }}</div>
+                                <div class="company-email">{{ Auth::user()->email }}</div>
+                                <a href="#" class="edit-company-link">{{ __('Edit company') }}</a>
+                            </div>
+                        </div>
+
+                        <div class="header-right">
+                            <div class="balance-due">
+                                {{ __('Balance due (hidden):') }}<br>
+                                <span class="balance-amount">£0.00</span>
+                            </div>
+                            <div class="logo-section">
+                                <span style="color: #c4c4c4; font-size: 12px;">{{ __('Add logo') }}</span>
+                            </div>
+                            <button type="button" class="btn-close"
+                                onclick="location.href = '{{ route('invoice.index') }}';" aria-label="Close"></button>
+                        </div>
+                    </div>
+
+                    {{-- Customer Section --}}
+                    <div class="customer-section">
+                        <div class="customer-row">
+                            <div class="customer-field">
                                 {{ Form::select('customer_id', $customers, $customerId ?? '', [
-                                    'class' => 'form-control select',
+                                    'class' => 'form-select',
                                     'id' => 'customer',
-                                    'data-url' => route('invoice.customer'), // you already have this
+                                    'data-url' => route('invoice.customer'),
                                     'required' => 'required',
                                     'data-create-url' => route('customer.create'),
                                     'data-create-title' => __('Create New Customer'),
                                 ]) }}
                             </div>
-
-                            <a href="#" data-size="lg" id="launchAddCustomer"
-                                data-url="{{ route('customer.create') }}" data-ajax-popup="true" data-bs-toggle="tooltip"
-                                title="{{ __('Create') }}" data-title="{{ __('Create New Customer') }}" class="d-none">
-                            </a>
-
-                            <div id="customer_detail" class="d-none">
-                            </div>
-                        </div>
-                        <div class="col-xs-12 col-sm-12 col-md-6 col-lg-6">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        {{ Form::label('issue_date', __('Issue Date'), ['class' => 'form-label']) }}
-                                        <div class="form-icon-user">
-                                            {{ Form::date('issue_date', null, ['class' => 'form-control', 'required' => 'required']) }}
-
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        {{ Form::label('due_date', __('Due Date'), ['class' => 'form-label']) }}
-                                        <div class="form-icon-user">
-                                            {{ Form::date('due_date', null, ['class' => 'form-control', 'required' => 'required']) }}
-
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        {{ Form::label('invoice_number', __('Invoice Number'), ['class' => 'form-label']) }}
-                                        <div class="form-icon-user">
-                                            <input type="text" class="form-control" value="{{ $invoice_number }}"
-                                                readonly>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        {{ Form::label('category_id', __('Category'), ['class' => 'form-label']) }}
-                                        {{ Form::select('category_id', $category, null, ['class' => 'form-control select', 'id' => 'category_id', 'data-create-url' => route('product-category.create'), 'data-create-title' => __('Create New Category')]) }}
-                                    </div>
-
-                                    {{-- Hidden anchor that triggers your existing AJAX modal --}}
-                                    <a href="#" id="launchAddCategory"
-                                        data-url="{{ route('product-category.create') }}" data-ajax-popup="true"
-                                        data-bs-toggle="tooltip" title="{{ __('Create') }}"
-                                        data-title="{{ __('Create New Category') }}" class="d-none">
-                                    </a>
-
-                                    {{--                                <div class="col-md-6"> --}}
-                                    {{--                                    <div class="form-check custom-checkbox mt-4"> --}}
-                                    {{--                                        <input class="form-check-input" type="checkbox" name="discount_apply" id="discount_apply"> --}}
-                                    {{--                                        <label class="form-check-label " for="discount_apply">{{__('Discount Apply')}}</label> --}}
-                                    {{--                                    </div> --}}
-                                    {{--                                </div> --}}
-                                    {{--                                <div class="col-md-6"> --}}
-                                    {{--                                    <div class="form-group"> --}}
-                                    {{--                                        {{Form::label('sku',__('SKU')) }} --}}
-                                    {{--                                        {!!Form::text('sku', null,array('class' => 'form-control','required'=>'required')) !!} --}}
-                                    {{--                                    </div> --}}
-                                    {{--                                </div> --}}
-                                    @if (!$customFields->isEmpty())
-                                        <div class="col-md-6">
-                                            <div class="tab-pane fade show" id="tab-2" role="tabpanel">
-                                                @include('customFields.formBuilder')
-                                            </div>
-                                        </div>
-                                    @endif
-                                </div>
-
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        {{ Form::label('ref_number', __('Ref Number'), ['class' => 'form-label']) }}
-                                        <div class="form-icon-user">
-                                            <span><i class="ti ti-joint"></i></span>
-                                            {{ Form::text('ref_number', '', ['class' => 'form-control', 'placeholder' => __('Enter Ref NUmber')]) }}
-                                        </div>
-                                    </div>
-                                </div>
-                                {{-- Recurring toggle --}}
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        {{ Form::label('recurring', __('Recurring'), ['class' => 'form-label']) }}
-                                        <div class="form-icon-user">
-                                            {{ Form::select('recurring', ['no' => 'No', 'yes' => 'Yes'], null, ['class' => 'form-control select', 'id' => 'recurring']) }}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                        </div>
-                        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 d-none" id="recurring-options">
-                            <div class="row">
-                                <div class="col-md-3">
-                                    <div class="form-group">
-                                        {{ Form::label('recurring_when', __('When to charge'), ['class' => 'form-label']) }}
-                                        {{ Form::select('recurring_when', ['future' => 'Select future date', 'now' => 'Immediately'], null, ['class' => 'form-control', 'id' => 'recurring_when']) }}
-                                    </div>
-                                </div>
-
-                                {{-- Start date --}}
-                                <div class="col-md-3">
-                                    <div class="form-group">
-                                        {{ Form::label('recurring_start_date', __('Start date'), ['class' => 'form-label']) }}
-                                        <div class="form-icon-user">
-                                            {{ Form::date('recurring_start_date', null, ['class' => 'form-control', 'id' => 'recurring_start_date']) }}
-                                        </div>
-                                        <small class="text-danger d-none" id="start-required">{{ __('Required') }}</small>
-                                    </div>
-                                </div>
-
-                                {{-- Repeat frequency --}}
-                                <div class="col-md-3">
-                                    <div class="form-group">
-                                        {{ Form::label('recurring_repeat', __('Repeat'), ['class' => 'form-label']) }}
-                                        {{ Form::select(
-                                            'recurring_repeat',
-                                            [
-                                                'monthly' => 'Monthly',
-                                                'quarterly' => 'Quarterly',
-                                                '6months' => '6 Months',
-                                                'yearly' => 'Yearly',
-                                            ],
-                                            'monthly',
-                                            ['class' => 'form-control', 'id' => 'recurring_repeat'],
-                                        ) }}
-                                        <small id="next-date-preview" class="text-muted d-block mt-1"></small>
-                                    </div>
-                                </div>
-
-                                {{-- Every N months --}}
-                                <div class="col-md-3">
-                                    <div class="form-group">
-                                        {{ Form::label('recurring_every_n', __('Invoice Count'), ['class' => 'form-label']) }}
-                                        {{ Form::number('recurring_every_n', 1, ['class' => 'form-control', 'id' => 'recurring_every_n', 'min' => 1]) }}
-                                    </div>
-                                </div>
-
-                            </div>
                         </div>
 
+                        <div class="customer-row">
+                            <div class="customer-field">
+                                {{ Form::email('customer_email', '', [
+                                    'class' => 'form-control',
+                                    'id' => 'customer_email',
+                                    'placeholder' => 'Customer email',
+                                ]) }}
+                            </div>
+                            <a href="#" class="link-button">{{ __('Cc/Bcc') }}</a>
+                        </div>
+                        <div id="customer_detail" class="d-none small text-muted"></div>
                     </div>
+
+                    {{-- Transaction Details --}}
+                    <div class="transaction-details">
+                        <div class="detail-group">
+                            <div class="field-group">
+                                <label class="form-label">{{ __('Bill to') }}</label>
+                                {{ Form::textarea('bill_to', '', [
+                                    'class' => 'form-control',
+                                    'id' => 'bill_to',
+                                    'rows' => 3,
+                                ]) }}
+                                <a href="#" class="link-button">{{ __('Edit Customer') }}</a>
+                            </div>
+                        </div>
+
+                        <div class="detail-group">
+                            <div class="field-group">
+                                <label class="form-label">{{ __('Invoice no.') }}</label>
+                                {{ Form::text('invoice_number', $invoice_number, [
+                                    'class' => 'form-control',
+                                    'required' => 'required',
+                                    'readonly' => 'readonly',
+                                ]) }}
+                            </div>
+
+                            <div class="terms-group">
+                                <span class="terms-label">{{ __('Terms') }}</span>
+                                <div class="terms-field">
+                                    {{ Form::select(
+                                        'terms',
+                                        [
+                                            'net_10' => 'Net 10',
+                                            'net_15' => 'Net 15',
+                                            'net_30' => 'Net 30',
+                                            'net_60' => 'Net 60',
+                                            'Due on receipt' => 'Due on receipt',
+                                        ],
+                                        'Net 30',
+                                        ['class' => 'form-select'],
+                                    ) }}
+                                </div>
+                            </div>
+
+                            <div class="field-group">
+                                <label class="form-label">{{ __('Invoice date') }}</label>
+                                {{ Form::date('issue_date', date('Y-m-d'), [
+                                    'class' => 'form-control',
+                                    'required' => 'required',
+                                ]) }}
+                            </div>
+
+                            <div class="field-group">
+                                <label class="form-label">{{ __('Due date') }}</label>
+                                {{ Form::date('due_date', date('Y-m-d', strtotime('+30 days')), [
+                                    'class' => 'form-control',
+                                    'required' => 'required',
+                                ]) }}
+                            </div>
+
+                            {{-- <div class="field-group">
+                                <label class="form-label">{{ __('Category') }}</label>
+                                {{ Form::select('category_id', $category, null, ['class' => 'form-select', 'id' => 'category_id', 'data-create-url' => route('product-category.create'), 'data-create-title' => __('Create New Category')]) }}
+                            </div>
+
+                            <div class="field-group">
+                                <label class="form-label">{{ __('Ref Number') }}</label>
+                                {{ Form::text('ref_number', '', ['class' => 'form-control']) }}
+                            </div>
+
+                            {{-- Recurring Toggle
+                            <div class="field-group">
+                                <label class="form-label">{{ __('Recurring') }}</label>
+                                {{ Form::select('recurring', ['no' => 'No', 'yes' => 'Yes'], null, ['class' => 'form-select', 'id' => 'recurring']) }}
+                            </div> --}}
+                        </div>
+                    </div>
+
+                    {{-- Recurring Options (Hidden by default) --}}
+                    <div class="transaction-details d-none" id="recurring-options"
+                        style="background: #eef2f5; border-top: 0;">
+                        <div class="detail-group">
+                            <div class="field-group">
+                                <label class="form-label">{{ __('When to charge') }}</label>
+                                {{ Form::select('recurring_when', ['future' => 'Select future date', 'now' => 'Immediately'], null, ['class' => 'form-select', 'id' => 'recurring_when']) }}
+                            </div>
+                            <div class="field-group">
+                                <label class="form-label">{{ __('Start date') }}</label>
+                                {{ Form::date('recurring_start_date', null, ['class' => 'form-control', 'id' => 'recurring_start_date']) }}
+                                <small class="text-danger d-none" id="start-required">{{ __('Required') }}</small>
+                            </div>
+                        </div>
+                        <div class="detail-group">
+                            <div class="field-group">
+                                <label class="form-label">{{ __('Repeat') }}</label>
+                                {{ Form::select('recurring_repeat', ['monthly' => 'Monthly', 'quarterly' => 'Quarterly', '6months' => '6 Months', 'yearly' => 'Yearly'], 'monthly', ['class' => 'form-select', 'id' => 'recurring_repeat']) }}
+                                <small id="next-date-preview" class="text-muted d-block mt-1"></small>
+                            </div>
+                            <div class="field-group">
+                                <label class="form-label">{{ __('Invoice Count') }}</label>
+                                {{ Form::number('recurring_every_n', 1, ['class' => 'form-control', 'id' => 'recurring_every_n', 'min' => 1]) }}
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- Product Section --}}
+                    <div class="product-section repeater">
+                        <h2 class="section-heading">{{ __('Product or service') }}</h2>
+
+                        <table class="product-table" id="sortable-table" data-repeater-list="items">
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    <th></th>
+                                    <th>#</th>
+                                    <th>{{ __('Product/service') }}</th>
+                                    <th>{{ __('Description') }}</th>
+                                    <th>{{ __('Qty') }}</th>
+                                    <th>{{ __('Rate') }}</th>
+                                    <th>{{ __('Discount') }}</th>
+                                    <th>{{ __('Amount') }}</th>
+                                    <th>{{ __('Tax') }}</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody data-repeater-item>
+                                <tr class="product-row">
+                                    <td>
+                                        <div style="opacity: 0;">
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="#c4c4c4">
+                                                <circle cx="8" cy="6" r="2" />
+                                                <circle cx="16" cy="6" r="2" />
+                                                <circle cx="8" cy="12" r="2" />
+                                                <circle cx="16" cy="12" r="2" />
+                                                <circle cx="8" cy="18" r="2" />
+                                                <circle cx="16" cy="18" r="2" />
+                                            </svg>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="drag-handle sort-handler">
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                                <circle cx="8" cy="6" r="2" />
+                                                <circle cx="16" cy="6" r="2" />
+                                                <circle cx="8" cy="12" r="2" />
+                                                <circle cx="16" cy="12" r="2" />
+                                                <circle cx="8" cy="18" r="2" />
+                                                <circle cx="16" cy="18" r="2" />
+                                            </svg>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="line-number">1</span>
+                                    </td>
+                                    <td>
+                                        {{ Form::select('item', $product_services, '', [
+                                            'class' => 'form-select item',
+                                            'placeholder' => 'Select a product/service',
+                                            'data-url' => route('invoice.product'),
+                                            'required' => 'required',
+                                        ]) }}
+                                    </td>
+                                    <td>
+                                        {{ Form::textarea('description', null, [
+                                            'class' => 'form-control pro_description',
+                                            'rows' => '1',
+                                            'placeholder' => '',
+                                        ]) }}
+                                    </td>
+                                    <td>
+                                        {{ Form::text('quantity', '', [
+                                            'class' => 'form-control input-right quantity',
+                                            'placeholder' => '',
+                                            'required' => 'required',
+                                        ]) }}
+                                    </td>
+                                    <td>
+                                        {{ Form::text('price', '', [
+                                            'class' => 'form-control input-right price',
+                                            'placeholder' => '',
+                                            'required' => 'required',
+                                        ]) }}
+                                    </td>
+                                    <td>
+                                        {{ Form::text('discount', '', [
+                                            'class' => 'form-control input-right discount',
+                                            'placeholder' => '0.00',
+                                        ]) }}
+                                    </td>
+                                    <td>
+                                        <input type="checkbox" class="taxable-checkbox" name="taxable[]" value="1" style="margin-bottom: 5px;">
+                                        <div class="taxes small"></div>
+                                        {{ Form::hidden('tax', '', ['class' => 'form-control tax']) }}
+                                        {{ Form::hidden('itemTaxPrice', '', ['class' => 'form-control itemTaxPrice']) }}
+                                        {{ Form::hidden('itemTaxRate', '', ['class' => 'form-control itemTaxRate']) }}
+                                    </td>
+                                    <td>
+                                        <span class="amount">0.00</span>
+                                    </td>
+                                    <td>
+                                        <span class="delete-icon" title="Delete line" data-repeater-delete>
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                                <path
+                                                    d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+                                            </svg>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <div class="table-actions">
+                            <button type="button" class="btn-action split-button" data-repeater-create>
+                                {{ __('Add product or service') }}
+                            </button>
+                            <button type="button" class="btn-action" id="clear-lines">
+                                {{ __('Clear all lines') }}
+                            </button>
+                        </div>
+
+                        {{-- Bottom Section --}}
+                        <div class="bottom-section">
+                            <div class="left-section">
+                                <div class="info-field">
+                                    <label>{{ __('Customer payment options') }}</label>
+                                    <div class="info-text">
+                                        {{ __('Tell your customer how you want to get paid. To keep instructions same for all future invoices, you can specify your payment preferences by clicking on "Edit default".') }}
+                                    </div>
+                                </div>
+
+                                <div class="info-field">
+                                    <label>{{ __('Note to customer') }}</label>
+                                    {{ Form::textarea('note', '', [
+                                        'class' => 'form-control',
+                                        'rows' => 3,
+                                        'placeholder' => 'Thank you for your business.',
+                                    ]) }}
+                                </div>
+
+                                <div class="info-field">
+                                    <label>{{ __('Memo on statement (hidden)') }}</label>
+                                    {{ Form::textarea('memo', '', [
+                                        'class' => 'form-control',
+                                        'rows' => 3,
+                                        'placeholder' => 'This memo will not show up on your invoice, but will appear on the statement.',
+                                    ]) }}
+                                </div>
+
+                                <div class="info-field">
+                                    <label>{{ __('Attachments') }}</label>
+                                    <div class="attachment-zone">
+                                        <a href="#" class="attachment-link">{{ __('Add attachment') }}</a>
+                                        <div class="attachment-limit">{{ __('Max file size: 20 MB') }}</div>
+                                    </div>
+                                </div>
+
+                                <div class="info-field">
+                                    <label>{{ __('Sales Tax') }}</label>
+                                    <select class="form-select" id="sales_tax_id" name="sales_tax_id">
+                                        <option value="">Select Tax</option>
+                                        @foreach($taxes ?? [] as $tax)
+                                        <option value="{{ $tax->id }}" data-rate="{{ $tax->rate }}">{{ $tax->name }}</option>
+                                        @endforeach
+                                    </select>
+                                    <div class="mt-2">
+                                        <input type="text" class="form-control" id="sales_tax_amount" readonly placeholder="0.00">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="totals-section">
+                                <div class="total-row subtotal">
+                                    <span>{{ __('Subtotal') }}</span>
+                                    <span class="subTotal">£0.00</span>
+                                </div>
+                                <div class="total-row">
+                                    <span>{{ __('Taxable Subtotal') }}</span>
+                                    <span class="taxableSubtotal">£0.00</span>
+                                </div>
+                                <div class="total-row">
+                                    <span>{{ __('Discount') }}</span>
+                                    <span class="totalDiscount">£0.00</span>
+                                </div>
+                                <div class="total-row">
+                                    <span>{{ __('Tax') }}</span>
+                                    <span class="totalTax">£0.00</span>
+                                </div>
+
+                                <div class="total-row final">
+                                    <span>{{ __('Invoice total') }}</span>
+                                    <span class="totalAmount">£0.00</span>
+                                </div>
+
+                                <a href="#" class="link-button">{{ __('Edit totals') }}</a>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- Footer --}}
+                    <div class="invoice-footer">
+                        <a href="#" class="footer-link">{{ __('Print or download') }}</a>
+
+                        <div class="footer-actions">
+                            <button type="button" class="btn btn-secondary"
+                                onclick="location.href = '{{ route('invoice.index') }}';">{{ __('Cancel') }}</button>
+                            <button type="submit" class="btn btn-secondary">{{ __('Save') }}</button>
+                            <button type="submit" class="btn btn-primary">{{ __('Review and send') }}</button>
+                        </div>
+                    </div>
+
+                    {{ Form::close() }}
                 </div>
             </div>
-            <div class="col-12">
-                <h5 class=" d-inline-block mb-4">{{ __('Product & Services') }}</h5>
-                <div class="card repeater">
-                    <div class="item-section py-2">
-                        <div class="row justify-content-between align-items-center">
-                            <div class="col-md-12 d-flex align-items-center justify-content-between justify-content-md-end">
-                                <div class="all-button-box me-2">
-                                    <a href="#" data-repeater-create="" class="btn btn-primary" data-bs-toggle="modal"
-                                        data-target="#add-bank">
-                                        <i class="ti ti-plus"></i> {{ __('Add item') }}
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card-body table-border-style mt-2">
-                        <div class="table-responsive">
-                            <table class="table mb-0 table-custom-style" data-repeater-list="items" id="sortable-table">
-                                <thead>
-                                    <tr>
-                                        <th>{{ __('Items') }}</th>
-                                        <th>{{ __('Quantity') }}</th>
-                                        <th>{{ __('Price') }} </th>
-                                        <th>{{ __('Discount') }}</th>
-                                        <th>{{ __('Tax') }} (%)</th>
-                                        <th class="text-end">{{ __('Amount') }} <br><small
-                                                class="text-danger font-weight-bold">{{ __('after tax & discount') }}</small>
-                                        </th>
-                                        <th></th>
-                                    </tr>
-                                </thead>
-
-                                <tbody class="ui-sortable" data-repeater-item>
-                                    <tr>
-
-                                        <td width="25%" class="form-group pt-0">
-                                            {{ Form::select('item', $product_services, '', ['class' => 'form-control select2 item', 'data-url' => route('invoice.product'), 'required' => 'required']) }}
-                                        </td>
-                                        <td>
-                                            <div class="form-group price-input input-group search-form">
-                                                {{ Form::text('quantity', '', ['class' => 'form-control quantity', 'required' => 'required', 'placeholder' => __('Qty'), 'required' => 'required']) }}
-                                                <span class="unit input-group-text bg-transparent"></span>
-                                            </div>
-                                        </td>
-
-
-                                        <td>
-                                            <div class="form-group price-input input-group search-form">
-                                                {{ Form::text('price', '', ['class' => 'form-control price', 'required' => 'required', 'placeholder' => __('Price'), 'required' => 'required']) }}
-                                                <span
-                                                    class="input-group-text bg-transparent">{{ \Auth::user()->currencySymbol() }}</span>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <div class="form-group price-input input-group search-form">
-                                                {{ Form::text('discount', '', ['class' => 'form-control discount', 'required' => 'required', 'placeholder' => __('Discount')]) }}
-                                                <span
-                                                    class="input-group-text bg-transparent">{{ \Auth::user()->currencySymbol() }}</span>
-                                            </div>
-                                        </td>
-
-
-
-                                        <td>
-                                            <div class="form-group">
-                                                <div class="input-group colorpickerinput">
-                                                    <div class="taxes"></div>
-                                                    {{ Form::hidden('tax', '', ['class' => 'form-control tax text-dark']) }}
-                                                    {{ Form::hidden('itemTaxPrice', '', ['class' => 'form-control itemTaxPrice']) }}
-                                                    {{ Form::hidden('itemTaxRate', '', ['class' => 'form-control itemTaxRate']) }}
-                                                </div>
-                                            </div>
-                                        </td>
-
-                                        <td class="text-end amount">0.00</td>
-                                        <td>
-                                            <a href="#"
-                                                class="ti ti-trash text-white repeater-action-btn bg-danger ms-2 bs-pass-para"
-                                                data-repeater-delete></a>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td colspan="2">
-                                            <div class="form-group">
-                                                {{ Form::textarea('description', null, ['class' => 'form-control pro_description', 'rows' => '2', 'placeholder' => __('Description')]) }}
-                                            </div>
-                                        </td>
-                                        <td colspan="5"></td>
-                                    </tr>
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <td>&nbsp;</td>
-                                        <td>&nbsp;</td>
-                                        <td>&nbsp;</td>
-                                        <td></td>
-                                        <td><strong>{{ __('Sub Total') }} ({{ \Auth::user()->currencySymbol() }})</strong>
-                                        </td>
-                                        <td class="text-end subTotal">0.00</td>
-                                        <td></td>
-                                    </tr>
-                                    <tr>
-                                        <td>&nbsp;</td>
-                                        <td>&nbsp;</td>
-                                        <td>&nbsp;</td>
-                                        <td></td>
-                                        <td><strong>{{ __('Discount') }} ({{ \Auth::user()->currencySymbol() }})</strong>
-                                        </td>
-                                        <td class="text-end totalDiscount">0.00</td>
-                                        <td></td>
-                                    </tr>
-                                    <tr>
-                                        <td>&nbsp;</td>
-                                        <td>&nbsp;</td>
-                                        <td>&nbsp;</td>
-                                        <td></td>
-                                        <td><strong>{{ __('Tax') }} ({{ \Auth::user()->currencySymbol() }})</strong>
-                                        </td>
-                                        <td class="text-end totalTax">0.00</td>
-                                        <td></td>
-                                    </tr>
-                                    <tr>
-                                        <td>&nbsp;</td>
-                                        <td>&nbsp;</td>
-                                        <td>&nbsp;</td>
-                                        <td>&nbsp;</td>
-                                        <td class="blue-text"><strong>{{ __('Total Amount') }}
-                                                ({{ \Auth::user()->currencySymbol() }})</strong></td>
-                                        <td class="text-end totalAmount blue-text">0.00</td>
-                                        <td></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <input type="button" value="{{ __('Cancel') }}"
-                    onclick="location.href = '{{ route('invoice.index') }}';" class="btn btn-light">
-                <input type="submit" value="{{ __('Create') }}" class="btn btn-primary">
-            </div>
-            {{ Form::close() }}
-
         </div>
-    @endsection
+    </div>
+@endsection

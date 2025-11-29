@@ -15,6 +15,11 @@ class ProposalProduct extends Model
         'rate',
         'discount',
         'total',
+        'description',
+        'taxable',
+        'item_tax_price',
+        'item_tax_rate',
+        'amount',
     ];
 
     public function product()

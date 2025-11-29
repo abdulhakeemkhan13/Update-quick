@@ -16,6 +16,7 @@ use App\Models\Proposal;
 use App\Models\ProposalProduct;
 use App\Models\StockReport;
 use App\Models\Task;
+use App\Models\Tax;
 use App\Models\User;
 use App\Models\Utility;
 use Auth;
@@ -71,7 +72,7 @@ class ProposalController extends Controller
         }
     }
 
-    public function create($customerId)
+    public function create(Request $request,$customerId)
     {
         if(\Auth::user()->can('create proposal'))
         {
@@ -86,8 +87,10 @@ class ProposalController extends Controller
             $category = ['__add__' => '➕ Add new category'] + ['' => 'Select Category'] + $category;
             $product_services = ProductService::where($column, $ownerId)->get()->pluck('name', 'id');
             $product_services->prepend('--', '');
+            $taxes = Tax::where('created_by', \Auth::user()->creatorId())->get();
 
-            return view('proposal.create', compact('customers', 'proposal_number', 'product_services', 'category', 'customFields', 'customerId'));
+            // Always return modal view
+            return view('proposal.create_model', compact('customers', 'proposal_number', 'product_services', 'category', 'customFields', 'customerId', 'taxes'));
         }
         else
         {
@@ -122,110 +125,304 @@ class ProposalController extends Controller
 
     public function store(Request $request)
     {
+        \DB::beginTransaction();
+        try {
+            if (\Auth::user()->can('create proposal')) {
+                $validator = \Validator::make(
+                    $request->all(), [
+                        'customer_id' => 'required',
+                        'issue_date' => 'required',
+                        'category_id' => 'required',
+                        'items' => 'required',
+                        'items_payload' => 'nullable',
+                        'subtotal' => 'nullable|numeric',
+                        'taxable_subtotal' => 'nullable|numeric',
+                        'total_discount' => 'nullable|numeric',
+                        'total_tax' => 'nullable|numeric',
+                        'sales_tax_amount' => 'nullable|numeric',
+                        'total_amount' => 'nullable|numeric',
+                        'bill_to' => 'nullable|string',
+                        'terms' => 'nullable|string',
+                        'company_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                        'attachments.*' => 'nullable|file|max:20480',
+                    ]
+                );
+                if ($validator->fails()) {
+                    $messages = $validator->getMessageBag();
+                    if ($request->ajax()) {
+                        return response()->json(['errors' => $validator->errors()], 422);
+                    }
+                    return redirect()->back()->with('error', $messages->first());
+                }
 
-        if(\Auth::user()->can('create proposal'))
-        {
-            $validator = \Validator::make(
-                $request->all(), [
-                                   'customer_id' => 'required',
-                                   'issue_date' => 'required',
-                                   'category_id' => 'required',
-                                   'items' => 'required',
-                               ]
-            );
-            if($validator->fails())
-            {
-                $messages = $validator->getMessageBag();
+                $proposal                 = new Proposal();
+                $proposal->proposal_id    = $this->proposalNumber();
+                $proposal->customer_id    = $request->customer_id;
+                $proposal->status         = 0;
+                $proposal->issue_date     = $request->issue_date;
+                $proposal->send_date      = $request->send_date;
+                $proposal->category_id    = $request->category_id;
+                $proposal->created_by     = \Auth::user()->creatorId();
+                $proposal->owned_by       = \Auth::user()->ownedId();
 
-                return redirect()->back()->with('error', $messages->first());
+                // Store calculated totals
+                $proposal->subtotal = $request->subtotal ?? 0;
+                $proposal->taxable_subtotal = $request->taxable_subtotal ?? 0;
+                $proposal->total_discount = $request->total_discount ?? 0;
+                $proposal->total_tax = $request->total_tax ?? 0;
+                $proposal->sales_tax_amount = $request->sales_tax_amount ?? 0;
+                $proposal->total_amount = $request->total_amount ?? 0;
+                $proposal->bill_to = $request->bill_to;
+                $proposal->memo = $request->memo;
+                $proposal->note = $request->note;
+                $proposal->terms = $request->terms;
+                $proposal->accepted_by = $request->accepted_by;
+
+                // Handle logo upload
+                if ($request->hasFile('company_logo')) {
+                    $logoFile = $request->file('company_logo');
+                    $logoName = time() . '_logo.' . $logoFile->getClientOriginalExtension();
+                    $logoFile->storeAs('uploads/proposal_logos', $logoName, 'public');
+                    $proposal->logo = $logoName;
+                }
+
+                // Handle attachments
+                if ($request->hasFile('attachments')) {
+                    $attachments = [];
+                    foreach ($request->file('attachments') as $attachment) {
+                        $attachmentName = time() . '_' . uniqid() . '.' . $attachment->getClientOriginalExtension();
+                        $attachment->storeAs('uploads/proposal_attachments', $attachmentName, 'public');
+                        $attachments[] = $attachmentName;
+                    }
+                    $proposal->attachments = json_encode($attachments);
+                }
+
+                $proposal->save();
+                CustomField::saveData($proposal, $request->customField);
+
+                // Parse items - handle both array and JSON format
+                $products = $request->items;
+                if (is_string($products)) {
+                    $products = json_decode($products, true);
+                }
+
+                // If items_payload is provided, use ALL items (products, subtotals, text)
+                $itemsPayload = $request->items_payload;
+                if ($itemsPayload) {
+                    if (is_string($itemsPayload)) {
+                        $itemsPayload = json_decode($itemsPayload, true);
+                    }
+                    if (is_array($itemsPayload)) {
+                        $products = $itemsPayload;
+                    }
+                }
+
+                foreach ($products as $i => $prod) {
+                    $proposalProduct = new ProposalProduct();
+                    $proposalProduct->proposal_id = $proposal->id;
+
+                    // Determine item type
+                    $itemType = $prod['type'] ?? 'product';
+
+                    if ($itemType == 'product') {
+                        // Handle product items
+                        $proposalProduct->product_id = $prod['item_id'] ?? ($prod['item'] ?? null);
+                        $proposalProduct->quantity = $prod['quantity'] ?? 0;
+                        $proposalProduct->tax = $prod['tax'] ?? null;
+                        $proposalProduct->discount = $prod['discount'] ?? 0;
+                        $proposalProduct->price = $prod['price'] ?? 0;
+                        $proposalProduct->description = $prod['description'] ?? '';
+                        $proposalProduct->taxable = $prod['is_taxable'] ?? ($prod['taxable'] ?? 0);
+                        $proposalProduct->item_tax_price = $prod['itemTaxPrice'] ?? ($prod['item_tax_price'] ?? 0);
+                        $proposalProduct->item_tax_rate = $prod['itemTaxRate'] ?? ($prod['item_tax_rate'] ?? 0);
+                        $proposalProduct->amount = $prod['amount'] ?? 0;
+                    } elseif ($itemType == 'subtotal') {
+                        // Handle subtotal items
+                        $proposalProduct->product_id = null;
+                        $proposalProduct->quantity = 0;
+                        $proposalProduct->price = 0;
+                        $proposalProduct->description = $prod['label'] ?? 'Subtotal';
+                        $proposalProduct->amount = $prod['amount'] ?? 0;
+                        $proposalProduct->discount = 0;
+                        $proposalProduct->tax = null;
+                        $proposalProduct->taxable = 0;
+                        $proposalProduct->item_tax_price = 0;
+                        $proposalProduct->item_tax_rate = 0;
+                    } elseif ($itemType == 'text') {
+                        // Handle text items
+                        $proposalProduct->product_id = null;
+                        $proposalProduct->quantity = 0;
+                        $proposalProduct->price = 0;
+                        $proposalProduct->description = $prod['text'] ?? '';
+                        $proposalProduct->amount = 0;
+                        $proposalProduct->discount = 0;
+                        $proposalProduct->tax = null;
+                        $proposalProduct->taxable = 0;
+                        $proposalProduct->item_tax_price = 0;
+                        $proposalProduct->item_tax_rate = 0;
+                    }
+                    $proposalProduct->save();
+                }
+
+                //For Notification
+                $setting  = Utility::settings(\Auth::user()->creatorId());
+                $customer = Customer::find($proposal->customer_id);
+                $proposalNotificationArr = [
+                    'proposal_number' => \Auth::user()->proposalNumberFormat($proposal->proposal_id),
+                    'user_name' => \Auth::user()->name,
+                    'customer_name' => $customer->name,
+                    'proposal_issue_date' => $proposal->issue_date,
+                ];
+                //Twilio Notification
+                if(isset($setting['twilio_proposal_notification']) && $setting['twilio_proposal_notification'] ==1)
+                {
+                    Utility::send_twilio_msg($customer->contact,'new_proposal', $proposalNotificationArr);
+                }
+                Utility::makeActivityLog(\Auth::user()->id,'Proposal',$proposal->id,'Create Proposal',$customer->name);
+
+                \DB::commit();
+
+                if ($request->ajax()) {
+                    return response()->json([
+                        'success' => true,
+                        'message' => __('Proposal successfully created.'),
+                        'redirect' => route('proposal.index')
+                    ]);
+                }
+
+                return redirect()->route('proposal.index', $proposal->id)->with('success', __('Proposal successfully created.'));
             }
-            $status = Proposal::$statues;
-
-            $proposal                 = new Proposal();
-            $proposal->proposal_id    = $this->proposalNumber();
-            $proposal->customer_id    = $request->customer_id;
-            $proposal->status         = 0;
-            $proposal->issue_date     = $request->issue_date;
-            $proposal->category_id    = $request->category_id;
-//            $proposal->discount_apply = isset($request->discount_apply) ? 1 : 0;
-            $proposal->created_by     = \Auth::user()->creatorId();
-            $proposal->owned_by     = \Auth::user()->ownedId();
-            $proposal->save();
-            CustomField::saveData($proposal, $request->customField);
-            $products = $request->items;
-
-            for($i = 0; $i < count($products); $i++)
+            else
             {
-                $proposalProduct              = new ProposalProduct();
-                $proposalProduct->proposal_id = $proposal->id;
-                $proposalProduct->product_id  = $products[$i]['item'];
-                $proposalProduct->quantity    = $products[$i]['quantity'];
-                $proposalProduct->tax         = $products[$i]['tax'];
-//                $proposalProduct->discount    = isset($products[$i]['discount']) ? $products[$i]['discount'] : 0;
-                $proposalProduct->discount    = $products[$i]['discount'];
-                $proposalProduct->price       = $products[$i]['price'];
-                $proposalProduct->description = $products[$i]['description'];
-                $proposalProduct->save();
+                return redirect()->back()->with('error', __('Permission denied.'));
             }
-
-
-
-            //For Notification
-            $setting  = Utility::settings(\Auth::user()->creatorId());
-            $customer = Customer::find($proposal->customer_id);
-            $proposalNotificationArr = [
-                'proposal_number' => \Auth::user()->proposalNumberFormat($proposal->proposal_id),
-                'user_name' => \Auth::user()->name,
-                'customer_name' => $customer->name,
-                'proposal_issue_date' => $proposal->issue_date,
-            ];
-            //Twilio Notification
-            if(isset($setting['twilio_proposal_notification']) && $setting['twilio_proposal_notification'] ==1)
-            {
-                Utility::send_twilio_msg($customer->contact,'new_proposal', $proposalNotificationArr);
+        } catch (\Exception $e) {
+            \DB::rollBack();
+            dd($e);
+            if ($request->ajax()) {
+                return response()->json(['error' => $e->getMessage()], 500);
             }
-            Utility::makeActivityLog(\Auth::user()->id,'Proposal',$proposal->id,'Create Proposal',$customer->name);
-            return redirect()->route('proposal.index', $proposal->id)->with('success', __('Proposal successfully created.'));
-        }
-        else
-        {
-            return redirect()->back()->with('error', __('Permission denied.'));
+            return redirect()->back()->with('error', __($e->getMessage()));
         }
     }
 
     public function edit($ids)
     {
-
         if(\Auth::user()->can('edit proposal'))
         {
             try {
-                $id              = Crypt::decrypt($ids);
+                $id = Crypt::decrypt($ids);
             } catch (\Throwable $th) {
                 return redirect()->back()->with('error', __('Proposal Not Found.'));
             }
+
             $user = \Auth::user();
             $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
             $column = ($user->type == 'company') ? 'created_by' : 'owned_by';
-            $id              = Crypt::decrypt($ids);
-            $proposal        = Proposal::find($id);
-            $proposal_number = \Auth::user()->proposalNumberFormat($proposal->proposal_id);
-            $customers       = Customer::where($column, $ownerId)->get()->pluck('name', 'id')->toArray();
-            $customers       = ['__add__' => '➕ Add new customer'] + ['' => 'Select Customer'] + $customers;
-            $category        = ProductServiceCategory::where($column, $ownerId)->where('type', 'income')->get()->pluck('name', 'id')->toArray();
-            $category        = ['__add__' => '➕ Add new category'] + ['' => 'Select Category'] + $category;
-            $product_services = ProductService::where($column, $ownerId)->get()->pluck('name', 'id');
-            $proposal->customField = CustomField::getData($proposal, 'proposal');
-            $customFields          = CustomField::where('created_by', '=', \Auth::user()->creatorId())->where('module', '=', 'proposal')->get();
 
-            $items = [];
-            foreach($proposal->items as $proposalItem)
-            {
-                $itemAmount               = $proposalItem->quantity * $proposalItem->price;
-                $proposalItem->itemAmount = $itemAmount;
-                $proposalItem->taxes      = Utility::tax($proposalItem->tax);
-                $items[]                  = $proposalItem;
+            $proposal = Proposal::find($id);
+            $proposal_number = \Auth::user()->proposalNumberFormat($proposal->proposal_id);
+            $customers = Customer::where($column, $ownerId)->get()->pluck('name', 'id')->toArray();
+            $customers = ['__add__' => '➕ Add new customer'] + ['' => 'Select Customer'] + $customers;
+            $category = ProductServiceCategory::where($column, $ownerId)->where('type', 'income')->get()->pluck('name', 'id')->toArray();
+            $category = ['__add__' => '➕ Add new category'] + ['' => 'Select Category'] + $category;
+            $product_services = ProductService::where($column, $ownerId)->get()->pluck('name', 'id');
+            $product_services->prepend('--', '');
+            $taxes = Tax::where('created_by', \Auth::user()->creatorId())->get();
+
+            $proposal->customField = CustomField::getData($proposal, 'proposal');
+            $customFields = CustomField::where('created_by', '=', \Auth::user()->creatorId())->where('module', '=', 'proposal')->get();
+
+            // Populate customer data
+            $customerId = $proposal->customer_id;
+            $customerData = Customer::find($customerId);
+            $billTo = '';
+            if ($customerData) {
+                $billTo = $customerData->billing_name . "\n" . $customerData->billing_phone . "\n" . $customerData->billing_address . "\n" . $customerData->billing_city . ' , ' . $customerData->billing_state . ' , ' . $customerData->billing_country . '.' . "\n" . $customerData->billing_zip;
             }
-            return view('proposal.edit', compact('customers', 'product_services', 'proposal', 'proposal_number', 'category', 'customFields', 'items'));
+
+            // Load proposal items with product details
+            $proposal->load(['items.product']);
+
+            // Prepare logo URL if exists
+            $logoUrl = null;
+            if ($proposal->logo) {
+                $logoUrl = asset('storage/uploads/proposal_logos/' . $proposal->logo);
+            }
+
+            // Prepare attachments with full URLs and metadata
+            $attachmentsData = [];
+            if ($proposal->attachments) {
+                $attachmentFiles = json_decode($proposal->attachments, true);
+                if (is_array($attachmentFiles)) {
+                    foreach ($attachmentFiles as $index => $filename) {
+                        $filePath = storage_path('app/public/uploads/proposal_attachments/' . $filename);
+                        $fileSize = file_exists($filePath) ? filesize($filePath) : 0;
+
+                        $attachmentsData[] = [
+                            'id' => $index,
+                            'name' => $filename,
+                            'url' => asset('storage/uploads/proposal_attachments/' . $filename),
+                            'size' => $fileSize,
+                            'attach_to_email' => true,
+                        ];
+                    }
+                }
+            }
+
+            // Prepare proposal data for JavaScript
+            $proposalData = [
+                'id' => $proposal->id,
+                'encrypted_id' => Crypt::encrypt($proposal->id),
+                'proposal_id' => $proposal->proposal_id,
+                'customer_id' => $proposal->customer_id,
+                'issue_date' => $proposal->issue_date,
+                'send_date' => $proposal->send_date,
+                'category_id' => $proposal->category_id,
+                'bill_to' => $proposal->bill_to,
+                'terms' => $proposal->terms,
+                'logo' => $logoUrl,
+                'attachments' => $attachmentsData,
+                'subtotal' => $proposal->subtotal,
+                'taxable_subtotal' => $proposal->taxable_subtotal,
+                'total_discount' => $proposal->total_discount,
+                'total_tax' => $proposal->total_tax,
+                'sales_tax_amount' => $proposal->sales_tax_amount,
+                'total_amount' => $proposal->total_amount,
+                'memo' => $proposal->memo,
+                'note' => $proposal->note,
+                'accepted_by' => $proposal->accepted_by,
+                'items' => $proposal->items
+                    ->map(function ($item) {
+                        $type = 'product';
+                        if (empty($item->product_id)) {
+                            if ($item->amount != 0 || strtolower($item->description) == 'subtotal') {
+                                $type = 'subtotal';
+                            } else {
+                                $type = 'text';
+                            }
+                        }
+
+                        return [
+                            'id' => $item->id,
+                            'type' => $type,
+                            'item' => $item->product_id,
+                            'description' => $item->description,
+                            'quantity' => $item->quantity,
+                            'price' => $item->price,
+                            'discount' => $item->discount,
+                            'tax' => $item->tax,
+                            'taxable' => $item->taxable,
+                            'itemTaxPrice' => $item->item_tax_price,
+                            'itemTaxRate' => $item->item_tax_rate,
+                            'amount' => $item->amount,
+                        ];
+                    })
+                    ->toArray(),
+            ];
+
+            // Always return modal view (no direct page access)
+            return view('proposal.edit_modal', compact('customers', 'proposal', 'product_services', 'category', 'customFields', 'customerId', 'taxes', 'billTo', 'proposalData', 'proposal_number'))->with('mode', 'edit');
         }
         else
         {
@@ -235,69 +432,191 @@ class ProposalController extends Controller
 
     public function update(Request $request, Proposal $proposal)
     {
-        if(\Auth::user()->can('edit proposal'))
-        {
-            if($proposal->created_by == \Auth::user()->creatorId())
+        dd($request->all());
+        \DB::beginTransaction();
+        try {
+            if(\Auth::user()->can('edit proposal'))
             {
-                $validator = \Validator::make(
-                    $request->all(), [
-                                       'customer_id' => 'required',
-                                       'issue_date' => 'required',
-                                       'category_id' => 'required',
-                                       'items' => 'required',
-                                   ]
-                );
-                if($validator->fails())
+                if($proposal->created_by == \Auth::user()->creatorId())
                 {
-                    $messages = $validator->getMessageBag();
-
-                    return redirect()->route('proposal.index')->with('error', $messages->first());
-                }
-                $proposal->customer_id    = $request->customer_id;
-                $proposal->issue_date     = $request->issue_date;
-                $proposal->category_id    = $request->category_id;
-//                $proposal->discount_apply = isset($request->discount_apply) ? 1 : 0;
-                $proposal->save();
-                CustomField::saveData($proposal, $request->customField);
-                $products = $request->items;
-
-                for($i = 0; $i < count($products); $i++)
-                {
-                    $proposalProduct = ProposalProduct::find($products[$i]['id']);
-                    if($proposalProduct == null)
+                    $validator = \Validator::make(
+                        $request->all(), [
+                            'customer_id' => 'required',
+                            'issue_date' => 'required',
+                            'category_id' => 'required',
+                            'items' => 'required',
+                            'items_payload' => 'nullable',
+                            'subtotal' => 'nullable|numeric',
+                            'taxable_subtotal' => 'nullable|numeric',
+                            'total_discount' => 'nullable|numeric',
+                            'total_tax' => 'nullable|numeric',
+                            'sales_tax_amount' => 'nullable|numeric',
+                            'total_amount' => 'nullable|numeric',
+                            'bill_to' => 'nullable|string',
+                            'terms' => 'nullable|string',
+                            'company_logo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                            'attachments.*' => 'nullable|file|max:20480',
+                        ]
+                    );
+                    if($validator->fails())
                     {
-                        $proposalProduct              = new ProposalProduct();
+                        $messages = $validator->getMessageBag();
+                        if ($request->ajax()) {
+                            return response()->json(['errors' => $validator->errors()], 422);
+                        }
+                        return redirect()->route('proposal.index')->with('error', $messages->first());
+                    }
+
+                    $proposal->customer_id = $request->customer_id;
+                    $proposal->issue_date = $request->issue_date;
+                    $proposal->send_date = $request->send_date;
+                    $proposal->category_id = $request->category_id;
+
+                    // Store calculated totals
+                    $proposal->subtotal = $request->subtotal ?? 0;
+                    $proposal->taxable_subtotal = $request->taxable_subtotal ?? 0;
+                    $proposal->total_discount = $request->total_discount ?? 0;
+                    $proposal->total_tax = $request->total_tax ?? 0;
+                    $proposal->sales_tax_amount = $request->sales_tax_amount ?? 0;
+                    $proposal->total_amount = $request->total_amount ?? 0;
+                    $proposal->memo = $request->memo;
+                    $proposal->note = $request->note;
+                    $proposal->bill_to = $request->bill_to;
+                    $proposal->terms = $request->terms;
+                    $proposal->accepted_by = $request->accepted_by;
+
+                    // Handle logo upload
+                    if ($request->hasFile('company_logo')) {
+                        // Delete old logo if exists
+                        if ($proposal->logo) {
+                            $oldLogoPath = storage_path('app/public/uploads/proposal_logos/' . $proposal->logo);
+                            if (file_exists($oldLogoPath)) {
+                                unlink($oldLogoPath);
+                            }
+                        }
+
+                        $logoFile = $request->file('company_logo');
+                        $logoName = time() . '_' . $logoFile->getClientOriginalName();
+                        $logoFile->storeAs('public/uploads/proposal_logos', $logoName);
+                        $proposal->logo = $logoName;
+                    }
+
+                    // Handle attachments upload
+                    $attachmentFiles = [];
+
+                    // Keep existing attachments that weren't removed
+                    if ($request->has('existing_attachments')) {
+                        $attachmentFiles = $request->existing_attachments;
+                    }
+
+                    // Add new attachments
+                    if ($request->hasFile('attachments')) {
+                        foreach ($request->file('attachments') as $file) {
+                            $fileName = time() . '_' . rand(100, 999) . '_' . $file->getClientOriginalName();
+                            $file->storeAs('public/uploads/proposal_attachments', $fileName);
+                            $attachmentFiles[] = $fileName;
+                        }
+                    }
+
+                    $proposal->attachments = json_encode($attachmentFiles);
+                    $proposal->save();
+
+                    CustomField::saveData($proposal, $request->customField);
+
+                    // Delete all existing proposal products
+                    ProposalProduct::where('proposal_id', $proposal->id)->delete();
+
+                    // Parse items - handle both array and JSON format
+                    $products = $request->items;
+                    if (is_string($products)) {
+                        $products = json_decode($products, true);
+                    }
+
+                    // If items_payload is provided, use ALL items (products, subtotals, text)
+                    $itemsPayload = $request->items_payload;
+                    if ($itemsPayload) {
+                        if (is_string($itemsPayload)) {
+                            $itemsPayload = json_decode($itemsPayload, true);
+                        }
+                        if (is_array($itemsPayload)) {
+                            $products = $itemsPayload;
+                        }
+                    }
+
+                    foreach ($products as $i => $prod) {
+                        $proposalProduct = new ProposalProduct();
                         $proposalProduct->proposal_id = $proposal->id;
 
+                        // Determine item type
+                        $itemType = $prod['type'] ?? 'product';
+
+                        if ($itemType == 'product') {
+                            // Handle product items with full tax support
+                            $proposalProduct->product_id = $prod['item_id'] ?? ($prod['item'] ?? null);
+                            $proposalProduct->quantity = $prod['quantity'] ?? 0;
+                            $proposalProduct->tax = $prod['tax'] ?? null;
+                            $proposalProduct->discount = $prod['discount'] ?? 0;
+                            $proposalProduct->price = $prod['price'] ?? 0;
+                            $proposalProduct->description = $prod['description'] ?? '';
+                            $proposalProduct->taxable = $prod['is_taxable'] ?? ($prod['taxable'] ?? 0);
+                            $proposalProduct->item_tax_price = $prod['itemTaxPrice'] ?? ($prod['item_tax_price'] ?? 0);
+                            $proposalProduct->item_tax_rate = $prod['itemTaxRate'] ?? ($prod['item_tax_rate'] ?? 0);
+                            $proposalProduct->amount = $prod['amount'] ?? 0;
+                        } elseif ($itemType == 'subtotal') {
+                            // Handle subtotal display lines
+                            $proposalProduct->product_id = null;
+                            $proposalProduct->quantity = 0;
+                            $proposalProduct->price = 0;
+                            $proposalProduct->description = $prod['label'] ?? 'Subtotal';
+                            $proposalProduct->amount = $prod['amount'] ?? 0;
+                            $proposalProduct->discount = 0;
+                            $proposalProduct->tax = null;
+                            $proposalProduct->taxable = 0;
+                            $proposalProduct->item_tax_price = 0;
+                            $proposalProduct->item_tax_rate = 0;
+                        } elseif ($itemType == 'text') {
+                            // Handle text lines
+                            $proposalProduct->product_id = null;
+                            $proposalProduct->quantity = 0;
+                            $proposalProduct->price = 0;
+                            $proposalProduct->description = $prod['text'] ?? '';
+                            $proposalProduct->amount = 0;
+                            $proposalProduct->discount = 0;
+                            $proposalProduct->tax = null;
+                            $proposalProduct->taxable = 0;
+                            $proposalProduct->item_tax_price = 0;
+                            $proposalProduct->item_tax_rate = 0;
+                        }
+
+                        $proposalProduct->save();
                     }
 
-                    if(isset($products[$i]['item']))
-                    {
-                        $proposalProduct->product_id = $products[$i]['item'];
-                    }
+                    \DB::commit();
 
-                    $proposalProduct->quantity    = $products[$i]['quantity'];
-                    $proposalProduct->tax         = $products[$i]['tax'];
-//                    $proposalProduct->discount    = isset($products[$i]['discount']) ? $products[$i]['discount'] : 0;
-                    $proposalProduct->discount    = $products[$i]['discount'];
-                    $proposalProduct->price       = $products[$i]['price'];
-                    $proposalProduct->description = $products[$i]['description'];
-                    $proposalProduct->save();
+                    //log
+                    Utility::makeActivityLog(\Auth::user()->id,'Proposal',$proposal->id,'Update Proposal', $proposal->customer->name);
+
+                    if ($request->ajax()) {
+                        return response()->json(['success' => __('Proposal successfully updated.')]);
+                    }
+                    return redirect()->route('proposal.index', $proposal->id)->with('success', __('Proposal successfully updated.'));
+
                 }
-                //log
-                Utility::makeActivityLog(\Auth::user()->id,'Proposal',$proposal->id,'Update Proposal', $proposal->customer->name);
-
-                return redirect()->route('proposal.index', $proposal->id)->with('success', __('Proposal successfully updated.'));
-
+                else
+                {
+                    return redirect()->back()->with('error', __('Permission denied.'));
+                }
             }
             else
             {
                 return redirect()->back()->with('error', __('Permission denied.'));
             }
-        }
-        else
-        {
-            return redirect()->back()->with('error', __('Permission denied.'));
+        } catch (\Exception $e) {
+            \DB::rollBack();
+            if ($request->ajax()) {
+                return response()->json(['error' => $e->getMessage()], 500);
+            }
+            return redirect()->back()->with('error', __($e->getMessage()));
         }
     }
 

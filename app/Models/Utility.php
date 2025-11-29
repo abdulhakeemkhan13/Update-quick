@@ -6009,12 +6009,17 @@ class Utility extends Model
             $tax = 0;
 
             for ($i = 0; $i < count($data['items']); $i++) {
-
+                // dd($data['items']);
                 $product = ProductService::where('id', $data['items'][$i]['item'])->first();
+
+                // Skip if product not found or no account (e.g. text lines, subtotals)
+                if (!$product || !isset($product->sale_chartaccount_id)) {
+                    continue;
+                }
 
                 $journalItem = new JournalItem();
                 $journalItem->journal = $journal->id;
-                $journalItem->account = @$product->sale_chartaccount_id;
+                $journalItem->account = $product->sale_chartaccount_id;
                 $journalItem->product_ids = @$data['items'][$i]['prod_id'];
                 $journalItem->description = @$data['items'][$i]['description'];
                 $journalItem->credit = (($data['items'][$i]['quantity'] * $data['items'][$i]['price']) - $data['items'][$i]['discount']);
@@ -6094,23 +6099,8 @@ class Utility extends Model
                 }
                 $tax = 0;
             }
-
-
-            $types = ChartOfAccountType::where('created_by', '=', $data['created_by'])->where('name', 'Assets')->first();
-            if ($types) {
-                $sub_type = ChartOfAccountSubType::where('type', $types->id)->where('name', 'Current Asset')->first();
-                $account = ChartOfAccount::where('type', $types->id)->where('sub_type', $sub_type->id)->where('name', 'Account Receivables')->first();
-                if (!$account) {
-                    $account = ChartOfAccount::create([
-                        'name' => 'Account Receivables',
-                        'code' => '10000',
-                        'type' => $types->id,
-                        'sub_type' => $sub_type->id,
-                        'is_enabled' => 1,
-                        'created_by' => $data['created_by'],
-                    ]);
-                }
-            }
+            $account = self::getAccountReceivable(@$data['created_by']);
+            // dd($account);
             if ($account) {
                 $journalItem = new JournalItem();
                 $journalItem->journal = $journal->id;
@@ -6147,6 +6137,39 @@ class Utility extends Model
         }
     }
 
+    public static function getAccountReceivable($createdBy)
+    {
+        $possibleNames = [
+            'account receivable',
+            'accounts receivable',
+            'account receivables',
+            'accounts receivables',
+        ];
+        $existing = ChartOfAccount::where('created_by', $createdBy)
+            ->where(function($q) use ($possibleNames) {
+                foreach ($possibleNames as $name) {
+                    $q->orWhereRaw('LOWER(name) LIKE ?', ['%' . strtolower($name) . '%']);
+                }
+            })
+            ->first();
+        $type = ChartOfAccountType::firstOrCreate(
+            ['created_by' => $createdBy, 'name' => 'Assets']
+        );
+        $subType = ChartOfAccountSubType::firstOrCreate(
+            ['created_by' => $createdBy, 'type' => $type->id, 'name' => 'Current Asset']
+        );
+        if ($existing && $existing->type == $type->id) {
+            return $existing;
+        }
+        return ChartOfAccount::create([
+            'name'       => 'Account Receivables',
+            'code'       => '10000',
+            'type'       => $type->id,
+            'sub_type'   => $subType->id,
+            'is_enabled' => 1,
+            'created_by' => $createdBy,
+        ]);
+    }
 
     // BRV voucher
     public static function brv_entry($data)
