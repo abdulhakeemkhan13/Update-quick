@@ -1,13 +1,4 @@
-<!-- @extends('layouts.admin') -->
-@section('page-title')
-    {{ __('Estimate Create') }}
-@endsection
-
-@section('breadcrumb')
-    <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">{{ __('Dashboard') }}</a></li>
-    <li class="breadcrumb-item"><a href="{{ route('proposal.index') }}">{{ __('Estimate') }}</a></li>
-    <li class="breadcrumb-item">{{ __('Estimate Create') }}</li>
-@endsection
+@extends('layouts.admin')
 
 @push('css-page')
     <style>
@@ -500,6 +491,9 @@
         /* Bottom Section */
         .bottom-section {
             padding: 24px 0px;
+            /* display: grid;
+            grid-template-columns: 1fr 400px; */
+            /* gap: 350px; */
             background: #ffffff;
         }
 
@@ -1277,7 +1271,7 @@
     <script src="{{ asset('js/jquery.repeater.min.js') }}"></script>
     <script>
         $(function() {
-            $('#invoice-form').on('submit', function() {
+            $('#proposal-form').on('submit', function() {
                 var lines = [];
 
                 $('#sortable-table').children('tbody').each(function() {
@@ -1294,11 +1288,14 @@
                             description: $row.find('.pro_description').val() || '',
                             quantity: parseFloat($row.find('.quantity').val()) || 0,
                             price: parseFloat($row.find('.price').val()) || 0,
+                            discount: parseFloat($row.find('.discount').val()) || 0,
+                            tax: $row.find('.tax').val() || '',
                             amount: parseFloat($row.find('.amount').val()) || 0,
                             is_taxable: $row.find('.form-check-input[type="checkbox"]')
                                 .prop('checked') ? 1 : 0,
                             tax_ids: ($row.find('.tax').val() || '').split(',').filter(
                                 Boolean),
+                            itemTaxPrice: parseFloat($row.find('.itemTaxPrice').val()) || 0,
                             item_tax_rate: parseFloat($row.find('.itemTaxRate').val()) || 0
                         });
 
@@ -1312,7 +1309,7 @@
                             type: 'subtotal',
                             label: 'Subtotal',
                             amount: parseFloat($subtotalRow.find('.subtotal-amount')
-                            .text()) || 0
+                                .text()) || 0
                         });
                         return;
                     }
@@ -1330,14 +1327,30 @@
 
                 // store JSON string in hidden input
                 $('#items_payload').val(JSON.stringify(lines));
+
+                // Populate hidden inputs with calculated totals
+                var subtotal = parseFloat($('.subTotal').text().replace(/[^0-9.-]+/g, '')) || 0;
+                var taxableSubtotal = parseFloat($('.taxableSubtotal').text().replace(/[^0-9.-]+/g, '')) || 0;
+                var totalDiscount = parseFloat($('.totalDiscount').text().replace(/[^0-9.-]+/g, '')) || 0;
+                var totalTax = parseFloat($('.totalTax').text().replace(/[^0-9.-]+/g, '')) || 0;
+                var salesTaxAmount = parseFloat($('#sales_tax_amount').text().replace(/[^0-9.-]+/g, '')) || 0;
+                var totalAmount = parseFloat($('.totalAmount').text().replace(/[^0-9.-]+/g, '')) || 0;
+
+                $('#hidden_subtotal').val(subtotal);
+                $('#hidden_taxable_subtotal').val(taxableSubtotal);
+                $('#hidden_total_discount').val(totalDiscount);
+                $('#hidden_total_tax').val(totalTax);
+                $('#hidden_sales_tax_amount').val(salesTaxAmount);
+                $('#hidden_total_amount').val(totalAmount);
+
                 // let form submit normally
             });
         });
 
-                $(document).on('change', '#customer', function() {
+        $(document).on('change', '#customer', function() {
             var id = $(this).val();
             var url = $(this).data('url');
-            
+
             // Clear fields and hide bill-to section if no customer selected
             if (!id || id === '' || id === '__add__') {
                 $('#customer_email').val('');
@@ -1345,7 +1358,7 @@
                 $('#bill-to-section').hide();
                 return;
             }
-            
+
             $.ajax({
                 url: url,
                 type: 'POST',
@@ -1365,7 +1378,7 @@
                             if (data.customer.email) {
                                 $('#customer_email').val(data.customer.email);
                             }
-                            
+
                             // Populate billing address
                             var billingAddress = '';
                             if (data.customer.billing_name) {
@@ -1387,9 +1400,9 @@
                             if (data.customer.billing_country) {
                                 billingAddress += data.customer.billing_country;
                             }
-                            
+
                             $('textarea[name="bill_to"]').val(billingAddress.trim());
-                            
+
                             // Show the bill-to section
                             $('#bill-to-section').show();
                         }
@@ -1407,106 +1420,6 @@
         });
     </script>
     <script>
-        // Open full-screen modal on load
-        $(document).ready(function() {
-            var invoiceModal = new bootstrap.Modal(document.getElementById('invoice-modal'), {
-                backdrop: 'static',
-                keyboard: false
-            });
-            invoiceModal.show();
-
-            // initial totals
-            recalcTotals();
-        });
-
-        // Renumber the "#" column for product rows only
-        function renumberInvoiceLines() {
-            var line = 1;
-            $('#sortable-table').children('tbody').each(function() {
-                var $ln = $(this).find('.product-row .line-number');
-                if ($ln.length) {
-                    $ln.text(line++);
-                }
-            });
-        }
-
-        // ----- Helpers used everywhere -----
-
-        // get numeric amount from a product row (from the Amount input)
-        function getRowAmount($row) {
-            var v = parseFloat($row.find('.amount').val());
-            return isNaN(v) ? 0 : v;
-        }
-
-        // compute a single row's amount from qty * rate
-        function recalcRowAmount($row) {
-            var qty = parseFloat($row.find('.quantity').val()) || 0;
-            var rate = parseFloat($row.find('.price').val()) || 0;
-            // (add line-discount here in the future if needed)
-            var amount = qty * rate;
-            $row.find('.amount').val(amount.toFixed(2));
-        }
-
-        // recompute all in-table "Subtotal" lines
-        // each subtotal = sum of product rows since the previous subtotal
-        function recalcSubtotals() {
-            var runningSegment = 0;
-
-            $('#sortable-table').children('tbody').each(function() {
-                var $body = $(this);
-                var $productRow = $body.find('tr.product-row');
-                var $subtotalRow = $body.find('tr.subtotal-row');
-
-                if ($productRow.length) {
-                    runningSegment += getRowAmount($productRow);
-                } else if ($subtotalRow.length) {
-                    $subtotalRow.find('.subtotal-amount')
-                        .text(runningSegment.toFixed(2));
-                    runningSegment = 0;
-                }
-            });
-        }
-
-        // main totals in bottom-right box
-        function recalcTotals() {
-            var grandSubtotal = 0; // all product rows
-            var taxableSubtotal = 0; // only rows with tax checkbox checked
-            var totalDiscount = 0; // (line discounts not used right now)
-
-            $('#sortable-table').children('tbody').each(function() {
-                var $body = $(this);
-                var $productRow = $body.find('tr.product-row');
-
-                if (!$productRow.length) return;
-
-                var amount = getRowAmount($productRow);
-                grandSubtotal += amount;
-
-                var isTaxable = $productRow
-                    .find('.form-check-input[type="checkbox"]')
-                    .prop('checked');
-
-                if (isTaxable) {
-                    taxableSubtotal += amount;
-                }
-            });
-
-            // sales tax rate select (value should be numeric percentage)
-            var taxRate = parseFloat($('select[name="sales_tax_rate"]').val()) || 0;
-            var totalTax = taxableSubtotal * taxRate / 100;
-
-            // update bottom totals
-            $('.subTotal').text(grandSubtotal.toFixed(2));
-            $('.taxableSubtotal').text(taxableSubtotal.toFixed(2));
-            $('.totalDiscount').text(totalDiscount.toFixed(2));
-            $('.totalTax').text(totalTax.toFixed(2));
-            $('.totalAmount').text((grandSubtotal - totalDiscount + totalTax).toFixed(2));
-
-            // update all subtotal rows inside table
-            recalcSubtotals();
-        }
-    </script>
-    <script>
         var selector = "body";
 
         if ($(selector + " .repeater").length) {
@@ -1518,7 +1431,7 @@
                 axis: 'y',
                 stop: function() {
                     // after drag finishes
-                    renumberInvoiceLines();
+                    renumberProposalLines();
                     recalcTotals();
                 }
             });
@@ -1574,7 +1487,7 @@
                     window.qbInsertAfterTbody = null;
                     window.qbDuplicateSource = null;
 
-                    renumberInvoiceLines();
+                    renumberProposalLines();
                     recalcTotals();
                 },
 
@@ -1582,7 +1495,7 @@
                     if (confirm('Are you sure you want to delete this element?')) {
                         $(this).slideUp(deleteElement);
                         $(this).remove();
-                        renumberInvoiceLines();
+                        renumberProposalLines();
                         recalcTotals();
                     }
                 },
@@ -1590,7 +1503,7 @@
                 ready: function(setIndexes) {
                     $dragAndDrop.on('sortstop', function() {
                         setIndexes();
-                        renumberInvoiceLines();
+                        renumberProposalLines();
                         recalcTotals();
                     });
                 },
@@ -1604,12 +1517,6 @@
             }
         }
     </script>
-    {{-- <script>
-        $(document).on('click', '[data-repeater-delete]', function() {
-            $(".price").change();
-            $(".discount").change();
-        });
-    </script> --}}
     <script>
         $(document).ready(function() {
             var currentSelect = null;
@@ -1807,207 +1714,23 @@
             });
         });
     </script>
-    <script>
-        $(function() {
-            var subtotalLabel = @json(__('Subtotal'));
-            var textPlaceholder = @json(__('Enter your text or leave blank as a divider'));
-
-            // 6-dot icon
-            var dotsSvg =
-                '<svg width="20" height="20" viewBox="0 0 24 24" fill="#c4c4c4">' +
-                '<circle cx="8" cy="6" r="2"></circle>' +
-                '<circle cx="16" cy="6" r="2"></circle>' +
-                '<circle cx="8" cy="12" r="2"></circle>' +
-                '<circle cx="16" cy="12" r="2"></circle>' +
-                '<circle cx="8" cy="18" r="2"></circle>' +
-                '<circle cx="16" cy="18" r="2"></circle>' +
-                '</svg>';
-
-            // delete cell for subtotal/text rows (no data-repeater-delete)
-            var deleteCellHtml =
-                '<td class="text-center">' +
-                '<span class="delete-icon qb-special-delete" title="Delete line">' +
-                '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">' +
-                '<path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path>' +
-                '</svg>' +
-                '</span>' +
-                '</td>';
-
-            function createSubtotalBody(initialAmount) {
-                var amountText = typeof initialAmount === 'string' ? initialAmount : '0.00';
-                var $tbody = $('<tbody class="special-body subtotal-body"></tbody>');
-                var $row = $('<tr class="subtotal-row"></tr>');
-
-                $row.append(
-                    '<td><div style="opacity:0;">' + dotsSvg + '</div></td>' +
-                    '<td><div class="drag-handle sort-handler">' + dotsSvg + '</div></td>' +
-                    '<td></td>' +
-                    '<td></td>' +
-                    '<td></td>' +
-                    '<td></td>' +
-                    '<td style="font-size:13px;font-weight:600;color:#393a3d;">' +
-                    subtotalLabel +
-                    '</td>' +
-                    '<td class="input-right subtotal-amount" ' +
-                    'style="font-size:13px;color:#393a3d;">' + amountText + '</td>' +
-                    '<td></td>' +
-                    deleteCellHtml
-                );
-
-                $tbody.append($row);
-                return $tbody;
-            }
-
-            function createTextBody() {
-                var $tbody = $('<tbody class="special-body text-body"></tbody>');
-                var $row = $('<tr class="text-row"></tr>');
-
-                $row.append(
-                    '<td><div style="opacity:0;">' + dotsSvg + '</div></td>' +
-                    '<td><div class="drag-handle sort-handler">' + dotsSvg + '</div></td>' +
-                    '<td></td>' +
-                    '<td colspan="5">' +
-                    '<input type="text" name="extra_lines_text[]" ' +
-                    'class="form-control" ' +
-                    'placeholder="' + textPlaceholder + '" ' +
-                    'style="border:none;background:transparent;padding-left:0;box-shadow:none;" />' +
-                    '</td>' +
-                    '<td></td>' +
-                    deleteCellHtml
-                );
-
-                $tbody.append($row);
-                return $tbody;
-            }
-
-            // ----- bottom split button ("Add product or service" ▼) -----
-
-            $('#new-line-menu-toggle').on('click', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                $('#new-line-menu').toggleClass('show');
-            });
-
-            $(document).on('click', function(e) {
-                if (!$(e.target).closest('#new-line-menu, #new-line-menu-toggle, .qb-row-menu-wrapper')
-                    .length) {
-                    $('#new-line-menu').removeClass('show');
-                    $('.qb-row-menu').removeClass('show');
-                }
-            });
-
-            $('#add-subtotal-line').on('click', function() {
-                $('#new-line-menu').removeClass('show');
-                var $tbody = createSubtotalBody('0.00');
-                $('#sortable-table').append($tbody);
-                recalcTotals();
-            });
-
-            $('#add-text-line').on('click', function() {
-                $('#new-line-menu').removeClass('show');
-                var $tbody = createTextBody();
-                $('#sortable-table').append($tbody);
-                renumberInvoiceLines();
-                recalcTotals();
-            });
-
-            // Clear all lines
-            $('#clear-lines').on('click', function() {
-                var $tbodies = $('#sortable-table').find('tbody');
-                var $first = $tbodies.first();
-
-                if (!confirm('{{ __('Clear all lines?') }}')) return;
-
-                $tbodies.slice(1).remove();
-
-                $first.find('select.item').val('');
-                $first.find('textarea.pro_description').val('');
-                $first.find('input.quantity').val('');
-                $first.find('input.price').val('');
-                $first.find('input.amount').val('0.00');
-                $first.find('.form-check-input[type="checkbox"]').prop('checked', false);
-
-                renumberInvoiceLines();
-                recalcTotals();
-            });
-
-            // delete subtotal/text rows (those without data-repeater-delete)
-            $(document).on('click', '.delete-icon', function(e) {
-                if (!$(this).is('[data-repeater-delete]')) {
-                    e.preventDefault();
-                    $(this).closest('tbody').remove();
-                    renumberInvoiceLines();
-                    recalcTotals();
-                }
-            });
-
-            // ----- per-row + menu (circle button on each row) -----
-
-            $(document).on('click', '.qb-row-menu-btn', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                var $menu = $(this).siblings('.qb-row-menu');
-                $('.qb-row-menu').not($menu).removeClass('show');
-                $menu.toggleClass('show');
-            });
-
-            // Add product or service under this row
-            $(document).on('click', '.row-add-product', function(e) {
-                e.preventDefault();
-                var $tbody = $(this).closest('tbody');
-
-                window.qbInsertAfterTbody = $tbody;
-                window.qbDuplicateSource = null;
-
-                $('.qb-row-menu').removeClass('show');
-                $('[data-repeater-create]').trigger('click');
-            });
-
-            // Add subtotal under this row (subtotal for rows up to that point)
-            $(document).on('click', '.row-add-subtotal', function(e) {
-                e.preventDefault();
-                var $tbody = $(this).closest('tbody');
-                var $newBody = createSubtotalBody('0.00');
-                $newBody.insertAfter($tbody);
-                $('.qb-row-menu').removeClass('show');
-                recalcTotals();
-            });
-
-            // Duplicate this line
-            $(document).on('click', '.row-duplicate-line', function(e) {
-                e.preventDefault();
-                var $tbody = $(this).closest('tbody');
-
-                window.qbInsertAfterTbody = $tbody;
-                window.qbDuplicateSource = $tbody;
-
-                $('.qb-row-menu').removeClass('show');
-                $('[data-repeater-create]').trigger('click');
-            });
-
-            // Add text line under this row
-            $(document).on('click', '.row-add-text', function(e) {
-                e.preventDefault();
-                var $tbody = $(this).closest('tbody');
-                var $newBody = createTextBody();
-
-                $newBody.insertAfter($tbody);
-                $('.qb-row-menu').removeClass('show');
-                renumberInvoiceLines();
-                recalcTotals();
-            });
-        });
-    </script>
     @include('proposal._form-scripts')
 @endpush
 
 @section('content')
     <!-- Full Screen Modal -->
-    <div class="modal fade" id="invoice-modal" tabindex="-1" aria-hidden="true" style="padding: 0 !important;">
+    <div class="modal fade" id="proposal-modal" tabindex="-1" aria-hidden="true" style="padding: 0 !important;">
         <div class="modal-dialog modal-fullscreen">
             <div class="modal-content" style="background: #f4f5f8;">
-                {{ Form::model($proposal, ['route' => ['proposal.update', $proposal->id], 'method' => 'PUT', 'class' => 'w-100', 'id' => 'invoice-form']) }}
+                {{ Form::model($proposal, ['route' => ['proposal.update', $proposal->id], 'method' => 'PUT', 'class' => 'w-100', 'id' => 'proposal-form', 'files' => true]) }}
                 <input type="hidden" name="_token" id="token" value="{{ csrf_token() }}">
+                <input type="hidden" name="items_payload" id="items_payload" value="">
+                <input type="hidden" name="subtotal" id="hidden_subtotal" value="">
+                <input type="hidden" name="taxable_subtotal" id="hidden_taxable_subtotal" value="">
+                <input type="hidden" name="total_discount" id="hidden_total_discount" value="">
+                <input type="hidden" name="total_tax" id="hidden_total_tax" value="">
+                <input type="hidden" name="sales_tax_amount" id="hidden_sales_tax_amount" value="">
+                <input type="hidden" name="total_amount" id="hidden_total_amount" value="">
 
                 <div class="invoice-container">
                     {{-- Fixed Top Header (QuickBooks Style) --}}
@@ -2044,7 +1767,7 @@
 
                                 {{-- Close button (existing) --}}
                                 <button type="button" class="close-button"
-                                    onclick="location.href = '{{ route('invoice.index') }}';" aria-label="Close">
+                                    onclick="location.href = '{{ route('proposal.index') }}';" aria-label="Close">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                         color="currentColor" width="24px" height="24px" focusable="false"
                                         aria-hidden="true">
@@ -2161,31 +1884,32 @@
                             <div class="customer-section row">
                                 {{-- Column 1: Customer & Bill To --}}
                                 <div class="col-md-3">
-                                {{-- Customer Dropdown --}}
-                                <div class="customer-row">
-                                    <div class="customer-field">
-                                        {{ Form::select('customer_id', $customers, null, [
-                                            'class' => 'form-select',
-                                            'id' => 'customer',
-                                            'data-url' => route('invoice.customer'),
-                                            'required' => 'required',
-                                            'data-create-url' => route('customer.create'),
-                                            'data-create-title' => __('Create New Customer'),
-                                            'style' => 'width: 60%;',
+                                    {{-- Customer Dropdown --}}
+                                    <div class="customer-row">
+                                        <div class="customer-field">
+                                            {{ Form::select('customer_id', $customers, $customerId ?? '', [
+                                                'class' => 'form-select',
+                                                'id' => 'customer',
+                                                'data-url' => route('invoice.customer'),
+                                                'required' => 'required',
+                                                'data-create-url' => route('customer.create'),
+                                                'data-create-title' => __('Create New Customer'),
+                                                'style' => 'width: 60%;',
+                                            ]) }}
+                                        </div>
+                                    </div>
+
+                                    {{-- Bill To (Hidden by default, shown on customer selection) --}}
+                                    <div class="field-group" id="bill-to-section"
+                                        style="margin-top: 16px; display: none;">
+                                        <label class="form-label"
+                                            style="font-size: 13px; margin-bottom: 4px;">{{ __('Bill to') }}</label>
+                                        {{ Form::textarea('bill_to', '', [
+                                            'class' => 'form-control',
+                                            'rows' => 4,
+                                            'style' => 'font-size: 13px;',
                                         ]) }}
                                     </div>
-                                </div>
-
-                                {{-- Bill To (Hidden by default, shown on customer selection) --}}
-                                <div class="field-group" id="bill-to-section" style="margin-top: 16px; display: none;">
-                                    <label class="form-label"
-                                        style="font-size: 13px; margin-bottom: 4px;">{{ __('Bill to') }}</label>
-                                    {{ Form::textarea('bill_to', null, [
-                                        'class' => 'form-control',
-                                        'rows' => 4,
-                                        'style' => 'font-size: 13px;',
-                                    ]) }}
-                                </div>
                                 </div>
 
                                 {{-- Column 2: Terms & Dates --}}
@@ -2198,7 +1922,7 @@
                                                 {{ __('Estimate date') }}
                                             </label>
                                             <div style="flex: 1;">
-                                                {{ Form::date('issue_date', null, [
+                                                {{ Form::date('issue_date', date('Y-m-d'), [
                                                     'class' => 'form-control',
                                                     'required' => 'required',
                                                     'style' => 'font-size: 13px; width: 100%;',
@@ -2236,7 +1960,7 @@
                                                 {{ __('Accepted by') }}
                                             </label>
                                             <div style="flex: 1;">
-                                                {{ Form::text('accepted_by', null, [
+                                                {{ Form::text('accepted_by', '', [
                                                     'class' => 'form-control',
                                                     'style' => 'font-size: 13px; width: 100%;',
                                                 ]) }}
@@ -2418,11 +2142,11 @@
                                                 ]) }}
                                             </td>
                                             <!-- <td>
-                                                                                                    {{ Form::text('discount', '', [
-                                                                                                        'class' => 'form-control input-right discount',
-                                                                                                        'placeholder' => '0.00',
-                                                                                                    ]) }}
-                                                                                                </td> -->
+                                                                                                        {{ Form::text('discount', '', [
+                                                                                                            'class' => 'form-control input-right discount',
+                                                                                                            'placeholder' => '0.00',
+                                                                                                        ]) }}
+                                                                                                    </td> -->
                                             <td>
                                                 <input type="text" name="amount"
                                                     class="form-control input-right amount" value="0.00">
@@ -2710,7 +2434,7 @@
 
                                         <div class="info-field">
                                             <label>{{ __('Note to customer') }}</label>
-                                            {{ Form::textarea('note', null, [
+                                            {{ Form::textarea('note', '', [
                                                 'class' => 'form-control',
                                                 'rows' => 3,
                                                 'placeholder' => 'Thank you for your business.',
@@ -2719,7 +2443,7 @@
 
                                         <div class="info-field">
                                             <label>{{ __('Memo on statement (hidden)') }}</label>
-                                            {{ Form::textarea('memo', null, [
+                                            {{ Form::textarea('memo', '', [
                                                 'class' => 'form-control',
                                                 'rows' => 3,
                                                 'placeholder' => 'This memo will not show up on your invoice, but will appear on the statement.',
@@ -3048,7 +2772,7 @@
 
                                         {{-- Invoice total --}}
                                         <div class="total-row final">
-                                            <span>{{ __('Invoice total') }}</span>
+                                            <span>{{ __('Estimate total') }}</span>
                                             <span class="totalAmount">0.00</span>
                                         </div>
 
@@ -3066,9 +2790,9 @@
                     <div class="invoice-footer">
                         <div class="footer-left">
                             <!-- <button type="button" class="btn btn-secondary"
-                                                            onclick="location.href = '{{ route('invoice.index') }}';">
-                                                        {{ __('Cancel') }}
-                                                    </button> -->
+                                                                onclick="location.href = '{{ route('proposal.index') }}';">
+                                                            {{ __('Cancel') }}
+                                                        </button> -->
                         </div>
 
                         <div class="footer-center">
@@ -3122,119 +2846,13 @@
             </div>
         </div>
     </div>
+    
 @endsection
 
-
 @push('script-page')
-    <script src="{{ asset('assets/js/jquery.repeater.min.js') }}"></script>
     <script>
-        $(document).ready(function () {
-            var proposalData = {!! json_encode($proposalData) !!};
-
-            // Initialize Repeater
-            var $repeater = $('.repeater').repeater({
-                initEmpty: true,
-                show: function () {
-                    $(this).slideDown();
-                    // Re-bind events or plugins if needed
-                },
-                hide: function (deleteElement) {
-                    if (confirm('Are you sure you want to delete this element?')) {
-                        $(this).slideUp(deleteElement);
-                        setTimeout(function(){ recalcTotals(); }, 500);
-                    }
-                },
-                ready: function (setIndexes) {
-                    
-                },
-                isFirstItemUndeletable: true
-            });
-
-            // Populate Items
-            if (proposalData.items && proposalData.items.length > 0) {
-                $repeater.setList(proposalData.items);
-                
-                // After setting list, we might need to trigger some updates or handle specific fields
-                // For example, setting the correct index for select2 if used, or triggering change events
-                setTimeout(function() {
-                    recalcTotals();
-                }, 500);
-            }
-
-            // Populate Totals
-            $('.subTotal').text(parseFloat(proposalData.subtotal).toFixed(2));
-            $('.totalDiscount').text(parseFloat(proposalData.total_discount).toFixed(2));
-            $('.taxableSubtotal').text(parseFloat(proposalData.taxable_subtotal).toFixed(2));
-            $('.totalTax').text(parseFloat(proposalData.total_tax).toFixed(2));
-            $('.totalAmount').text(parseFloat(proposalData.total_amount).toFixed(2));
-
-            // Populate Attachments
-            if (proposalData.attachments && proposalData.attachments.length > 0) {
-                var $list = $('#attachments-list');
-                var $header = $('#attachments-header');
-                
-                proposalData.attachments.forEach(function(file) {
-                    var rowId = 'att_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-                    var sizeKB = Math.round(file.size / 1024);
-                    
-                    var $row = $(
-                        '<div class="attachment-row" data-row-id="' + rowId + '">' +
-                        '<div class="form-check">' +
-                        '<input class="form-check-input attachment-email" ' +
-                        'type="checkbox" ' +
-                        'name="existing_attachments_email[' + file.name + ']" checked>' +
-                        '<label class="form-check-label">{{ __("Attach to email") }}</label>' +
-                        '</div>' +
-                        '<span class="attachment-name">' + file.name + '</span>' +
-                        '<span class="attachment-size">' + sizeKB + ' KB</span>' +
-                        '<button type="button" class="attachment-remove" ' +
-                        'data-row-id="' + rowId + '">&times;</button>' +
-                        // Add hidden input to keep track of existing files
-                        '<input type="hidden" name="existing_attachments[]" value="' + file.name + '">' +
-                        '</div>'
-                    );
-                    
-                    $list.append($row);
-                });
-                
-                $header.removeClass('d-none');
-            }
-
-            // Logo
-            if (proposalData.logo) {
-                $('.logo-preview').attr('src', proposalData.logo).removeClass('d-none');
-                $('.add-logo-text').addClass('d-none');
-                $('.logo-size-limit').addClass('d-none');
-                $('.logo-remove-btn').removeClass('d-none');
-            }
+        $(function() {
+            $('#proposal-modal').modal('show');
         });
-
-        // Recalculate Totals Function (if not already defined globally)
-        function recalcTotals() {
-            var subTotal = 0;
-            var totalTax = 0;
-            var totalDiscount = 0;
-
-            $('[data-repeater-item]').each(function () {
-                var qty = parseFloat($(this).find('.quantity').val()) || 0;
-                var price = parseFloat($(this).find('.price').val()) || 0;
-                var amount = qty * price;
-                
-                $(this).find('.amount').val(amount.toFixed(2));
-                
-                subTotal += amount;
-                
-                // Tax calculation (simplified)
-                if ($(this).find('.form-check-input').is(':checked')) {
-                    // Assuming tax rate is fetched or stored. For now using placeholder logic if needed.
-                    // If tax logic is complex, it should be mirrored from create.blade.php
-                }
-            });
-
-            $('.subTotal').text(subTotal.toFixed(2));
-            
-            // ... complete recalculation logic as needed ...
-            // For now, we trust the backend values initially, and frontend updates on change
-        }
     </script>
 @endpush

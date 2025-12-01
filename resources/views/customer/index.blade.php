@@ -103,6 +103,13 @@
             <span>{{ __('New Customer') }}</span>
             <i class="ti ti-plus"></i>
         </a>
+        {{-- right modal Global --}}
+        <a href="#" data-size="lg" data-url="{{ route('customer.create') }}" data-ajax-popup="true"
+            data-bs-toggle="tooltip" title="{{ __('Create') }}" data-title="{{ __('Create Customer') }}"
+            class="btn btn-sm btn-primary">
+            <span>{{ __('New Customer Modal Global') }}</span>
+            <i class="ti ti-plus"></i>
+        </a>
     </div>
 @endsection
 

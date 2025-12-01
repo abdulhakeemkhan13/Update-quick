@@ -314,6 +314,7 @@ Route::get('invoice/recurring-invoices', [InvoiceController::class, 'recurringIn
 Route::get('/vender/bill/{id}/', [BillController::class, 'invoiceLink'])->name('bill.link.copy');
 Route::get('/vendor/purchase/{id}/', [PurchaseController::class, 'purchaseLink'])->name('purchase.link.copy');
 Route::get('/customer/proposal/{id}/', [ProposalController::class, 'invoiceLink'])->name('proposal.link.copy');
+Route::get('/invoice/customer-proposals', [ProposalController::class, 'customerProposalsForInvoice'])->name('invoice.customer.proposals');
 Route::get('proposal/pdf/{id}', [ProposalController::class, 'proposal'])->name('proposal.pdf')->middleware(['XSS', 'revalidate']);
 
 //================================= Invoice Payment Gateways  ====================================//
@@ -687,6 +688,14 @@ Route::group(['middleware' => ['verified']], function () {
             Route::get('invoice/items', [InvoiceController::class, 'items'])->name('invoice.items');
             Route::resource('invoice', InvoiceController::class);
             Route::get('invoice/create/{cid}', [InvoiceController::class, 'create'])->name('invoice.create');
+            //sales reciepts index
+            Route::get('sales-reciepts/index', [InvoiceController::class, 'salesRecieptsIndex'])->name('sales.reciepts.index');
+            //sales reciepts create
+            Route::get('sales-reciepts/create/{cid}', [InvoiceController::class, 'salesRecieptsCreate'])->name('sales.reciepts.create');
+            // invoice tabs
+            Route::get('/invoice/{invoice}/tab', [InvoiceController::class, 'tab'])->name('invoice.tab');
+            // New recieve payments
+            Route::get('invoice/{id}/recievepayment', [InvoiceController::class, 'newQboRecievePayment'])->name('invoice.newQboRecievePayment');
         }
     );
 
@@ -711,6 +720,11 @@ Route::group(['middleware' => ['verified']], function () {
             Route::get('invoice/{id}/credit-note/edit/{cn_id}', [CreditNoteController::class, 'edit'])->name('invoice.edit.credit.note');
             Route::post('invoice/{id}/credit-note/edit/{cn_id}', [CreditNoteController::class, 'update'])->name('invoice.edit.credit.note');
             Route::delete('invoice/{id}/credit-note/delete/{cn_id}', [CreditNoteController::class, 'destroy'])->name('invoice.delete.credit.note');
+            // new credit memos
+            //sales reciepts index
+            Route::get('creditmemo', [CreditNoteController::class, 'creditmemoIndex'])->name('creditmemo.index');
+            //sales reciepts create
+            Route::get('creditmemo/create/{cid}', [CreditNoteController::class, 'creditmemoCreate'])->name('creditmemo.create');
         }
     );
 
@@ -878,6 +892,10 @@ Route::group(['middleware' => ['verified']], function () {
             Route::get('proposal/{id}/resent', [ProposalController::class, 'resent'])->name('proposal.resent');
             Route::resource('proposal', ProposalController::class);
             Route::get('proposal/create/{cid}', [ProposalController::class, 'create'])->name('proposal.create');
+            Route::get(
+    '/invoice/customer-proposals',
+    [ProposalController::class, 'customerProposalsForInvoice']
+)->name('invoice.customer.proposals');
         }
     );
 

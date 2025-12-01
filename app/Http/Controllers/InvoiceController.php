@@ -35,7 +35,6 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use Carbon\Carbon;
-
 use Auth;
 
 class InvoiceController extends Controller
@@ -2589,6 +2588,68 @@ class InvoiceController extends Controller
         }
     }
 
+    public function newQboRecievePayment($invoice_id)
+{
+    if (\Auth::user()->can('create payment invoice')) {
+        // Fetch invoice with customer relationship
+        $invoice = Invoice::with('customer')->where('id', $invoice_id)->first();
+        
+        if (!$invoice) {
+            return redirect()->back()->with('error', __('Invoice not found.'));
+        }
+        
+        $user = \Auth::user();
+        $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
+        $column = ($user->type == 'company') ? 'created_by' : 'owned_by';
+        
+        // Get all customers for the dropdown
+        $customers = Customer::where($column, '=', $ownerId)->get()->pluck('name', 'id');
+        $customerId = $invoice->customer_id;
+        
+        // Payment methods
+        $paymentMethods = [
+            '' => 'Select method',
+            'Cash' => 'Cash',
+            'Check' => 'Check',
+            'Credit Card' => 'Credit Card',
+            'Debit Card' => 'Debit Card',
+            'Bank Transfer' => 'Bank Transfer',
+            'PayPal' => 'PayPal',
+            'Other' => 'Other',
+        ];
+
+        // Get bank accounts for "Deposit to"
+        $accounts = BankAccount::select('*', \DB::raw("CONCAT(bank_name,' ',holder_name) AS name"))
+            ->where('created_by', \Auth::user()->creatorId())
+            ->get()
+            ->pluck('name', 'id');
+        
+        // Get ALL open invoices for this customer (Sent, Unpaid, Partially Paid)
+        // We include the current invoice_id in this list so it appears in the table
+        $openInvoices = Invoice::where('customer_id', $invoice->customer_id)
+            ->whereIn('status', [1, 2, 3]) 
+            ->orderBy('due_date', 'asc')
+            ->get();
+
+        // Calculate total open balance for the customer
+        $totalOpenBalance = $openInvoices->sum(function($inv) {
+            return $inv->getDue();
+        });
+
+        return view('invoice.newQboRecievePayment', compact(
+            'invoice', 
+            'customers', 
+            'customerId',
+            'paymentMethods', 
+            'accounts', 
+            'totalOpenBalance',
+            'openInvoices'
+        ));
+    } else {
+        return redirect()->back()->with('error', __('Permission denied.'));
+    }
+} 
+
     public function createPayment(Request $request, $invoice_id)
     {
         $invoice = Invoice::find($invoice_id);
@@ -3210,5 +3271,44 @@ class InvoiceController extends Controller
         ob_end_clean();
 
         return $data;
+    }
+
+        public function salesRecieptsIndex()
+    {
+        return view('sales-reciepts.index');
+    }
+
+    public function salesRecieptsCreate($customerId)
+    {
+        if (\Auth::user()->can('create invoice')) {
+            $user = \Auth::user();
+            $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
+            $column = ($user->type == 'company') ? 'created_by' : 'owned_by';
+
+            $customFields = CustomField::where('created_by', '=', \Auth::user()->creatorId())
+                ->where('module', '=', 'invoice')->get();
+            $invoice_number = \Auth::user()->invoiceNumberFormat($this->invoiceNumber());
+
+            $customers = Customer::where($column, $ownerId)->get()->pluck('name', 'id')->toArray();
+            $customers = ['__add__' => '➕ Add new customer'] + ['' => 'Select Customer'] + $customers;
+
+            $category = ProductServiceCategory::where($column, $ownerId)
+                ->where('type', 'income')->get()->pluck('name', 'id')->toArray();
+            $category = ['__add__' => '➕ Add new category'] + ['' => 'Select Category'] + $category;
+
+            $product_services = ProductService::where($column, $ownerId)->get()->pluck('name', 'id');
+            $product_services->prepend('--', '');
+
+            return view('sales-reciepts.sales-reciepts', compact(
+                'customers',
+                'invoice_number',
+                'product_services',
+                'category',
+                'customFields',
+                'customerId'
+            ));
+        } else {
+            return response()->json(['error' => __('Permission denied.')], 401);
+        }
     }
 }

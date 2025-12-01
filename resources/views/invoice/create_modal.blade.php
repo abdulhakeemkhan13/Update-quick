@@ -501,9 +501,6 @@
         /* Bottom Section */
         .bottom-section {
             padding: 24px 0px;
-            display: grid;
-            grid-template-columns: 1fr 400px;
-            gap: 350px;
             background: #ffffff;
         }
 
@@ -1290,7 +1287,7 @@
                     var customerId = $('#customer_id').val();
                     if (!customerId || customerId === '' || customerId === '__add__') {
                         e.preventDefault();
-                        alert('{{ __("Please select a customer before submitting the invoice.") }}');
+                        alert('{{ __('Please select a customer before submitting the invoice.') }}');
                         $('#customer_id').focus();
                         return false;
                     }
@@ -1311,7 +1308,7 @@
 
                     if (!hasProduct) {
                         e.preventDefault();
-                        alert('{{ __("Please add at least one product/service to the invoice.") }}');
+                        alert('{{ __('Please add at least one product/service to the invoice.') }}');
                         return false;
                     }
 
@@ -1373,7 +1370,7 @@
 
             $(document).on('change', '#customer_id', function() {
                 var id = $(this).val();
-                var url = $(this).data('url');                
+                var url = $(this).data('url');
                 // Clear fields and hide bill-to section if no customer selected
                 if (!id || id === '' || id === '__add__') {
                     $('#customer_email').val('');
@@ -1614,6 +1611,10 @@
                         if (window.qbInsertAfterTbody && $(window.qbInsertAfterTbody).length) {
                             $newBody.insertAfter($(window.qbInsertAfterTbody));
                         }
+                        // position new row BEFORE a specific tbody (e.g. before Subtotal/Text lines)
+                        if (window.qbInsertBeforeTbody && $(window.qbInsertBeforeTbody).length) {
+                            $newBody.insertBefore($(window.qbInsertBeforeTbody));
+                        }
 
                         // duplicate content from source row if requested
                         if (window.qbDuplicateSource && $(window.qbDuplicateSource).length) {
@@ -1635,9 +1636,35 @@
                             $newRow.find('.form-check-input[type="checkbox"]').prop('checked', taxChecked);
                         }
 
+                        // 🔹 NEW: fill new product row from a suggestion (Estimate)
+                        if (window.qbProposalToAdd) {
+                            var p = window.qbProposalToAdd;
+                            var $row = $newBody.find('.product-row');
+                            var qty = p.quantity != null ? p.quantity : 1;
+                            var priceN = Number(p.price || 0);
+
+                            // Set product dropdown without triggering AJAX overwrite
+                            if (p.product_id) {
+                                $row.find('select.item')
+                                    .data('ignore-ajax', true)
+                                    .val(p.product_id)
+                                    .trigger('change')
+                                    .data('ignore-ajax', false);
+                            }
+
+                            $row.find('.pro_description').val(p.description || '');
+                            $row.find('.quantity').val(qty);
+                            $row.find('.price').val(priceN.toFixed(2));
+
+                            // compute amount from qty * rate
+                            recalcRowAmount($row);
+                        }
+
                         // reset helpers
                         window.qbInsertAfterTbody = null;
+                        window.qbInsertBeforeTbody = null;
                         window.qbDuplicateSource = null;
+                        window.qbProposalToAdd = null;
 
                         renumberInvoiceLines();
                         recalcTotals();
@@ -1670,9 +1697,12 @@
             }
         </script>
 
+
         <script>
             // when a product/service is selected
             $(document).on('change', '.item', function() {
+                // If we are programmatically setting the value (e.g. from suggestion), skip AJAX
+                if ($(this).data('ignore-ajax')) return;
 
                 var iteams_id = $(this).val();
                 var url = $(this).data('url');
@@ -2134,8 +2164,13 @@
                     '</span>' +
                     '</td>';
 
+                // ---------- helpers to build special bodies ----------
+
                 function createSubtotalBody(initialAmount) {
-                    var amountText = typeof initialAmount === 'string' ? initialAmount : '0.00';
+                    var amountText = (typeof initialAmount === 'string') ?
+                        initialAmount :
+                        '0.00';
+
                     var $tbody = $('<tbody class="special-body subtotal-body"></tbody>');
                     var $row = $('<tr class="subtotal-row"></tr>');
 
@@ -2159,7 +2194,8 @@
                     return $tbody;
                 }
 
-                function createTextBody() {
+                // allow optional initial text
+                function createTextBody(initialText) {
                     var $tbody = $('<tbody class="special-body text-body"></tbody>');
                     var $row = $('<tr class="text-row"></tr>');
 
@@ -2178,8 +2214,18 @@
                     );
 
                     $tbody.append($row);
+
+                    // if text passed from proposal, set it
+                    if (initialText) {
+                        $tbody.find('input[type="text"]').val(initialText);
+                    }
+
                     return $tbody;
                 }
+
+                // expose for other scripts (suggestion panel)
+                window.qbCreateSubtotalBody = createSubtotalBody;
+                window.qbCreateTextBody = createTextBody;
 
                 // ----- bottom split button ("Add product or service" ▼) -----
 
@@ -2264,7 +2310,7 @@
                     $('[data-repeater-create]').trigger('click');
                 });
 
-                // Add subtotal under this row (subtotal for rows up to that point)
+                // Add subtotal under this row
                 $(document).on('click', '.row-add-subtotal', function(e) {
                     e.preventDefault();
                     var $tbody = $(this).closest('tbody');
@@ -2407,522 +2453,537 @@
                         </div>
                     </div>
 
-                    <div class="invoice-card">
-                        {{-- Header --}}
-                        <div class="invoice-header">
-                            <div class="header-left">
-                                <h1 class="invoice-title">{{ __('INVOICE') }}</h1>
+                    <div class="row">
+                        {{-- MAIN INVOICE COLUMN (full width by default) --}}
+                        <div class="col-md-12" id="invoice-main-col">
+                            <div class="invoice-card">
+                                {{-- Header --}}
+                                <div class="invoice-header">
+                                    <div class="header-left">
+                                        <h1 class="invoice-title">{{ __('INVOICE') }}</h1>
 
-                                <div class="company-info">
-                                    <!-- <div class="company-name">{{ Auth::user()->name ?? 'CREATIVE IT PARK' }}</div> -->
-                                    <div class="company-details-row">
-                                        <!-- Placeholder address as it's not in Auth::user() usually, or use dynamic if available -->
-                                        <div class="company-name">{{ Auth::user()->name ?? 'CREATIVE IT PARK' }}</div>
-                                        <div class="company-email">{{ Auth::user()->email }}</div>
-                                    </div>
-                                    <div class="company-details-row">
-                                        <!-- Placeholder address as it's not in Auth::user() usually, or use dynamic if available -->
-                                        <div class="company-address">
-                                            {{ Auth::user()->address ?? '123 Sierra Way, San Pablo CA 87999' }}</div>
+                                        <div class="company-info">
+                                            <!-- <div class="company-name">{{ Auth::user()->name ?? 'CREATIVE IT PARK' }}</div> -->
+                                            <div class="company-details-row">
+                                                <!-- Placeholder address as it's not in Auth::user() usually, or use dynamic if available -->
+                                                <div class="company-name">{{ Auth::user()->name ?? 'CREATIVE IT PARK' }}
+                                                </div>
+                                                <div class="company-email">{{ Auth::user()->email }}</div>
+                                            </div>
+                                            <div class="company-details-row">
+                                                <!-- Placeholder address as it's not in Auth::user() usually, or use dynamic if available -->
+                                                <div class="company-address">
+                                                    {{ Auth::user()->address ?? '123 Sierra Way, San Pablo CA 87999' }}
+                                                </div>
 
-                                    </div>
-                                    <a href="#" class="edit-company-link">{{ __('Edit company') }}</a>
-                                </div>
-                            </div>
-
-                            <div class="header-right">
-                                <div class="balance-due">
-                                    <span class="balance-label">{{ __('Balance due (hidden):') }}</span>
-                                    <span class="balance-amount">$0.00</span>
-                                </div>
-
-                                <div class="logo-wrapper">
-                                    {{-- hidden file input --}}
-                                    <input type="file" id="company_logo_input" name="company_logo" accept="image/*"
-                                        class="logo-input">
-
-                                    {{-- clickable box (QBO-style dashed border) --}}
-                                    <button type="button" class="logo-section" id="company_logo_button">
-                                        {{-- logo preview (hidden until a file is chosen) --}}
-                                        <img src="" alt="Logo" class="logo-preview d-none">
-
-                                        {{-- default text --}}
-                                        <span class="add-logo-text">{{ __('Add logo') }}</span>
-                                        <span class="logo-size-limit">{{ __('Max size: 1 MB') }}</span>
-                                    </button>
-
-                                    {{-- small delete icon like QBO --}}
-                                    <button type="button" class="logo-remove-btn d-none" id="company_logo_remove"
-                                        aria-label="Delete logo">
-                                        &times;
-                                    </button>
-                                </div>
-
-                            </div>
-                        </div>
-
-                        {{-- Customer & Transaction Details Section --}}
-                        <div class="customer-section row">
-                            {{-- Column 1: Customer & Bill To --}}
-                            <div class="col-md-4">
-                                {{-- Customer Dropdown --}}
-                                <div class="customer-row">
-                                    <div class="customer-field">
-                                        {{ Form::select('customer_id', $customers, $customerId ?? '', [
-                                            'class' => 'form-select',
-                                            'id' => 'customer_id',
-                                            'data-url' => route('invoice.customer'),
-                                            'required' => 'required',
-                                            'data-create-url' => route('customer.create'),
-                                            'data-create-title' => __('Create New Customer'),
-                                            'style' => 'width: 60%;',
-                                        ]) }}
-                                    </div>
-                                </div>
-
-                                {{-- Bill To (Hidden by default, shown on customer selection) --}}
-                                <div class="field-group" id="bill-to-section" style="margin-top: 16px; display: none;">
-                                    <label class="form-label"
-                                        style="font-size: 13px; margin-bottom: 4px;">{{ __('Bill to') }}</label>
-                                    {{ Form::textarea('bill_to', '', [
-                                        'class' => 'form-control',
-                                        'rows' => 4,
-                                        'style' => 'font-size: 13px;',
-                                    ]) }}
-                                </div>
-
-                                {{-- Ship To (Hidden by default, shown on customer selection) --}}
-                                <div class="field-group" id="ship-to-section" style="margin-top: 16px; display: none;">
-                                    <label class="form-label"
-                                        style="font-size: 13px; margin-bottom: 4px;">{{ __('Ship to') }}</label>
-                                    {{ Form::textarea('ship_to', '', [
-                                        'class' => 'form-control',
-                                        'rows' => 4,
-                                        'style' => 'font-size: 13px;',
-                                    ]) }}
-                                </div>
-                                <a href="#" class="link-button d-none" id="edit-cutomer-link"
-                                    style="font-size: 13px; margin-top: 4px;">{{ __('Edit Customer') }}</a>
-                            </div>
-
-                            {{-- Column 2: Terms & Dates --}}
-                            <div class="col-md-4">
-                                {{-- Terms (inline label) --}}
-                                <div class="field-group" style="margin-bottom: 12px;">
-                                    <div style="display: flex; align-items: center; gap: 12px;">
-                                        <label class="form-label"
-                                            style="font-size: 13px; margin: 0; min-width: 80px;">{{ __('Terms') }}</label>
-                                        <div style="flex: 1;">
-                                            {{ Form::select(
-                                                'terms',
-                                                [
-                                                    'Net 30' => 'Net 30',
-                                                    'Net 15' => 'Net 15',
-                                                    'Due on receipt' => 'Due on receipt',
-                                                ],
-                                                'Net 30',
-                                                ['class' => 'form-select', 'style' => 'font-size: 13px; width: 50%;'],
-                                            ) }}
+                                            </div>
+                                            <a href="#" class="edit-company-link">{{ __('Edit company') }}</a>
                                         </div>
                                     </div>
+
+                                    <div class="header-right">
+                                        <div class="balance-due">
+                                            <span class="balance-label">{{ __('Balance due (hidden):') }}</span>
+                                            <span class="balance-amount">$0.00</span>
+                                        </div>
+
+                                        <div class="logo-wrapper">
+                                            {{-- hidden file input --}}
+                                            <input type="file" id="company_logo_input" name="company_logo"
+                                                accept="image/*" class="logo-input">
+
+                                            {{-- clickable box (QBO-style dashed border) --}}
+                                            <button type="button" class="logo-section" id="company_logo_button">
+                                                {{-- logo preview (hidden until a file is chosen) --}}
+                                                <img src="" alt="Logo" class="logo-preview d-none">
+
+                                                {{-- default text --}}
+                                                <span class="add-logo-text">{{ __('Add logo') }}</span>
+                                                <span class="logo-size-limit">{{ __('Max size: 1 MB') }}</span>
+                                            </button>
+
+                                            {{-- small delete icon like QBO --}}
+                                            <button type="button" class="logo-remove-btn d-none"
+                                                id="company_logo_remove" aria-label="Delete logo">
+                                                &times;
+                                            </button>
+                                        </div>
+
+                                    </div>
                                 </div>
 
-                                {{-- Invoice Date (inline label) --}}
-                                <div class="field-group" style="margin-bottom: 12px;">
-                                    <div style="display: flex; align-items: center; gap: 12px;">
-                                        <label class="form-label"
-                                            style="font-size: 13px; margin: 0; min-width: 80px;">{{ __('Invoice date') }}</label>
-                                        <div style="flex: 1;">
-                                            {{ Form::date('issue_date', date('Y-m-d'), [
+                                {{-- Customer & Transaction Details Section --}}
+                                <div class="customer-section row">
+                                    {{-- Column 1: Customer & Bill To --}}
+                                    <div class="col-md-4">
+                                        {{-- Customer Dropdown --}}
+                                        <div class="customer-row">
+                                            <div class="customer-field">
+                                                {{ Form::select('customer_id', $customers, $customerId ?? '', [
+                                                    'class' => 'form-select',
+                                                    'id' => 'customer_id',
+                                                    'data-url' => route('invoice.customer'),
+                                                    'data-proposals-url' => route('invoice.customer.proposals'),
+                                                    'data-proposal-edit-url' => route('proposal.edit', '__id__'), // ⬅️ added pattern
+                                                    'required' => 'required',
+                                                    'data-create-url' => route('customer.create'),
+                                                    'data-create-title' => __('Create New Customer'),
+                                                    'style' => 'width: 60%;',
+                                                ]) }}
+                                            </div>
+                                        </div>
+
+
+                                        {{-- Bill To (Hidden by default, shown on customer selection) --}}
+                                        <div class="field-group" id="bill-to-section"
+                                            style="margin-top: 16px; display: none;">
+                                            <label class="form-label"
+                                                style="font-size: 13px; margin-bottom: 4px;">{{ __('Bill to') }}</label>
+                                            {{ Form::textarea('bill_to', '', [
                                                 'class' => 'form-control',
-                                                'required' => 'required',
-                                                'style' => 'font-size: 13px; width: 50%;',
+                                                'rows' => 4,
+                                                'style' => 'font-size: 13px;',
                                             ]) }}
                                         </div>
-                                    </div>
-                                </div>
 
-                                {{-- Due Date (inline label) --}}
-                                <div class="field-group" style="margin-bottom: 12px;">
-                                    <div style="display: flex; align-items: center; gap: 12px;">
-                                        <label class="form-label"
-                                            style="font-size: 13px; margin: 0; min-width: 80px;">{{ __('Due date') }}</label>
-                                        <div style="flex: 1;">
-                                            {{ Form::date('due_date', date('Y-m-d', strtotime('+30 days')), [
+                                        {{-- Ship To (Hidden by default, shown on customer selection) --}}
+                                        <div class="field-group" id="ship-to-section"
+                                            style="margin-top: 16px; display: none;">
+                                            <label class="form-label"
+                                                style="font-size: 13px; margin-bottom: 4px;">{{ __('Ship to') }}</label>
+                                            {{ Form::textarea('ship_to', '', [
                                                 'class' => 'form-control',
-                                                'required' => 'required',
-                                                'style' => 'font-size: 13px; width: 50%;',
+                                                'rows' => 4,
+                                                'style' => 'font-size: 13px;',
                                             ]) }}
+                                        </div>
+                                        <a href="#" class="link-button d-none" id="edit-cutomer-link"
+                                            style="font-size: 13px; margin-top: 4px;">{{ __('Edit Customer') }}</a>
+                                    </div>
+
+                                    {{-- Column 2: Terms & Dates --}}
+                                    <div class="col-md-4">
+                                        {{-- Terms (inline label) --}}
+                                        <div class="field-group" style="margin-bottom: 12px;">
+                                            <div style="display: flex; align-items: center; gap: 12px;">
+                                                <label class="form-label"
+                                                    style="font-size: 13px; margin: 0; min-width: 80px;">{{ __('Terms') }}</label>
+                                                <div style="flex: 1;">
+                                                    {{ Form::select(
+                                                        'terms',
+                                                        [
+                                                            'Net 30' => 'Net 30',
+                                                            'Net 15' => 'Net 15',
+                                                            'Due on receipt' => 'Due on receipt',
+                                                        ],
+                                                        'Net 30',
+                                                        ['class' => 'form-select', 'style' => 'font-size: 13px; width: 50%;'],
+                                                    ) }}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {{-- Invoice Date (inline label) --}}
+                                        <div class="field-group" style="margin-bottom: 12px;">
+                                            <div style="display: flex; align-items: center; gap: 12px;">
+                                                <label class="form-label"
+                                                    style="font-size: 13px; margin: 0; min-width: 80px;">{{ __('Invoice date') }}</label>
+                                                <div style="flex: 1;">
+                                                    {{ Form::date('issue_date', date('Y-m-d'), [
+                                                        'class' => 'form-control',
+                                                        'required' => 'required',
+                                                        'style' => 'font-size: 13px; width: 50%;',
+                                                    ]) }}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {{-- Due Date (inline label) --}}
+                                        <div class="field-group" style="margin-bottom: 12px;">
+                                            <div style="display: flex; align-items: center; gap: 12px;">
+                                                <label class="form-label"
+                                                    style="font-size: 13px; margin: 0; min-width: 80px;">{{ __('Due date') }}</label>
+                                                <div style="flex: 1;">
+                                                    {{ Form::date('due_date', date('Y-m-d', strtotime('+30 days')), [
+                                                        'class' => 'form-control',
+                                                        'required' => 'required',
+                                                        'style' => 'font-size: 13px; width: 50%;',
+                                                    ]) }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {{-- Column 3: Empty --}}
+                                    <div class="col-md-4">
+                                        {{-- Intentionally left empty to match QuickBooks layout --}}
+                                    </div>
+
+                                    {{-- Hidden fields for compatibility --}}
+                                    {{ Form::hidden('customer_email', '', ['id' => 'customer_email']) }}
+                                    {{ Form::hidden('category_id', 1) }}
+                                    {{ Form::hidden('ref_number', '') }}
+                                    {{ Form::hidden('recurring', 'no', ['id' => 'recurring']) }}
+                                </div>
+
+                                {{-- Recurring Options (Hidden by default) --}}
+                                <div class="transaction-details d-none" id="recurring-options"
+                                    style="background: #eef2f5; border-top: 0;">
+                                    <div class="detail-group">
+                                        <div class="field-group">
+                                            <label class="form-label">{{ __('When to charge') }}</label>
+                                            {{ Form::select('recurring_when', ['future' => 'Select future date', 'now' => 'Immediately'], null, ['class' => 'form-select', 'id' => 'recurring_when']) }}
+                                        </div>
+                                        <div class="field-group">
+                                            <label class="form-label">{{ __('Start date') }}</label>
+                                            {{ Form::date('recurring_start_date', null, ['class' => 'form-control', 'id' => 'recurring_start_date']) }}
+                                            <small class="text-danger d-none"
+                                                id="start-required">{{ __('Required') }}</small>
+                                        </div>
+                                    </div>
+                                    <div class="detail-group">
+                                        <div class="field-group">
+                                            <label class="form-label">{{ __('Repeat') }}</label>
+                                            {{ Form::select('recurring_repeat', ['monthly' => 'Monthly', 'quarterly' => 'Quarterly', '6months' => '6 Months', 'yearly' => 'Yearly'], 'monthly', ['class' => 'form-select', 'id' => 'recurring_repeat']) }}
+                                            <small id="next-date-preview" class="text-muted d-block mt-1"></small>
+                                        </div>
+                                        <div class="field-group">
+                                            <label class="form-label">{{ __('Invoice Count') }}</label>
+                                            {{ Form::number('recurring_every_n', 1, ['class' => 'form-control', 'id' => 'recurring_every_n', 'min' => 1]) }}
                                         </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            {{-- Column 3: Empty --}}
-                            <div class="col-md-4">
-                                {{-- Intentionally left empty to match QuickBooks layout --}}
-                            </div>
+                                {{-- Product Section --}}
+                                <div class="product-section repeater">
+                                    <h2 class="section-heading">{{ __('Product or service') }}</h2>
 
-                            {{-- Hidden fields for compatibility --}}
-                            {{ Form::hidden('customer_email', '', ['id' => 'customer_email']) }}
-                            {{ Form::hidden('category_id', 1) }}
-                            {{ Form::hidden('ref_number', '') }}
-                            {{ Form::hidden('recurring', 'no', ['id' => 'recurring']) }}
-                        </div>
+                                    <table class="product-table" id="sortable-table" data-repeater-list="items">
+                                        <thead>
+                                            <tr>
+                                                <th></th>
+                                                <th></th>
+                                                <th>#</th>
+                                                <th>{{ __('Product/service') }}</th>
+                                                <th>{{ __('Description') }}</th>
+                                                <th>{{ __('Qty') }}</th>
+                                                <th>{{ __('Rate') }}</th>
+                                                {{-- Discount column removed --}}
+                                                <th>{{ __('Amount') }}</th>
+                                                <th>{{ __('Tax') }}</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
 
-                        {{-- Recurring Options (Hidden by default) --}}
-                        <div class="transaction-details d-none" id="recurring-options"
-                            style="background: #eef2f5; border-top: 0;">
-                            <div class="detail-group">
-                                <div class="field-group">
-                                    <label class="form-label">{{ __('When to charge') }}</label>
-                                    {{ Form::select('recurring_when', ['future' => 'Select future date', 'now' => 'Immediately'], null, ['class' => 'form-select', 'id' => 'recurring_when']) }}
-                                </div>
-                                <div class="field-group">
-                                    <label class="form-label">{{ __('Start date') }}</label>
-                                    {{ Form::date('recurring_start_date', null, ['class' => 'form-control', 'id' => 'recurring_start_date']) }}
-                                    <small class="text-danger d-none" id="start-required">{{ __('Required') }}</small>
-                                </div>
-                            </div>
-                            <div class="detail-group">
-                                <div class="field-group">
-                                    <label class="form-label">{{ __('Repeat') }}</label>
-                                    {{ Form::select('recurring_repeat', ['monthly' => 'Monthly', 'quarterly' => 'Quarterly', '6months' => '6 Months', 'yearly' => 'Yearly'], 'monthly', ['class' => 'form-select', 'id' => 'recurring_repeat']) }}
-                                    <small id="next-date-preview" class="text-muted d-block mt-1"></small>
-                                </div>
-                                <div class="field-group">
-                                    <label class="form-label">{{ __('Invoice Count') }}</label>
-                                    {{ Form::number('recurring_every_n', 1, ['class' => 'form-control', 'id' => 'recurring_every_n', 'min' => 1]) }}
-                                </div>
-                            </div>
-                        </div>
-
-                        {{-- Product Section --}}
-                        <div class="product-section repeater">
-                            <h2 class="section-heading">{{ __('Product or service') }}</h2>
-
-                            <table class="product-table" id="sortable-table" data-repeater-list="items">
-                                <thead>
-                                    <tr>
-                                        <th></th>
-                                        <th></th>
-                                        <th>#</th>
-                                        <th>{{ __('Product/service') }}</th>
-                                        <th>{{ __('Description') }}</th>
-                                        <th>{{ __('Qty') }}</th>
-                                        <th>{{ __('Rate') }}</th>
-                                        {{-- Discount column removed --}}
-                                        <th>{{ __('Amount') }}</th>
-                                        <th>{{ __('Tax') }}</th>
-                                        <th></th>
-                                    </tr>
-                                </thead>
-
-                                <tbody data-repeater-item>
-                                    <tr class="product-row">
-                                        <td>
-                                            <div class="qb-row-menu-wrapper">
-                                                {{-- blue circular + button --}}
-                                                <button type="button" class="qb-row-menu-btn" aria-haspopup="true"
-                                                    aria-expanded="false">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none"
-                                                        viewBox="0 0 24 24" color="currentColor" width="20px"
-                                                        height="20px" focusable="false" aria-hidden="true"
-                                                        tabindex="0" class="">
-                                                        <path fill="currentColor"
-                                                            d="M15 11h-2V9a1 1 0 0 0-2 0v2H9a1 1 0 0 0 0 2h2v2a1 1 0 0 0 2 0v-2h2a1 1 0 0 0 0-2">
-                                                        </path>
-                                                        <path fill="currentColor"
-                                                            d="M12.015 2H12a10 10 0 1 0-.015 20H12a10 10 0 0 0 .015-20M12 20h-.012A8 8 0 0 1 12 4h.012A8 8 0 0 1 12 20">
-                                                        </path>
-                                                    </svg>
-                                                </button>
-
-                                                {{-- per-row dropdown menu --}}
-                                                <ul class="dropdown-menu qb-row-menu">
-                                                    <li>
-                                                        <button type="button" class="dropdown-item row-add-product">
-                                                            {{ __('Add product or service') }}
+                                        <tbody data-repeater-item>
+                                            <tr class="product-row">
+                                                <td>
+                                                    <div class="qb-row-menu-wrapper">
+                                                        {{-- blue circular + button --}}
+                                                        <button type="button" class="qb-row-menu-btn"
+                                                            aria-haspopup="true" aria-expanded="false">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                                                                viewBox="0 0 24 24" color="currentColor" width="20px"
+                                                                height="20px" focusable="false" aria-hidden="true"
+                                                                tabindex="0" class="">
+                                                                <path fill="currentColor"
+                                                                    d="M15 11h-2V9a1 1 0 0 0-2 0v2H9a1 1 0 0 0 0 2h2v2a1 1 0 0 0 2 0v-2h2a1 1 0 0 0 0-2">
+                                                                </path>
+                                                                <path fill="currentColor"
+                                                                    d="M12.015 2H12a10 10 0 1 0-.015 20H12a10 10 0 0 0 .015-20M12 20h-.012A8 8 0 0 1 12 4h.012A8 8 0 0 1 12 20">
+                                                                </path>
+                                                            </svg>
                                                         </button>
-                                                    </li>
-                                                    <li>
-                                                        <button type="button" class="dropdown-item row-add-subtotal">
-                                                            {{ __('Add subtotal') }}
-                                                        </button>
-                                                    </li>
-                                                    <li>
-                                                        <button type="button" class="dropdown-item row-duplicate-line">
-                                                            {{ __('Duplicate') }}
-                                                        </button>
-                                                    </li>
-                                                    <li>
-                                                        <button type="button" class="dropdown-item row-add-text">
-                                                            {{ __('Add text') }}
-                                                        </button>
-                                                    </li>
-                                                </ul>
-                                            </div>
-                                        </td>
-                                        <style>
-                                            /* Per-row + menu (QBO style) */
-                                            .qb-row-menu-wrapper {
-                                                position: relative;
-                                                display: inline-block;
-                                            }
 
-                                            .qb-row-menu-btn {
-                                                width: 24px;
-                                                height: 24px;
-                                                border-radius: 999px;
-                                                border: 1px solid #d0d0d5;
-                                                background: #ffffff;
-                                                padding: 0;
-                                                display: inline-flex;
-                                                align-items: center;
-                                                justify-content: center;
-                                                cursor: pointer;
-                                                color: #0077c5;
-                                                transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-                                            }
+                                                        {{-- per-row dropdown menu --}}
+                                                        <ul class="dropdown-menu qb-row-menu">
+                                                            <li>
+                                                                <button type="button"
+                                                                    class="dropdown-item row-add-product">
+                                                                    {{ __('Add product or service') }}
+                                                                </button>
+                                                            </li>
+                                                            <li>
+                                                                <button type="button"
+                                                                    class="dropdown-item row-add-subtotal">
+                                                                    {{ __('Add subtotal') }}
+                                                                </button>
+                                                            </li>
+                                                            <li>
+                                                                <button type="button"
+                                                                    class="dropdown-item row-duplicate-line">
+                                                                    {{ __('Duplicate') }}
+                                                                </button>
+                                                            </li>
+                                                            <li>
+                                                                <button type="button" class="dropdown-item row-add-text">
+                                                                    {{ __('Add text') }}
+                                                                </button>
+                                                            </li>
+                                                        </ul>
+                                                    </div>
+                                                </td>
+                                                <style>
+                                                    /* Per-row + menu (QBO style) */
+                                                    .qb-row-menu-wrapper {
+                                                        position: relative;
+                                                        display: inline-block;
+                                                    }
 
-                                            .qb-row-menu-btn:hover {
-                                                background: #0077c5;
-                                                border-color: #0077c5;
-                                                color: #ffffff;
-                                            }
+                                                    .qb-row-menu-btn {
+                                                        width: 24px;
+                                                        height: 24px;
+                                                        border-radius: 999px;
+                                                        border: 1px solid #d0d0d5;
+                                                        background: #ffffff;
+                                                        padding: 0;
+                                                        display: inline-flex;
+                                                        align-items: center;
+                                                        justify-content: center;
+                                                        cursor: pointer;
+                                                        color: #0077c5;
+                                                        transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+                                                    }
 
-                                            .qb-row-menu {
-                                                min-width: 190px;
-                                            }
-                                        </style>
-                                        <td>
-                                            <div class="drag-handle sort-handler">
-                                                <svg width="20" height="20" viewBox="0 0 24 24"
-                                                    fill="currentColor">
-                                                    <circle cx="8" cy="6" r="2"></circle>
-                                                    <circle cx="16" cy="6" r="2"></circle>
-                                                    <circle cx="8" cy="12" r="2"></circle>
-                                                    <circle cx="16" cy="12" r="2"></circle>
-                                                    <circle cx="8" cy="18" r="2"></circle>
-                                                    <circle cx="16" cy="18" r="2"></circle>
-                                                </svg>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <span class="line-number">1</span>
-                                        </td>
-                                        <td>
-                                            {{ Form::select('item', $product_services, '', [
-                                                'class' => 'form-select item',
-                                                'placeholder' => 'Select a product/service',
-                                                'data-url' => route('invoice.product'),
-                                                'required' => 'required',
-                                            ]) }}
-                                        </td>
-                                        <td>
-                                            {{ Form::textarea('description', null, [
-                                                'class' => 'form-control pro_description',
-                                                'rows' => '1',
-                                                'placeholder' => '',
-                                            ]) }}
-                                        </td>
-                                        <td>
-                                            {{ Form::text('quantity', '', [
-                                                'class' => 'form-control input-right quantity',
-                                                'placeholder' => '',
-                                                'required' => 'required',
-                                            ]) }}
-                                        </td>
-                                        <td>
-                                            {{ Form::text('price', '', [
-                                                'class' => 'form-control input-right price',
-                                                'placeholder' => '',
-                                                'required' => 'required',
-                                            ]) }}
-                                        </td>
-                                        <!-- <td>
-                                                                                                            {{ Form::text('discount', '', [
-                                                                                                                'class' => 'form-control input-right discount',
-                                                                                                                'placeholder' => '0.00',
-                                                                                                            ]) }}
-                                                                                                        </td> -->
-                                        <td>
-                                            <input type="text" name="amount" class="form-control input-right amount"
-                                                value="0.00">
-                                        </td>
+                                                    .qb-row-menu-btn:hover {
+                                                        background: #0077c5;
+                                                        border-color: #0077c5;
+                                                        color: #ffffff;
+                                                    }
 
-                                        <td>
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" value="">
-                                            </div>
-                                            {{ Form::hidden('tax', '', ['class' => 'form-control tax']) }}
-                                            {{ Form::hidden('itemTaxPrice', '', ['class' => 'form-control itemTaxPrice']) }}
-                                            {{ Form::hidden('itemTaxRate', '', ['class' => 'form-control itemTaxRate']) }}
-                                        </td>
-                                        <style>
-                                            /* Product Table */
-                                            .product-section {
-                                                padding: 24px 32px;
-                                                background: #fff;
-                                            }
+                                                    .qb-row-menu {
+                                                        min-width: 190px;
+                                                    }
+                                                </style>
+                                                <td>
+                                                    <div class="drag-handle sort-handler">
+                                                        <svg width="20" height="20" viewBox="0 0 24 24"
+                                                            fill="currentColor">
+                                                            <circle cx="8" cy="6" r="2"></circle>
+                                                            <circle cx="16" cy="6" r="2"></circle>
+                                                            <circle cx="8" cy="12" r="2"></circle>
+                                                            <circle cx="16" cy="12" r="2"></circle>
+                                                            <circle cx="8" cy="18" r="2"></circle>
+                                                            <circle cx="16" cy="18" r="2"></circle>
+                                                        </svg>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <span class="line-number">1</span>
+                                                </td>
+                                                <td>
+                                                    {{ Form::select('item', $product_services, '', [
+                                                        'class' => 'form-select item',
+                                                        'placeholder' => 'Select a product/service',
+                                                        'data-url' => route('invoice.product'),
+                                                        'required' => 'required',
+                                                    ]) }}
+                                                </td>
+                                                <td>
+                                                    {{ Form::textarea('description', null, [
+                                                        'class' => 'form-control pro_description',
+                                                        'rows' => '1',
+                                                        'placeholder' => '',
+                                                    ]) }}
+                                                </td>
+                                                <td>
+                                                    {{ Form::text('quantity', '', [
+                                                        'class' => 'form-control input-right quantity',
+                                                        'placeholder' => '',
+                                                        'required' => 'required',
+                                                    ]) }}
+                                                </td>
+                                                <td>
+                                                    {{ Form::text('price', '', [
+                                                        'class' => 'form-control input-right price',
+                                                        'placeholder' => '',
+                                                        'required' => 'required',
+                                                    ]) }}
+                                                </td>
+                                                <!-- <td>
+                                                                                                                                            {{ Form::text('discount', '', [
+                                                                                                                                                'class' => 'form-control input-right discount',
+                                                                                                                                                'placeholder' => '0.00',
+                                                                                                                                            ]) }}
+                                                                                                                                        </td> -->
+                                                <td>
+                                                    <input type="text" name="amount"
+                                                        class="form-control input-right amount" value="0.00">
+                                                </td>
 
-                                            .section-heading {
-                                                font-size: 15px;
-                                                font-weight: 600;
-                                                color: #393a3d;
-                                                margin-bottom: 16px;
-                                            }
+                                                <td>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" value="">
+                                                    </div>
+                                                    {{ Form::hidden('tax', '', ['class' => 'form-control tax']) }}
+                                                    {{ Form::hidden('itemTaxPrice', '', ['class' => 'form-control itemTaxPrice']) }}
+                                                    {{ Form::hidden('itemTaxRate', '', ['class' => 'form-control itemTaxRate']) }}
+                                                </td>
+                                                <style>
+                                                    /* Product Table */
+                                                    .product-section {
+                                                        padding: 24px 32px;
+                                                        background: #fff;
+                                                    }
 
-                                            /* === SINGLE SOURCE OF TRUTH FOR TABLE LAYOUT === */
-                                            .invoice-card .product-table {
-                                                width: 100%;
-                                                border-collapse: separate;
-                                                border-spacing: 0;
-                                                border-top: 1px solid #e4e4e7;
-                                                border-bottom: 1px solid #e4e4e7;
-                                            }
+                                                    .section-heading {
+                                                        font-size: 15px;
+                                                        font-weight: 600;
+                                                        color: #393a3d;
+                                                        margin-bottom: 16px;
+                                                    }
 
-                                            /* headers */
-                                            .invoice-card .product-table thead th {
-                                                padding: 12px 8px;
-                                                font-size: 13px;
-                                                font-weight: 600;
-                                                color: #393a3d;
-                                                background: #fff;
-                                                border-bottom: 1px solid #e4e4e7;
-                                                /* solid horizontal */
-                                            }
+                                                    /* === SINGLE SOURCE OF TRUTH FOR TABLE LAYOUT === */
+                                                    .invoice-card .product-table {
+                                                        width: 100%;
+                                                        border-collapse: separate;
+                                                        border-spacing: 0;
+                                                        border-top: 1px solid #e4e4e7;
+                                                        border-bottom: 1px solid #e4e4e7;
+                                                    }
 
-                                            /* body cells */
-                                            .invoice-card .product-table tbody td {
-                                                padding: 12px 8px;
-                                                font-size: 13px;
-                                                vertical-align: middle;
-                                                border-bottom: 1px solid #e4e4e7;
-                                                /* solid horizontal */
-                                            }
+                                                    /* headers */
+                                                    .invoice-card .product-table thead th {
+                                                        padding: 12px 8px;
+                                                        font-size: 13px;
+                                                        font-weight: 600;
+                                                        color: #393a3d;
+                                                        background: #fff;
+                                                        border-bottom: 1px solid #e4e4e7;
+                                                        /* solid horizontal */
+                                                    }
 
-                                            /* dotted vertical lines between columns */
-                                            .invoice-card .product-table thead th+th,
-                                            .invoice-card .product-table tbody td+td {
-                                                border-left: 1px dotted #e4e4e7;
-                                            }
+                                                    /* body cells */
+                                                    .invoice-card .product-table tbody td {
+                                                        padding: 12px 8px;
+                                                        font-size: 13px;
+                                                        vertical-align: middle;
+                                                        border-bottom: 1px solid #e4e4e7;
+                                                        /* solid horizontal */
+                                                    }
 
-                                            /* no outer left border on first column */
-                                            .invoice-card .product-table thead th:first-child,
-                                            .invoice-card .product-table tbody td:first-child {
-                                                border-left: none;
-                                            }
+                                                    /* dotted vertical lines between columns */
+                                                    .invoice-card .product-table thead th+th,
+                                                    .invoice-card .product-table tbody td+td {
+                                                        border-left: 1px dotted #e4e4e7;
+                                                    }
 
-                                            /* === COLUMN WIDTHS & ALIGNMENT === */
+                                                    /* no outer left border on first column */
+                                                    .invoice-card .product-table thead th:first-child,
+                                                    .invoice-card .product-table tbody td:first-child {
+                                                        border-left: none;
+                                                    }
 
-                                            /* col 1: + menu */
-                                            .invoice-card .product-table thead th:nth-child(1),
-                                            .invoice-card .product-table tbody td:nth-child(1) {
-                                                width: 26px;
-                                                text-align: center;
-                                            }
+                                                    /* === COLUMN WIDTHS & ALIGNMENT === */
 
-                                            /* col 2: drag handle */
-                                            .invoice-card .product-table thead th:nth-child(2),
-                                            .invoice-card .product-table tbody td:nth-child(2) {
-                                                width: 26px;
-                                                text-align: center;
-                                            }
+                                                    /* col 1: + menu */
+                                                    .invoice-card .product-table thead th:nth-child(1),
+                                                    .invoice-card .product-table tbody td:nth-child(1) {
+                                                        width: 26px;
+                                                        text-align: center;
+                                                    }
 
-                                            /* col 3: line # */
-                                            .invoice-card .product-table thead th:nth-child(3),
-                                            .invoice-card .product-table tbody td:nth-child(3) {
-                                                width: 30px;
-                                                text-align: center;
-                                            }
+                                                    /* col 2: drag handle */
+                                                    .invoice-card .product-table thead th:nth-child(2),
+                                                    .invoice-card .product-table tbody td:nth-child(2) {
+                                                        width: 26px;
+                                                        text-align: center;
+                                                    }
 
-                                            /* col 5: Description (wide) */
-                                            .invoice-card .product-table thead th:nth-child(5),
-                                            .invoice-card .product-table tbody td:nth-child(5) {
-                                                width: 30%;
-                                            }
+                                                    /* col 3: line # */
+                                                    .invoice-card .product-table thead th:nth-child(3),
+                                                    .invoice-card .product-table tbody td:nth-child(3) {
+                                                        width: 30px;
+                                                        text-align: center;
+                                                    }
 
-                                            /* cols 6–8: Qty, Rate, Amount – same width, right aligned */
-                                            .invoice-card .product-table thead th:nth-child(6),
-                                            .invoice-card .product-table thead th:nth-child(7),
-                                            .invoice-card .product-table thead th:nth-child(8),
-                                            .invoice-card .product-table tbody td:nth-child(6),
-                                            .invoice-card .product-table tbody td:nth-child(7),
-                                            .invoice-card .product-table tbody td:nth-child(8) {
-                                                width: 7%;
-                                                max-width: 80px;
-                                                text-align: right;
-                                            }
+                                                    /* col 5: Description (wide) */
+                                                    .invoice-card .product-table thead th:nth-child(5),
+                                                    .invoice-card .product-table tbody td:nth-child(5) {
+                                                        width: 30%;
+                                                    }
 
-                                            .invoice-card .product-table tbody td:nth-child(6) .form-control,
-                                            .invoice-card .product-table tbody td:nth-child(7) .form-control,
-                                            .invoice-card .product-table tbody td:nth-child(8) .form-control {
-                                                width: 100%;
-                                                text-align: right;
-                                            }
+                                                    /* cols 6–8: Qty, Rate, Amount – same width, right aligned */
+                                                    .invoice-card .product-table thead th:nth-child(6),
+                                                    .invoice-card .product-table thead th:nth-child(7),
+                                                    .invoice-card .product-table thead th:nth-child(8),
+                                                    .invoice-card .product-table tbody td:nth-child(6),
+                                                    .invoice-card .product-table tbody td:nth-child(7),
+                                                    .invoice-card .product-table tbody td:nth-child(8) {
+                                                        width: 7%;
+                                                        max-width: 80px;
+                                                        text-align: right;
+                                                    }
 
-                                            /* col 9: Tax – small, centered */
-                                            .invoice-card .product-table thead th:nth-child(9),
-                                            .invoice-card .product-table tbody td:nth-child(9) {
-                                                width: 40px;
-                                                text-align: center;
-                                            }
+                                                    .invoice-card .product-table tbody td:nth-child(6) .form-control,
+                                                    .invoice-card .product-table tbody td:nth-child(7) .form-control,
+                                                    .invoice-card .product-table tbody td:nth-child(8) .form-control {
+                                                        width: 100%;
+                                                        text-align: left;
+                                                    }
 
-                                            /* col 10: Delete – small, centered */
-                                            .invoice-card .product-table thead th:nth-child(10),
-                                            .invoice-card .product-table tbody td:nth-child(10) {
-                                                width: 40px;
-                                                text-align: center;
-                                                padding-left: 0;
-                                                padding-right: 0;
-                                            }
+                                                    /* col 9: Tax – small, centered */
+                                                    .invoice-card .product-table thead th:nth-child(9),
+                                                    .invoice-card .product-table tbody td:nth-child(9) {
+                                                        width: 40px;
+                                                        text-align: center;
+                                                    }
 
-                                            /* center the trash icon itself */
-                                            .invoice-card .product-table tbody td:nth-child(10) .delete-icon {
-                                                display: inline-block;
-                                            }
+                                                    /* col 10: Delete – small, centered */
+                                                    .invoice-card .product-table thead th:nth-child(10),
+                                                    .invoice-card .product-table tbody td:nth-child(10) {
+                                                        width: 40px;
+                                                        text-align: center;
+                                                        padding-left: 0;
+                                                        padding-right: 0;
+                                                    }
 
-                                            /* drag-handle look */
-                                            .drag-handle {
-                                                cursor: grab;
-                                                color: #c4c4c4;
-                                                display: flex;
-                                                align-items: center;
-                                                justify-content: center;
-                                            }
+                                                    /* center the trash icon itself */
+                                                    .invoice-card .product-table tbody td:nth-child(10) .delete-icon {
+                                                        display: inline-block;
+                                                    }
 
-                                            .drag-handle:active {
-                                                cursor: grabbing;
-                                            }
-                                        </style>
-                                        <td class="delete-cell">
-                                            <span class="delete-icon" title="Delete line" data-repeater-delete="">
-                                                <svg width="20" height="20" viewBox="0 0 24 24"
-                                                    fill="currentColor">
-                                                    <path
-                                                        d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z">
-                                                    </path>
-                                                </svg>
-                                            </span>
-                                        </td>
+                                                    /* drag-handle look */
+                                                    .drag-handle {
+                                                        cursor: grab;
+                                                        color: #c4c4c4;
+                                                        display: flex;
+                                                        align-items: center;
+                                                        justify-content: center;
+                                                    }
+
+                                                    .drag-handle:active {
+                                                        cursor: grabbing;
+                                                    }
+                                                </style>
+                                                <td class="delete-cell">
+                                                    <span class="delete-icon" title="Delete line"
+                                                        data-repeater-delete="">
+                                                        <svg width="20" height="20" viewBox="0 0 24 24"
+                                                            fill="currentColor">
+                                                            <path
+                                                                d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z">
+                                                            </path>
+                                                        </svg>
+                                                    </span>
+                                                </td>
 
 
 
 
-                                    </tr>
-                                </tbody>
-                            </table>
+                                            </tr>
+                                        </tbody>
+                                    </table>
 
-                            <div class="table-actions"
-                                style="display:flex;align-items:center;gap:8px;margin:12px 0 24px;">
+                                    <div class="table-actions"
+                                        style="display:flex;align-items:center;gap:8px;margin:12px 0 24px;">
 
-                                {{-- QBO-like split button --}}
-                                <div class="btn-group"
-                                    style="position:relative;display:inline-flex;vertical-align:middle;">
-                                    {{-- main: Add product or service --}}
-                                    <button type="button" class="btn-action split-button" data-repeater-create
-                                        style="
+                                        {{-- QBO-like split button --}}
+                                        <div class="btn-group"
+                                            style="position:relative;display:inline-flex;vertical-align:middle;">
+                                            {{-- main: Add product or service --}}
+                                            <button type="button" class="btn-action split-button" data-repeater-create
+                                                style="
                                                         display:inline-flex;
                                                         align-items:center;
                                                         justify-content:center;
@@ -2935,11 +2996,11 @@
                                                         color:#000;
                                                         line-height:1.4;
                                                     ">
-                                        {{ __('Add product or service') }}
-                                    </button>
-                                    {{-- small down arrow button --}}
-                                    <button type="button" class="btn-action" id="new-line-menu-toggle"
-                                        style="
+                                                {{ __('Add product or service') }}
+                                            </button>
+                                            {{-- small down arrow button --}}
+                                            <button type="button" class="btn-action" id="new-line-menu-toggle"
+                                                style="
                                                         display:inline-flex;
                                                         align-items:center;
                                                         justify-content:center;
@@ -2950,36 +3011,36 @@
                                                         background:#f0f0f0;
                                                         height:30px;
                                                     ">
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                                            color="currentColor" width="20px" height="20px" focusable="false"
-                                            aria-hidden="true">
-                                            <path fill="currentColor"
-                                                d="M12.014 16.018a1 1 0 0 1-.708-.294L5.314 9.715A1.001 1.001 0 0 1 6.73 8.3l5.286 5.3 5.3-5.285a1 1 0 0 1 1.413 1.416l-6.009 5.995a1 1 0 0 1-.706.292">
-                                            </path>
-                                        </svg>
-                                    </button>
-                                    {{-- dropdown menu (Add subtotal / Add text) --}}
-                                    <ul class="dropdown-menu" id="new-line-menu"
-                                        style="
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                                                    viewBox="0 0 24 24" color="currentColor" width="20px"
+                                                    height="20px" focusable="false" aria-hidden="true">
+                                                    <path fill="currentColor"
+                                                        d="M12.014 16.018a1 1 0 0 1-.708-.294L5.314 9.715A1.001 1.001 0 0 1 6.73 8.3l5.286 5.3 5.3-5.285a1 1 0 0 1 1.413 1.416l-6.009 5.995a1 1 0 0 1-.706.292">
+                                                    </path>
+                                                </svg>
+                                            </button>
+                                            {{-- dropdown menu (Add subtotal / Add text) --}}
+                                            <ul class="dropdown-menu" id="new-line-menu"
+                                                style="
                                             margin-top:4px;
                                             min-width:170px;
                                             font-size:13px;
                                         ">
-                                        <li>
-                                            <button type="button" class="dropdown-item" id="add-subtotal-line">
-                                                {{ __('Add subtotal') }}
-                                            </button>
-                                        </li>
-                                        <li>
-                                            <button type="button" class="dropdown-item" id="add-text-line">
-                                                {{ __('Add text') }}
-                                            </button>
-                                        </li>
-                                    </ul>
-                                </div>
-                                {{-- Clear all lines button --}}
-                                <button type="button" class="btn-action" id="clear-lines"
-                                    style="
+                                                <li>
+                                                    <button type="button" class="dropdown-item" id="add-subtotal-line">
+                                                        {{ __('Add subtotal') }}
+                                                    </button>
+                                                </li>
+                                                <li>
+                                                    <button type="button" class="dropdown-item" id="add-text-line">
+                                                        {{ __('Add text') }}
+                                                    </button>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                        {{-- Clear all lines button --}}
+                                        <button type="button" class="btn-action" id="clear-lines"
+                                            style="
                                             padding:6px 14px;
                                             border-radius:3px;
                                             border:1px solid #c7c7c7;
@@ -2989,404 +3050,727 @@
                                             color:#000;
                                             line-height:1.4;
                                         ">
-                                    {{ __('Clear all lines') }}
-                                </button>
-                            </div>
-
-
-                            {{-- Bottom Section --}}
-                            <div class="bottom-section">
-                                <div class="left-section">
-                                    <div class="info-field">
-                                        <label>{{ __('Customer payment options') }}</label>
-                                        <div style="margin: 8px 0;">
-                                            <img src="{{ asset('assets/images/credit_cards_qbocredits.png') }}"
-                                                alt="Credit Cards" style="height: 24px;">
-                                        </div>
-                                        <style>
-                                            .activate-payments-text {
-                                                font-size: 13px;
-                                                color: #393a3d;
-                                                margin-top: 2px;
-                                                padding-bottom: 10px;
-                                            }
-
-                                            .activate-payments-text a {
-                                                color: #0077c5;
-                                                text-decoration: none;
-                                                font-weight: 500;
-                                            }
-
-                                            .activate-payments-text a:hover {
-                                                text-decoration: underline;
-                                            }
-                                        </style>
-                                        <div class="activate-payments-text">
-                                            Activate online card or bank transfer payments for your customers.
-                                            <a href="#">{{ __('Activate payments') }}</a>
-                                        </div>
-                                        <div class="info-text">
-                                            {{ __('Tell your customer how you want to get paid. To keep instructions same for all future invoices, you can specify your payment preferences by clicking on "Edit default".') }}
-                                        </div>
+                                            {{ __('Clear all lines') }}
+                                        </button>
                                     </div>
 
-                                    <div class="info-field">
-                                        <label>{{ __('Note to customer') }}</label>
-                                        {{ Form::textarea('note', '', [
-                                            'class' => 'form-control',
-                                            'rows' => 3,
-                                            'placeholder' => 'Thank you for your business.',
-                                        ]) }}
-                                    </div>
 
-                                    <div class="info-field">
-                                        <label>{{ __('Memo on statement (hidden)') }}</label>
-                                        {{ Form::textarea('memo', '', [
-                                            'class' => 'form-control',
-                                            'rows' => 3,
-                                            'placeholder' => 'This memo will not show up on your invoice, but will appear on the statement.',
-                                        ]) }}
-                                    </div>
-
-                                    <style>
-                                        .attachments-header {
-                                            display: flex;
-                                            justify-content: flex-end;
-                                            align-items: center;
-                                            margin-bottom: 4px;
-                                            font-size: 13px;
-                                            color: #393a3d;
-                                        }
-
-                                        #attachments-list {
-                                            margin-bottom: 8px;
-                                        }
-
-                                        .attachment-row {
-                                            display: flex;
-                                            align-items: center;
-                                            gap: 8px;
-                                            padding: 6px 8px;
-                                            border: 1px solid #e4e4e7;
-                                            border-radius: 4px;
-                                            margin-bottom: 4px;
-                                            font-size: 13px;
-                                            background: #ffffff;
-                                        }
-
-                                        .attachment-row .form-check {
-                                            margin-bottom: 0;
-                                        }
-
-                                        body.theme-6 .form-check-input:checked {
-                                            background-color: #2ca01c;
-                                            border-color: #2ca01c;
-                                        }
-
-                                        .form-check {
-                                            padding-left: 2.75em !important;
-                                        }
-
-                                        .attachment-name {
-                                            flex: 1;
-                                            white-space: nowrap;
-                                            overflow: hidden;
-                                            text-overflow: ellipsis;
-                                        }
-
-                                        .attachment-size {
-                                            font-size: 12px;
-                                            color: #6b6c72;
-                                        }
-
-                                        .attachment-remove {
-                                            border: none;
-                                            background: none;
-                                            cursor: pointer;
-                                            padding: 0 4px;
-                                            font-size: 16px;
-                                            line-height: 1;
-                                            color: #6b6c72;
-                                        }
-
-                                        .attachment-remove:hover {
-                                            color: #e81500;
-                                        }
-                                    </style>
-
-                                    <script>
-                                        $(function() {
-                                            var attachLabel = @json(__('Attach to email'));
-                                            var maxFileSize = 20 * 1024 * 1024; // 20 MB
-
-                                            var $zone = $('#attachment-zone');
-                                            var $addLink = $('#attachment-add-link');
-                                            var $header = $('#attachments-header');
-                                            var $list = $('#attachments-list');
-                                            var $inputsContainer = $('#attachment-file-inputs');
-                                            var currentInput = null;
-
-                                            function updateSelectAllState() {
-                                                var $boxes = $list.find('.attachment-email');
-                                                var $checked = $boxes.filter(':checked');
-                                                $('#attachment_select_all').prop('checked',
-                                                    $boxes.length > 0 && $boxes.length === $checked.length
-                                                );
-                                            }
-
-                                            function toggleHeader() {
-                                                if ($list.find('.attachment-row').length) {
-                                                    $header.removeClass('d-none');
-                                                } else {
-                                                    $header.addClass('d-none');
-                                                    $('#attachment_select_all').prop('checked', false);
-                                                }
-                                            }
-
-                                            function createAttachmentInput() {
-                                                var $input = $('<input type="file" class="single-attachment-input d-none">');
-                                                $inputsContainer.append($input);
-                                                currentInput = $input;
-
-                                                $input.on('change', function() {
-                                                    if (!this.files || !this.files.length) return;
-
-                                                    var file = this.files[0];
-
-                                                    if (file.size > maxFileSize) {
-                                                        alert('Max file size is 20 MB');
-                                                        $input.val('');
-                                                        return;
+                                    {{-- Bottom Section --}}
+                                    <div class="bottom-section row">
+                                        <div class="left-section col-md-4">
+                                            <div class="info-field">
+                                                <label>{{ __('Customer payment options') }}</label>
+                                                <div style="margin: 8px 0;">
+                                                    <img src="{{ asset('assets/images/credit_cards_qbocredits.png') }}"
+                                                        alt="Credit Cards" style="height: 24px;">
+                                                </div>
+                                                <style>
+                                                    .activate-payments-text {
+                                                        font-size: 13px;
+                                                        color: #393a3d;
+                                                        margin-top: 2px;
+                                                        padding-bottom: 10px;
                                                     }
 
-                                                    var rowId = 'att_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-                                                    // bind the name now so Laravel gets an associative array: attachments[rowId]
-                                                    $input.attr('name', 'attachments[' + rowId + ']');
+                                                    .activate-payments-text a {
+                                                        color: #0077c5;
+                                                        text-decoration: none;
+                                                        font-weight: 500;
+                                                    }
 
-                                                    var sizeKB = Math.round(file.size / 1024);
-
-                                                    var $row = $(
-                                                        '<div class="attachment-row" data-row-id="' + rowId + '">' +
-                                                        '<div class="form-check">' +
-                                                        '<input class="form-check-input attachment-email" ' +
-                                                        'type="checkbox" ' +
-                                                        'name="attachments_email[' + rowId + ']" checked>' +
-                                                        '<label class="form-check-label">' + attachLabel + '</label>' +
-                                                        '</div>' +
-                                                        '<span class="attachment-name">' + file.name + '</span>' +
-                                                        '<span class="attachment-size">' + sizeKB + ' KB</span>' +
-                                                        '<button type="button" class="attachment-remove" ' +
-                                                        'data-row-id="' + rowId + '">&times;</button>' +
-                                                        '</div>'
-                                                    );
-
-                                                    // move the actual file input into this row (so the file is submitted)
-                                                    $row.append($input);
-                                                    $list.append($row);
-
-                                                    toggleHeader();
-                                                    updateSelectAllState();
-
-                                                    // prepare a fresh empty input for the next "Add attachment"
-                                                    createAttachmentInput();
-                                                });
-                                            }
-
-                                            // first empty input
-                                            createAttachmentInput();
-
-                                            // clicking the link or the zone opens current file input
-                                            $addLink.on('click', function(e) {
-                                                e.preventDefault();
-                                                if (currentInput) currentInput.trigger('click');
-                                            });
-                                            $zone.on('click', function(e) {
-                                                if ($(e.target).is('#attachment-add-link') ||
-                                                    $(e.target).closest('.attachment-row').length) {
-                                                    return;
-                                                }
-                                                if (currentInput) currentInput.trigger('click');
-                                            });
-
-                                            // "Select All" checkbox
-                                            $('#attachment_select_all').on('change', function() {
-                                                var checked = $(this).is(':checked');
-                                                $list.find('.attachment-email').prop('checked', checked);
-                                            });
-
-                                            // single checkbox change updates select-all state
-                                            $(document).on('change', '.attachment-email', function() {
-                                                updateSelectAllState();
-                                            });
-
-                                            // remove one attachment (also removes its file input)
-                                            $(document).on('click', '.attachment-remove', function() {
-                                                var rowId = $(this).data('row-id');
-                                                var $row = $list.find('.attachment-row[data-row-id="' + rowId + '"]');
-                                                $row.remove();
-                                                toggleHeader();
-                                                updateSelectAllState();
-                                            });
-                                        });
-                                    </script>
-
-                                    <div class="info-field">
-                                        <label>{{ __('Attachments') }}</label>
-
-                                        {{-- header with "Select all" - hidden until first file is added --}}
-                                        <div class="attachments-header d-none" id="attachments-header">
-                                            <div class="form-check" style="padding-left: 2.75em !important;">
-                                                <input class="form-check-input" type="checkbox"
-                                                    id="attachment_select_all">
-                                                <label class="form-check-label" for="attachment_select_all">
-                                                    {{ __('Select All') }}
-                                                </label>
+                                                    .activate-payments-text a:hover {
+                                                        text-decoration: underline;
+                                                    }
+                                                </style>
+                                                <div class="activate-payments-text">
+                                                    Activate online card or bank transfer payments for your customers.
+                                                    <a href="#">{{ __('Activate payments') }}</a>
+                                                </div>
+                                                <div class="info-text">
+                                                    {{ __('Tell your customer how you want to get paid. To keep instructions same for all future invoices, you can specify your payment preferences by clicking on "Edit default".') }}
+                                                </div>
                                             </div>
-                                        </div>
 
-                                        {{-- rows get injected here when files are added --}}
-                                        <div id="attachments-list"></div>
+                                            <div class="info-field">
+                                                <label>{{ __('Note to customer') }}</label>
+                                                {{ Form::textarea('note', '', [
+                                                    'class' => 'form-control',
+                                                    'rows' => 3,
+                                                    'placeholder' => 'Thank you for your business.',
+                                                ]) }}
+                                            </div>
 
-                                        {{-- QBO-like drop zone --}}
-                                        <div class="attachment-zone" id="attachment-zone">
-                                            <a href="#" class="attachment-link" id="attachment-add-link">
-                                                {{ __('Add attachment') }}
-                                            </a>
-                                            <div class="attachment-limit">{{ __('Max file size: 20 MB') }}</div>
-                                        </div>
+                                            <div class="info-field">
+                                                <label>{{ __('Memo on statement (hidden)') }}</label>
+                                                {{ Form::textarea('memo', '', [
+                                                    'class' => 'form-control',
+                                                    'rows' => 3,
+                                                    'placeholder' => 'This memo will not show up on your invoice, but will appear on the statement.',
+                                                ]) }}
+                                            </div>
 
-                                        {{-- we keep our hidden file inputs here --}}
-                                        <div id="attachment-file-inputs" class="d-none"></div>
-                                    </div>
+                                            <style>
+                                                .attachments-header {
+                                                    display: flex;
+                                                    justify-content: flex-end;
+                                                    align-items: center;
+                                                    margin-bottom: 4px;
+                                                    font-size: 13px;
+                                                    color: #393a3d;
+                                                }
 
-                                </div>
+                                                #attachments-list {
+                                                    margin-bottom: 8px;
+                                                }
 
-                                <div class="totals-section">
-                                    {{-- Subtotal --}}
-                                    <div class="total-row subtotal">
-                                        <span>{{ __('Subtotal') }}</span>
-                                        <span class="subTotal">0.00</span>
-                                    </div>
+                                                .attachment-row {
+                                                    display: flex;
+                                                    align-items: center;
+                                                    gap: 8px;
+                                                    padding: 6px 8px;
+                                                    border: 1px solid #e4e4e7;
+                                                    border-radius: 4px;
+                                                    margin-bottom: 4px;
+                                                    font-size: 13px;
+                                                    background: #ffffff;
+                                                }
 
-                                    {{-- Discount with rotate button on the LEFT, QBO style --}}
-                                    <div class="total-row discount-row">
-                                        <div class="discount-label-wrapper">
-                                            {{-- move-discount-before/after-tax button --}}
-                                            <button type="button"
-                                                aria-label="To move discounts before or after sales tax, select the icon."
-                                                class="discount-position-btn" data-bs-toggle="tooltip"
-                                                data-bs-placement="left"
-                                                title="To move discounts before or after sales tax, select the icon.">
-                                                <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"
-                                                    width="20" height="20" fill="currentColor">
-                                                    <path
-                                                        d="M15.7 16.28a1 1 0 10-1.416 1.412l.292.294-5.585-.01a1 1 0 01-1-1l.014-10a1 1 0 011-1l5.586.01-.294.292a1 1 0 101.412 1.416l2-2a1 1 0 000-1.414l-2-2a1 1 0 10-1.416 1.412l.292.294-5.574-.01a3 3 0 00-3 3l-.014 10a3 3 0 002.995 3l5.586.01-.294.292a1 1 0 101.412 1.416l2-2a1 1 0 000-1.414l-1.996-2z">
-                                                    </path>
-                                                </svg>
-                                            </button>
+                                                .attachment-row .form-check {
+                                                    margin-bottom: 0;
+                                                }
 
-                                            <span>{{ __('Discount') }}</span>
-                                        </div>
+                                                body.theme-6 .form-check-input:checked {
+                                                    background-color: #2ca01c;
+                                                    border-color: #2ca01c;
+                                                }
 
-                                        {{-- total discount value --}}
-                                        <span class="totalDiscount">0.00</span>
-                                    </div>
+                                                .form-check {
+                                                    padding-left: 2.75em !important;
+                                                }
 
-                                    {{-- Taxable subtotal --}}
-                                    <div class="total-row">
-                                        <span>{{ __('Taxable subtotal') }}</span>
-                                        <span class="taxableSubtotal">0.00</span>
-                                    </div>
+                                                .attachment-name {
+                                                    flex: 1;
+                                                    white-space: nowrap;
+                                                    overflow: hidden;
+                                                    text-overflow: ellipsis;
+                                                }
 
-                                    {{-- Select sales tax rate --}}
-                                    <div class="total-row select-tax-row">
-                                        <span>{{ __('Select sales tax rate') }}</span>
-                                        <span>
-                                            <select name="sales_tax_rate" class="form-select totals-tax-rate-select">
-                                                <option value="">{{ __('Select a tax rate') }}</option>
-                                            </select>
-                                        </span>
-                                    </div>
+                                                .attachment-size {
+                                                    font-size: 12px;
+                                                    color: #6b6c72;
+                                                }
 
-                                    {{-- Sales tax row  ✅ add class sales-tax-row --}}
-                                    <div class="total-row sales-tax-row">
-                                        <span>{{ __('Sales tax') }}</span>
-                                        <span class="totalTax">0.00</span>
-                                    </div>
+                                                .attachment-remove {
+                                                    border: none;
+                                                    background: none;
+                                                    cursor: pointer;
+                                                    padding: 0 4px;
+                                                    font-size: 16px;
+                                                    line-height: 1;
+                                                    color: #6b6c72;
+                                                }
 
-                                    <script>
-                                        $(function() {
-                                            // enable Bootstrap tooltip on the icon (optional, but matches QBO)
-                                            if (typeof bootstrap !== 'undefined') {
-                                                $('[data-bs-toggle="tooltip"]').each(function() {
-                                                    new bootstrap.Tooltip(this);
+                                                .attachment-remove:hover {
+                                                    color: #e81500;
+                                                }
+                                            </style>
+
+                                            <script>
+                                                $(function() {
+                                                    var attachLabel = @json(__('Attach to email'));
+                                                    var maxFileSize = 20 * 1024 * 1024; // 20 MB
+
+                                                    var $zone = $('#attachment-zone');
+                                                    var $addLink = $('#attachment-add-link');
+                                                    var $header = $('#attachments-header');
+                                                    var $list = $('#attachments-list');
+                                                    var $inputsContainer = $('#attachment-file-inputs');
+                                                    var currentInput = null;
+
+                                                    function updateSelectAllState() {
+                                                        var $boxes = $list.find('.attachment-email');
+                                                        var $checked = $boxes.filter(':checked');
+                                                        $('#attachment_select_all').prop('checked',
+                                                            $boxes.length > 0 && $boxes.length === $checked.length
+                                                        );
+                                                    }
+
+                                                    function toggleHeader() {
+                                                        if ($list.find('.attachment-row').length) {
+                                                            $header.removeClass('d-none');
+                                                        } else {
+                                                            $header.addClass('d-none');
+                                                            $('#attachment_select_all').prop('checked', false);
+                                                        }
+                                                    }
+
+                                                    function createAttachmentInput() {
+                                                        var $input = $('<input type="file" class="single-attachment-input d-none">');
+                                                        $inputsContainer.append($input);
+                                                        currentInput = $input;
+
+                                                        $input.on('change', function() {
+                                                            if (!this.files || !this.files.length) return;
+
+                                                            var file = this.files[0];
+
+                                                            if (file.size > maxFileSize) {
+                                                                alert('Max file size is 20 MB');
+                                                                $input.val('');
+                                                                return;
+                                                            }
+
+                                                            var rowId = 'att_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+                                                            // bind the name now so Laravel gets an associative array: attachments[rowId]
+                                                            $input.attr('name', 'attachments[' + rowId + ']');
+
+                                                            var sizeKB = Math.round(file.size / 1024);
+
+                                                            var $row = $(
+                                                                '<div class="attachment-row" data-row-id="' + rowId + '">' +
+                                                                '<div class="form-check">' +
+                                                                '<input class="form-check-input attachment-email" ' +
+                                                                'type="checkbox" ' +
+                                                                'name="attachments_email[' + rowId + ']" checked>' +
+                                                                '<label class="form-check-label">' + attachLabel + '</label>' +
+                                                                '</div>' +
+                                                                '<span class="attachment-name">' + file.name + '</span>' +
+                                                                '<span class="attachment-size">' + sizeKB + ' KB</span>' +
+                                                                '<button type="button" class="attachment-remove" ' +
+                                                                'data-row-id="' + rowId + '">&times;</button>' +
+                                                                '</div>'
+                                                            );
+
+                                                            // move the actual file input into this row (so the file is submitted)
+                                                            $row.append($input);
+                                                            $list.append($row);
+
+                                                            toggleHeader();
+                                                            updateSelectAllState();
+
+                                                            // prepare a fresh empty input for the next "Add attachment"
+                                                            createAttachmentInput();
+                                                        });
+                                                    }
+
+                                                    // first empty input
+                                                    createAttachmentInput();
+
+                                                    // clicking the link or the zone opens current file input
+                                                    $addLink.on('click', function(e) {
+                                                        e.preventDefault();
+                                                        if (currentInput) currentInput.trigger('click');
+                                                    });
+                                                    $zone.on('click', function(e) {
+                                                        if ($(e.target).is('#attachment-add-link') ||
+                                                            $(e.target).closest('.attachment-row').length) {
+                                                            return;
+                                                        }
+                                                        if (currentInput) currentInput.trigger('click');
+                                                    });
+
+                                                    // "Select All" checkbox
+                                                    $('#attachment_select_all').on('change', function() {
+                                                        var checked = $(this).is(':checked');
+                                                        $list.find('.attachment-email').prop('checked', checked);
+                                                    });
+
+                                                    // single checkbox change updates select-all state
+                                                    $(document).on('change', '.attachment-email', function() {
+                                                        updateSelectAllState();
+                                                    });
+
+                                                    // remove one attachment (also removes its file input)
+                                                    $(document).on('click', '.attachment-remove', function() {
+                                                        var rowId = $(this).data('row-id');
+                                                        var $row = $list.find('.attachment-row[data-row-id="' + rowId + '"]');
+                                                        $row.remove();
+                                                        toggleHeader();
+                                                        updateSelectAllState();
+                                                    });
                                                 });
-                                            }
+                                            </script>
 
-                                            var discountBeforeTax = true; // default = under Subtotal
+                                            <div class="info-field">
+                                                <label>{{ __('Attachments') }}</label>
 
-                                            function placeDiscountBeforeTax() {
-                                                var $discountRow = $('.totals-section .discount-row');
-                                                var $subtotalRow = $('.totals-section .subtotal').first();
+                                                {{-- header with "Select all" - hidden until first file is added --}}
+                                                <div class="attachments-header d-none" id="attachments-header">
+                                                    <div class="form-check" style="padding-left: 2.75em !important;">
+                                                        <input class="form-check-input" type="checkbox"
+                                                            id="attachment_select_all">
+                                                        <label class="form-check-label" for="attachment_select_all">
+                                                            {{ __('Select All') }}
+                                                        </label>
+                                                    </div>
+                                                </div>
 
-                                                if ($discountRow.length && $subtotalRow.length) {
-                                                    // Discount just after Subtotal
-                                                    $discountRow.insertAfter($subtotalRow);
-                                                }
-                                                discountBeforeTax = true;
-                                            }
+                                                {{-- rows get injected here when files are added --}}
+                                                <div id="attachments-list"></div>
 
-                                            function placeDiscountAfterTax() {
-                                                var $discountRow = $('.totals-section .discount-row');
-                                                var $salesTaxRow = $('.totals-section .sales-tax-row').first();
+                                                {{-- QBO-like drop zone --}}
+                                                <div class="attachment-zone" id="attachment-zone">
+                                                    <a href="#" class="attachment-link" id="attachment-add-link">
+                                                        {{ __('Add attachment') }}
+                                                    </a>
+                                                    <div class="attachment-limit">{{ __('Max file size: 20 MB') }}</div>
+                                                </div>
 
-                                                if ($discountRow.length && $salesTaxRow.length) {
-                                                    // Discount just after Sales tax
-                                                    $discountRow.insertAfter($salesTaxRow);
-                                                }
-                                                discountBeforeTax = false;
-                                            }
+                                                {{-- we keep our hidden file inputs here --}}
+                                                <div id="attachment-file-inputs" class="d-none"></div>
+                                            </div>
 
-                                            // make sure initial order is "Subtotal -> Discount -> Taxable subtotal..."
-                                            placeDiscountBeforeTax();
+                                        </div>
 
-                                            // click on rotate icon toggles position
-                                            $('.discount-position-btn').on('click', function() {
-                                                if (discountBeforeTax) {
-                                                    placeDiscountAfterTax();
-                                                } else {
+                                        <div class="col-md-4">
+                                        </div>
+
+                                        <div class="totals-section col-md-4">
+                                            {{-- Subtotal --}}
+                                            <div class="total-row subtotal">
+                                                <span>{{ __('Subtotal') }}</span>
+                                                <span class="subTotal">0.00</span>
+                                            </div>
+
+                                            {{-- Discount with rotate button on the LEFT, QBO style --}}
+                                            <div class="total-row discount-row">
+                                                <div class="discount-label-wrapper">
+                                                    {{-- move-discount-before/after-tax button --}}
+                                                    <button type="button"
+                                                        aria-label="To move discounts before or after sales tax, select the icon."
+                                                        class="discount-position-btn" data-bs-toggle="tooltip"
+                                                        data-bs-placement="left"
+                                                        title="To move discounts before or after sales tax, select the icon.">
+                                                        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"
+                                                            width="20" height="20" fill="currentColor">
+                                                            <path
+                                                                d="M15.7 16.28a1 1 0 10-1.416 1.412l.292.294-5.585-.01a1 1 0 01-1-1l.014-10a1 1 0 011-1l5.586.01-.294.292a1 1 0 101.412 1.416l2-2a1 1 0 000-1.414l-2-2a1 1 0 10-1.416 1.412l.292.294-5.574-.01a3 3 0 00-3 3l-.014 10a3 3 0 002.995 3l5.586.01-.294.292a1 1 0 101.412 1.416l2-2a1 1 0 000-1.414l-1.996-2z">
+                                                            </path>
+                                                        </svg>
+                                                    </button>
+
+                                                    <span>{{ __('Discount') }}</span>
+                                                </div>
+
+                                                {{-- total discount value --}}
+                                                <span class="totalDiscount">0.00</span>
+                                            </div>
+
+                                            {{-- Taxable subtotal --}}
+                                            <div class="total-row">
+                                                <span>{{ __('Taxable subtotal') }}</span>
+                                                <span class="taxableSubtotal">0.00</span>
+                                            </div>
+
+                                            {{-- Select sales tax rate --}}
+                                            <div class="total-row select-tax-row">
+                                                <span>{{ __('Select sales tax rate') }}</span>
+                                                <span>
+                                                    <select name="sales_tax_rate"
+                                                        class="form-select totals-tax-rate-select">
+                                                        <option value="">{{ __('Select a tax rate') }}</option>
+                                                    </select>
+                                                </span>
+                                            </div>
+
+                                            {{-- Sales tax row  ✅ add class sales-tax-row --}}
+                                            <div class="total-row sales-tax-row">
+                                                <span>{{ __('Sales tax') }}</span>
+                                                <span class="totalTax">0.00</span>
+                                            </div>
+
+                                            <script>
+                                                $(function() {
+                                                    // enable Bootstrap tooltip on the icon (optional, but matches QBO)
+                                                    if (typeof bootstrap !== 'undefined') {
+                                                        $('[data-bs-toggle="tooltip"]').each(function() {
+                                                            new bootstrap.Tooltip(this);
+                                                        });
+                                                    }
+
+                                                    var discountBeforeTax = true; // default = under Subtotal
+
+                                                    function placeDiscountBeforeTax() {
+                                                        var $discountRow = $('.totals-section .discount-row');
+                                                        var $subtotalRow = $('.totals-section .subtotal').first();
+
+                                                        if ($discountRow.length && $subtotalRow.length) {
+                                                            // Discount just after Subtotal
+                                                            $discountRow.insertAfter($subtotalRow);
+                                                        }
+                                                        discountBeforeTax = true;
+                                                    }
+
+                                                    function placeDiscountAfterTax() {
+                                                        var $discountRow = $('.totals-section .discount-row');
+                                                        var $salesTaxRow = $('.totals-section .sales-tax-row').first();
+
+                                                        if ($discountRow.length && $salesTaxRow.length) {
+                                                            // Discount just after Sales tax
+                                                            $discountRow.insertAfter($salesTaxRow);
+                                                        }
+                                                        discountBeforeTax = false;
+                                                    }
+
+                                                    // make sure initial order is "Subtotal -> Discount -> Taxable subtotal..."
                                                     placeDiscountBeforeTax();
-                                                }
-                                            });
-                                        });
-                                    </script>
+
+                                                    // click on rotate icon toggles position
+                                                    $('.discount-position-btn').on('click', function() {
+                                                        if (discountBeforeTax) {
+                                                            placeDiscountAfterTax();
+                                                        } else {
+                                                            placeDiscountBeforeTax();
+                                                        }
+                                                    });
+                                                });
+                                            </script>
 
 
-                                    {{-- See the math (right-aligned) --}}
-                                    <a href="#" class="link-button see-math-link">{{ __('See the math') }}</a>
+                                            {{-- See the math (right-aligned) --}}
+                                            <a href="#"
+                                                class="link-button see-math-link">{{ __('See the math') }}</a>
 
-                                    {{-- Invoice total --}}
-                                    <div class="total-row final">
-                                        <span>{{ __('Invoice total') }}</span>
-                                        <span class="totalAmount">0.00</span>
+                                            {{-- Invoice total --}}
+                                            <div class="total-row final">
+                                                <span>{{ __('Invoice total') }}</span>
+                                                <span class="totalAmount">0.00</span>
+                                            </div>
+
+                                            {{-- Edit totals (right-aligned) --}}
+                                            <a href="#"
+                                                class="link-button edit-totals-link">{{ __('Edit totals') }}</a>
+                                        </div>
+
+
                                     </div>
-
-                                    {{-- Edit totals (right-aligned) --}}
-                                    <a href="#" class="link-button edit-totals-link">{{ __('Edit totals') }}</a>
                                 </div>
-
-
                             </div>
                         </div>
+                        {{-- SIDE SUGGESTION PANEL (hidden by default) --}}
+                        <div class="col-md-3 d-none" id="suggestion-col">
+                            <aside class="customer-suggestions-col" style="box-shadow: -12px 0 10px -10px #d4d7dc;">
+                                <div class="suggestions-header">
+                                    <div>
+                                        <div class="d-flex align-self-end">
+                                            <button class="arrow"
+                                                style="
+    border: none;
+    background: 0 0;
+    padding: 0;
+"><svg
+                                                    xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                                    color="currentColor" width="24px" height="24px" focusable="false"
+                                                    aria-hidden="true">
+                                                    <path fill="currentColor"
+                                                        d="M15.009 19.022a1 1 0 0 1-.708-.294L8.31 12.72a1 1 0 0 1 0-1.415l6.009-5.991a1 1 0 0 1 1.414 1.416l-5.3 5.285 5.285 5.3a1 1 0 0 1-.708 1.706z">
+                                                    </path>
+                                                </svg></button>
+                                            <h3>Suggested transactions</h3>
+                                        </div>
+                                        <p class="suggestions-subtitle">
+                                            We’ve found one or more transactions linked to this customer.
+                                            Select the ones you’d like to add to the invoice.
+                                        </p>
+                                    </div>
+                                    <button type="button" class="suggestions-close"><svg
+                                            xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                                            color="currentColor" width="24px" height="24px" focusable="false"
+                                            aria-hidden="true" class="">
+                                            <path fill="currentColor"
+                                                d="m13.432 11.984 5.3-5.285a1 1 0 1 0-1.412-1.416l-5.3 5.285-5.285-5.3A1 1 0 1 0 5.319 6.68l5.285 5.3L5.3 17.265a1 1 0 1 0 1.412 1.416l5.3-5.285L17.3 18.7a1 1 0 1 0 1.416-1.412z">
+                                            </path>
+                                        </svg></button>
+                                </div>
+
+                                <div class="suggestions-toolbar">
+                                    {{-- QBO-like filter button --}}
+                                    <button type="button" class="suggestions-filter-btn">
+                                        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="24px"
+                                            height="24px" fill="currentColor" color="#6B6C72">
+                                            <path
+                                                d="M11 21.72a2 2 0 01-2-2v-4.429L3.134 6.074A2 2 0 014.822 3h14.356a2 2 0 011.687 3.074L15 15.291v3.928a2 2 0 01-1.515 1.94l-2 .5c-.159.04-.321.06-.485.061zM4.822 5l6.022 9.463A1 1 0 0111 15v4.719l2-.5V15a1 1 0 01.156-.537L19.178 5H4.822z">
+                                            </path>
+                                        </svg>
+                                        <span>Filter</span>
+                                    </button>
+
+                                    <button type="button" class="link-button suggestions-addall">
+                                        Add all
+                                    </button>
+
+                                    {{-- Filter popup --}}
+                                    <div class="suggestions-filter-panel" id="suggestions-filter-panel">
+                                        <div class="suggestions-filter-header">
+                                            <div class="suggestions-filter-actions">
+                                                <button type="button" class="suggestions-filter-reset"
+                                                    id="suggestions-filter-reset">
+                                                    Reset
+                                                </button>
+                                                <button type="button" class="suggestions-filter-apply"
+                                                    id="suggestions-filter-apply">
+                                                    Apply filter
+                                                </button>
+                                            </div>
+                                            <button type="button" class="suggestions-filter-close">&times;</button>
+                                        </div>
+
+                                        <div class="suggestions-filter-title">Filter by</div>
+
+                                        <div class="suggestions-filter-row">
+                                            <label for="suggestions-filter-type">Transaction type</label>
+                                            <select id="suggestions-filter-type" class="form-select">
+                                                <option value="all">All transactions</option>
+                                                <option value="estimate">Estimates only</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="suggestions-filter-row">
+                                            <label for="suggestions-filter-date">Date</label>
+                                            <select id="suggestions-filter-date" class="form-select">
+                                                <option value="all">All dates</option>
+                                                <option value="last30">Last 30 days</option>
+                                                <option value="last365">Last 12 months</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div id="suggestions-list" style="padding: 0; overflow-y: auto;">
+                                    <p style="font-size:12px;color:#6b6f73;">
+                                        Select a customer to see suggested transactions.
+                                    </p>
+                                </div>
+                            </aside>
+
+                            {{-- Right-side panel styles --}}
+                            <style>
+                                /* main content scrolls separately from suggestions */
+                                #invoice-main-col {
+                                    max-height: calc(100vh - 120px);
+                                    overflow-y: auto;
+                                }
+
+                                .customer-suggestions-col {
+                                    max-height: calc(100vh - 120px);
+                                    overflow-y: auto;
+                                    border-left: 1px solid #e3e5e8;
+                                    background: #fafbfc;
+                                    padding: 16px;
+                                    display: flex;
+                                    flex-direction: column;
+                                }
+
+                                /* hide scrollbar but still allow scrolling */
+                                .customer-suggestions-col::-webkit-scrollbar {
+                                    width: 0;
+                                }
+
+                                .customer-suggestions-col {
+                                    scrollbar-width: none;
+                                    /* Firefox */
+                                }
+
+                                .suggestions-header {
+                                    display: flex;
+                                    justify-content: space-between;
+                                    align-items: flex-start;
+                                    margin-bottom: 12px;
+                                }
+
+                                .suggestions-header h3 {
+                                    font-size: 16px;
+                                    margin: 0 0 4px 0;
+                                }
+
+                                .suggestions-subtitle {
+                                    font-size: 12px;
+                                    color: #6b6f73;
+                                    margin: 0;
+                                }
+
+                                .suggestions-close {
+                                    border: none;
+                                    background: transparent;
+                                    font-size: 20px;
+                                    cursor: pointer;
+                                    line-height: 1;
+                                }
+
+                                .suggestions-toolbar {
+                                    position: relative;
+                                    display: flex;
+                                    justify-content: space-between;
+                                    align-items: center;
+                                    margin-bottom: 12px;
+                                }
+
+                                /* QBO-style Filter pill */
+                                .suggestions-filter-btn {
+                                    display: inline-flex;
+                                    align-items: center;
+                                    gap: 6px;
+                                    padding: 4px 10px;
+                                    border-radius: 4px;
+                                    border: none;
+                                    background: transparent;
+                                    font-size: 14px;
+                                    font-weight: 700;
+                                    color: #6b6f73;
+                                    cursor: pointer;
+                                }
+
+                                .suggestions-filter-btn:hover {
+                                    background: #f4f5f8;
+                                    border-color: #b0b1b5;
+                                }
+
+                                .customer-suggestions-col .link-button {
+                                    border: none;
+                                    background: none;
+                                    padding: 0;
+                                    font-size: 12px;
+                                    color: #0077c5;
+                                    cursor: pointer;
+                                }
+
+                                .suggestion-card {
+                                    border-radius: 4px;
+                                    background: #ffffff;
+                                    border: 1px solid #D4D7DC;
+                                    padding: 12px;
+                                    margin-bottom: 8px;
+                                    font-size: 12px;
+                                    box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.2);
+                                }
+
+                                .suggestion-card-header {
+                                    display: flex;
+                                    justify-content: space-between;
+                                    align-items: center;
+                                    margin-bottom: 8px;
+                                    font-weight: 600;
+                                }
+
+                                .suggestion-card-body dl {
+                                    margin: 0;
+                                }
+
+                                .suggestion-card-body dt {
+                                    font-weight: 600;
+                                    display: inline-block;
+                                    width: 70px;
+                                }
+
+                                .suggestion-card-body dd {
+                                    display: inline-block;
+                                    margin: 0 0 4px 0;
+                                }
+
+                                .suggestion-add-button {
+                                    border: none;
+                                    background: none;
+                                    color: #0077c5;
+                                    font-size: 12px;
+                                    cursor: pointer;
+                                    padding: 0;
+                                    margin-top: 4px;
+                                    align-self: flex-end;
+                                }
+
+                                /* Filter popup */
+                                .suggestions-filter-panel {
+                                    position: absolute;
+                                    top: 32px;
+                                    left: 0;
+                                    width: 260px;
+                                    background: #ffffff;
+                                    border: 1px solid rgba(0, 0, 0, 0.15);
+                                    border-radius: 4px;
+                                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                                    padding: 10px 12px 12px;
+                                    font-size: 12px;
+                                    z-index: 10;
+                                    display: none;
+                                }
+
+                                .suggestions-filter-panel.show {
+                                    display: block;
+                                }
+
+                                .suggestions-filter-header {
+                                    display: flex;
+                                    justify-content: space-between;
+                                    align-items: center;
+                                    margin-bottom: 6px;
+                                }
+
+                                .suggestions-filter-actions {
+                                    display: flex;
+                                    gap: 8px;
+                                }
+
+                                .suggestions-filter-reset,
+                                .suggestions-filter-apply {
+                                    border-radius: 20px;
+                                    border: 1px solid #c4c4c4;
+                                    padding: 4px 10px;
+                                    font-size: 12px;
+                                    cursor: pointer;
+                                    background: #fff;
+                                }
+
+                                .suggestions-filter-apply {
+                                    background: #2ca01c;
+                                    color: #fff;
+                                    border-color: #2ca01c;
+                                }
+
+                                .suggestions-filter-apply:hover {
+                                    background: #108000;
+                                    border-color: #108000;
+                                }
+
+                                .suggestions-filter-close {
+                                    border: none;
+                                    background: none;
+                                    font-size: 16px;
+                                    cursor: pointer;
+                                }
+
+                                .suggestions-filter-title {
+                                    font-weight: 600;
+                                    margin-bottom: 6px;
+                                }
+
+                                .suggestions-filter-row {
+                                    margin-bottom: 8px;
+                                }
+
+                                .suggestions-filter-row label {
+                                    display: block;
+                                    margin-bottom: 3px;
+                                    font-weight: 500;
+                                }
+
+                                .suggestions-filter-row select {
+                                    width: 100%;
+                                    font-size: 12px;
+                                    padding: 4px 8px;
+                                }
+                            </style>
+                        </div>
+
+
                     </div>
 
                     {{-- Footer --}}
                     <div class="invoice-footer">
                         <div class="footer-left">
                             <!-- <button type="button" class="btn btn-secondary"
-                                                                                                                    onclick="location.href = '{{ route('invoice.index') }}';">
-                                                                                                                {{ __('Cancel') }}
-                                                                                                            </button> -->
+                                                                                                                                                    onclick="location.href = '{{ route('invoice.index') }}';">
+                                                                                                                                                {{ __('Cancel') }}
+                                                                                                                                            </button> -->
                         </div>
 
                         <div class="footer-center">
@@ -3452,5 +3836,351 @@
             </div>
         </div>
     </div>
+    <script>
+        $(function() {
+            const $customerSelect = $('#customer_id');
+            const proposalsUrl = $customerSelect.data('proposals-url');
+            const proposalEditUrlPattern = $customerSelect.data('proposal-edit-url');
+            const $list = $('#suggestions-list');
+            const $suggestionCol = $('#suggestion-col');
+            const $mainCol = $('#invoice-main-col');
+            const $filterPanel = $('#suggestions-filter-panel');
+
+            let allProposals = [];
+            let filteredProposals = [];
+
+            function formatDate(raw) {
+                if (!raw) return '';
+                const d = new Date(raw);
+                if (isNaN(d)) return raw;
+                return d.toLocaleDateString();
+            }
+
+            function normalizeProposals(data) {
+                if (Array.isArray(data)) return data;
+                if (data && Array.isArray(data.proposals)) return data.proposals;
+                if (data && Array.isArray(data.data)) return data.data;
+                if (data && typeof data === 'object') return Object.values(data);
+                return [];
+            }
+
+            function showSuggestionsPanel(show) {
+                if (show) {
+                    $mainCol.removeClass('col-md-12').addClass('col-md-9');
+                    $suggestionCol.removeClass('d-none');
+                } else {
+                    $mainCol.removeClass('col-md-9').addClass('col-md-12');
+                    $suggestionCol.addClass('d-none');
+                }
+            }
+
+            function renderSuggestions(list) {
+                $list.empty();
+
+                if (!list || !list.length) {
+                    $list.html(
+                        '<p style="font-size:12px;color:#6b6f73;">' +
+                        'No suggested transactions found for this customer.' +
+                        '</p>'
+                    );
+                    return;
+                }
+
+                list.forEach(function(p) {
+                    const cardHtml = `
+                    <div class="suggestion-card" data-proposal-id="${p.id}">
+                        <div class="suggestion-card-header">
+                            <span>
+                                ${
+                                    (p.proposal_number || p.proposal_id)
+                                        ? `Estimate ${p.proposal_number || p.proposal_id}`
+                                        : 'Estimate'
+                                }
+                            </span>
+                            <a href="${proposalEditUrlPattern.replace('__id__', p.encrypted_id)}"
+                               target="_blank"
+                               style="font-size:11px;color:#6B6C72;">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                                     viewBox="0 0 24 24" color="currentColor"
+                                     width="20px" height="20px" focusable="false"
+                                     aria-hidden="true" class="icon">
+                                    <path fill="currentColor"
+                                          d="M20 11.03a1 1 0 0 0-1 1l-.01 5.715a1.29 1.29 0 0 1-1.29 1.282l-11.425-.018a1.286 1.286 0 0 1-1.283-1.287l.017-11.43A1.284 1.284 0 0 1 6.294 5.01l5.714.009a1 1 0 1 0 0-2L6.3 3.008h-.006A3.284 3.284 0 0 0 3.009 6.29l-.017 11.428a3.29 3.29 0 0 0 3.28 3.29l11.429.019a3.29 3.29 0 0 0 3.287-3.281L21 12.032a1 1 0 0 0-1-1.002"></path>
+                                    <path fill="currentColor"
+                                          d="m20.013 3.03-4-.006a1 1 0 0 0 0 2h1.586L13.3 9.314a1 1 0 1 0 1.412 1.415l4.3-4.287v1.586a1 1 0 0 0 2 0l.006-4a1 1 0 0 0-1.005-.998"></path>
+                                </svg>
+                            </a>
+                        </div>
+                        <div class="suggestion-card-body">
+                            <dl>
+                                <dt>Date:</dt><dd>${formatDate(p.issue_date)}</dd><br>
+                                <dt>Total:</dt><dd>$${Number(p.total_amount || 0).toFixed(2)}</dd><br>
+                                <dt>Notes:</dt><dd>${p.note ? p.note : ''}</dd>
+                            </dl>
+                        </div>
+                        <button type="button"
+                                class="suggestion-add-button"
+                                data-proposal-id="${p.id}">
+                            Add
+                        </button>
+                    </div>
+                `;
+                    $list.append(cardHtml);
+                });
+            }
+
+            // ---------- apply filter ----------
+
+            function applyFilter() {
+                const typeFilter = $('#suggestions-filter-type').val();
+                const dateFilter = $('#suggestions-filter-date').val();
+                const now = new Date();
+
+                let list = allProposals.slice();
+
+                if (typeFilter === 'estimate') {
+                    // placeholder if you ever add other types
+                    list = list;
+                }
+
+                if (dateFilter !== 'all') {
+                    list = list.filter(function(p) {
+                        if (!p.issue_date) return true;
+                        const d = new Date(p.issue_date);
+                        if (isNaN(d)) return true;
+                        const diffDays = (now - d) / 86400000;
+                        if (dateFilter === 'last30') return diffDays <= 30;
+                        if (dateFilter === 'last365') return diffDays <= 365;
+                        return true;
+                    });
+                }
+
+                filteredProposals = list;
+                renderSuggestions(filteredProposals);
+            }
+
+            // ---------- load proposals for a customer ----------
+
+            function loadCustomerSuggestions(customerId) {
+                if (!customerId) {
+                    $list.html(
+                        '<p style="font-size:12px;color:#6b6f73;">' +
+                        'Select a customer to see suggested transactions.' +
+                        '</p>'
+                    );
+                    allProposals = [];
+                    filteredProposals = [];
+                    showSuggestionsPanel(false);
+                    return;
+                }
+
+                $.get(proposalsUrl, {
+                        customer_id: customerId
+                    })
+                    .done(function(data) {
+                        allProposals = normalizeProposals(data);
+                        filteredProposals = allProposals.slice();
+
+                        renderSuggestions(filteredProposals);
+                        showSuggestionsPanel(allProposals.length > 0);
+                    })
+                    .fail(function() {
+                        $list.html(
+                            '<p style="font-size:12px;color:#d9534f;">' +
+                            'Failed to load suggested transactions.' +
+                            '</p>'
+                        );
+                        allProposals = [];
+                        filteredProposals = [];
+                        showSuggestionsPanel(false);
+                    });
+            }
+
+            // ---------- helper: insert ONE item from proposal into table ----------
+
+            function insertProposalItem(item, $insertBefore) {
+                var hasProduct = item.product_id !== null && item.product_id !== undefined && item.product_id !==
+                '';
+
+                if (hasProduct) {
+                    // normal product/service line (use repeater like before)
+                    window.qbInsertAfterTbody = null;
+                    window.qbInsertBeforeTbody = $insertBefore || null;
+                    window.qbDuplicateSource = null;
+                    window.qbProposalToAdd = item;
+                    $('[data-repeater-create]').trigger('click');
+                    return;
+                }
+
+                // product_id is NULL -> it's either Subtotal line or Text line
+                var desc = (item.description || '').trim();
+
+                // SUBTOTAL row
+                if (desc.toLowerCase() === 'subtotal') {
+                    if (typeof window.qbCreateSubtotalBody === 'function') {
+                        // amount from DB is not critical; table will recalc
+                        var $body = window.qbCreateSubtotalBody('0.00');
+
+                        if ($insertBefore && $insertBefore.length) {
+                            $body.insertBefore($insertBefore);
+                        } else {
+                            $('#sortable-table').append($body);
+                        }
+
+                        recalcTotals();
+                    }
+                    return;
+                }
+
+                // TEXT row
+                if (desc.length && typeof window.qbCreateTextBody === 'function') {
+                    var $bodyText = window.qbCreateTextBody(desc);
+
+                    if ($insertBefore && $insertBefore.length) {
+                        $bodyText.insertBefore($insertBefore);
+                    } else {
+                        $('#sortable-table').append($bodyText);
+                    }
+
+                    renumberInvoiceLines();
+                    recalcTotals();
+                }
+            }
+
+            // ---------- events ----------
+
+            // reload suggestions when customer changes
+            $customerSelect.on('change', function() {
+                loadCustomerSuggestions($(this).val());
+            });
+
+            // initial load if customer preselected
+            if ($customerSelect.val()) {
+                loadCustomerSuggestions($customerSelect.val());
+            }
+
+            // --- Add SINGLE estimate ---
+            $(document).on('click', '.suggestion-add-button', function() {
+                const proposalId = String($(this).data('proposal-id'));
+
+                const p =
+                    filteredProposals.find(x => String(x.id) === proposalId) ||
+                    allProposals.find(x => String(x.id) === proposalId);
+
+                if (!p) return;
+
+                // Determine insertion point: before trailing special rows, if any
+                var $lastBody = $('#sortable-table').find('tbody').last();
+                var $insertBefore = null;
+                if ($lastBody.length && $lastBody.hasClass('special-body')) {
+                    $insertBefore = $lastBody;
+                }
+
+                if (p.items && p.items.length) {
+                    p.items.forEach(function(item) {
+                        insertProposalItem(item, $insertBefore);
+                    });
+                } else {
+                    // fallback: single product row with total
+                    insertProposalItem({
+                        product_id: p.product_id || null,
+                        description: (p.note && p.note.length) ?
+                            p.note :
+                            (p.proposal_number ? 'Estimate ' + p.proposal_number : 'Estimate'),
+                        quantity: 1,
+                        price: Number(p.total_amount || 0),
+                        amount: Number(p.total_amount || 0)
+                    }, $insertBefore);
+                }
+
+                // remove card + update arrays
+                $(this).closest('.suggestion-card').remove();
+                allProposals = allProposals.filter(x => String(x.id) !== proposalId);
+                filteredProposals = filteredProposals.filter(x => String(x.id) !== proposalId);
+
+                if (!allProposals.length) {
+                    $list.html(
+                        '<p style="font-size:12px;color:#6b6f73;">' +
+                        'All suggested transactions have been added.' +
+                        '</p>'
+                    );
+                    showSuggestionsPanel(false);
+                }
+            });
+
+            // --- Add ALL visible estimates ---
+            $(document).on('click', '.suggestions-addall', function() {
+                if (!filteredProposals.length) return;
+
+                var $lastBody = $('#sortable-table').find('tbody').last();
+                var $insertBefore = null;
+                if ($lastBody.length && $lastBody.hasClass('special-body')) {
+                    $insertBefore = $lastBody;
+                }
+
+                filteredProposals.forEach(function(p) {
+                    if (p.items && p.items.length) {
+                        p.items.forEach(function(item) {
+                            insertProposalItem(item, $insertBefore);
+                        });
+                    } else {
+                        insertProposalItem({
+                            product_id: p.product_id || null,
+                            description: (p.note && p.note.length) ?
+                                p.note :
+                                (p.proposal_number ? 'Estimate ' + p.proposal_number :
+                                    'Estimate'),
+                            quantity: 1,
+                            price: Number(p.total_amount || 0),
+                            amount: Number(p.total_amount || 0)
+                        }, $insertBefore);
+                    }
+                });
+
+                allProposals = [];
+                filteredProposals = [];
+                $list.html(
+                    '<p style="font-size:12px;color:#6b6f73;">' +
+                    'All suggested transactions have been added.' +
+                    '</p>'
+                );
+                showSuggestionsPanel(false);
+            });
+
+            // Close suggestions panel with the X
+            $(document).on('click', '.suggestions-close', function() {
+                showSuggestionsPanel(false);
+            });
+
+            // ---------- Filter UI ----------
+            $(document).on('click', '.suggestions-filter-btn', function(e) {
+                e.stopPropagation();
+                $filterPanel.toggleClass('show');
+            });
+
+            $(document).on('click', '.suggestions-filter-close', function() {
+                $filterPanel.removeClass('show');
+            });
+
+            // click outside closes filter popup
+            $(document).on('click', function(e) {
+                if (!$(e.target).closest('#suggestions-filter-panel, .suggestions-filter-btn').length) {
+                    $filterPanel.removeClass('show');
+                }
+            });
+
+            $('#suggestions-filter-reset').on('click', function() {
+                $('#suggestions-filter-type').val('all');
+                $('#suggestions-filter-date').val('all');
+                filteredProposals = allProposals.slice();
+                renderSuggestions(filteredProposals);
+            });
+
+            $('#suggestions-filter-apply').on('click', function() {
+                applyFilter();
+                $filterPanel.removeClass('show');
+            });
+        });
+    </script>
 @endsection
 <script src=\"{{ asset('js/invoice-items-payload-handler.js') }}\"></script>

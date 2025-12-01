@@ -177,6 +177,7 @@ class ProposalController extends Controller
                 $proposal->note = $request->note;
                 $proposal->terms = $request->terms;
                 $proposal->accepted_by = $request->accepted_by;
+                $proposal->accepted_date = $request->accepted_date ? \Carbon\Carbon::parse($request->accepted_date)->format('Y-m-d') : null;
 
                 // Handle logo upload
                 if ($request->hasFile('company_logo')) {
@@ -392,6 +393,7 @@ class ProposalController extends Controller
                 'memo' => $proposal->memo,
                 'note' => $proposal->note,
                 'accepted_by' => $proposal->accepted_by,
+                'accepted_date' => $proposal->accepted_date ? \Carbon\Carbon::parse($proposal->accepted_date)->format('Y-m-d') : null,
                 'items' => $proposal->items
                     ->map(function ($item) {
                         $type = 'product';
@@ -432,7 +434,7 @@ class ProposalController extends Controller
 
     public function update(Request $request, Proposal $proposal)
     {
-        dd($request->all());
+        // dd($request->all());
         \DB::beginTransaction();
         try {
             if(\Auth::user()->can('edit proposal'))
@@ -484,6 +486,7 @@ class ProposalController extends Controller
                     $proposal->bill_to = $request->bill_to;
                     $proposal->terms = $request->terms;
                     $proposal->accepted_by = $request->accepted_by;
+                    $proposal->accepted_date = $request->accepted_date ? \Carbon\Carbon::parse($request->accepted_date)->format('Y-m-d') : null;
 
                     // Handle logo upload
                     if ($request->hasFile('company_logo')) {
@@ -1320,5 +1323,71 @@ class ProposalController extends Controller
 
         return $data;
     }
+    
+    public function customerProposalsForInvoice(Request $request)
+    {
+        // Make sure the user is allowed to see their own proposals
+        $user = \Auth::user();
+        if (!$user->can('create invoice') && !$user->can('manage proposal') && !$user->can('create proposal')) {
+            return response()->json(['message' => 'Permission denied.'], 403);
+        }
+
+        $customerId = $request->get('customer_id');
+        if (!$customerId) {
+            return response()->json([]);
+        }
+
+        // Respect company/owner separation like the rest of this controller
+        $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
+        $column  = ($user->type == 'company') ? 'created_by' : 'owned_by';
+
+        // Get proposals (= estimates) for this customer
+        $proposals = Proposal::where('customer_id', $customerId)
+            ->where($column, $ownerId)
+            ->orderByDesc('issue_date')
+            ->take(10)
+            ->get();
+
+        // ---- NEW: load all items for these proposals in one shot ----
+        $proposalIds = $proposals->pluck('id');
+
+        $itemsByProposal = \App\Models\ProposalProduct::whereIn('proposal_id', $proposalIds)
+            ->orderBy('id')
+            ->get()
+            ->groupBy('proposal_id');
+
+        // Shape the data for the right-side cards
+        $data = [];
+        foreach ($proposals as $p) {
+            $items = $itemsByProposal->get($p->id, collect())->map(function ($item) {
+                return [
+                    'id'             => $item->id,
+                    'product_id'     => $item->product_id,
+                    'quantity'       => $item->quantity,
+                    'price'          => $item->price,
+                    'description'    => $item->description,
+                    'amount'         => $item->amount,
+                    'discount'       => $item->discount,
+                    'tax'            => $item->tax,
+                    'taxable'        => $item->taxable,
+                    'item_tax_price' => $item->item_tax_price,
+                    'item_tax_rate'  => $item->item_tax_rate,
+                ];
+            })->values()->all();
+
+            $data[] = [
+                'id'               => $p->id,
+                'encrypted_id'     => Crypt::encrypt($p->id),
+                'proposal_number'  => $user->proposalNumberFormat($p->proposal_id),
+                'issue_date'       => $p->issue_date,
+                'total_amount'     => $p->total_amount ?? $p->subtotal ?? 0,
+                'note'             => $p->note ?? '',
+                'items'            => $items,   // 👈 IMPORTANT
+            ];
+        }
+
+        return response()->json($data);
+    }
+
 }
 
