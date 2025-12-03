@@ -17,6 +17,7 @@ use App\Models\JournalEntry;
 use App\Models\JournalItem;
 use App\Models\ProductService;
 use App\Models\ProductServiceCategory;
+use App\Models\Customer;
 use App\Models\StockReport;
 use App\Models\Transaction;
 use App\Models\User;
@@ -78,7 +79,7 @@ class BillController extends Controller
     //     }
     // }
 
-    public function index(Request $request)
+public function index(Request $request)
     {
         if (\Auth::user()->can('manage bill')) {
             $user = \Auth::user();
@@ -162,11 +163,36 @@ class BillController extends Controller
             $category = ProductServiceCategory::where($column, $ownerId)
                 ->whereNotIn('type', ['product & service', 'income',])
                 ->get()->pluck('name', 'id')->toArray();
-            $category = ['__add__' => '➕ Add new category'] + ['' => 'Select Category'] + $category;
+            $category = ['_add_' => '➕ Add new category'] + ['' => 'Select Category'] + $category;
 
             $bill_number = \Auth::user()->billNumberFormat($this->billNumber());
             $venders = Vender::where($column, $ownerId)->get()->pluck('name', 'id')->toArray();
-            $venders = ['__add__' => '➕ Add new vendor'] + ['' => 'Select Vendor'] + $venders;
+            $venders = ['_add_' => '➕ Add new vendor'] + ['' => 'Select Vendor'] + $venders;
+
+            $vendersQuery = Vender::where($column, $ownerId)->get();
+
+            $vendorOptions = [];
+            $vendorOptions[''] = 'Select Vendor';
+            $vendorOptions['add'] = 'Add new vendor';
+
+            foreach ($vendersQuery as $vender) {
+                // Full billing address banao
+                $address = "";
+                if ($vender->billing_name) $address .= $vender->billing_name . "\n";
+                if ($vender->billing_address) $address .= $vender->billing_address . "\n";
+                if ($vender->billing_city || $vender->billing_state || $vender->billing_zip) {
+                    $address .= trim($vender->billing_city . " " . $vender->billing_state . " " . $vender->billing_zip) . "\n";
+                }
+                if ($vender->billing_country) $address .= $vender->billing_country . "\n";
+                if ($vender->billing_phone) $address .= "Phone: " . $vender->billing_phone;
+
+                $vendorOptions[$vender->id] = [
+                    'name'    => $vender->name,
+                    'address' => trim($address),
+                    'terms'   => $vender->terms ?? 'Net 30',  // agar column hai toh use karo
+                    'balance' => $vender->getDueAmount() ?? 0, // ya jo method tumhare paas hai
+                ];
+            }
 
             $product_services = ProductService::where($column, $ownerId)->get()->pluck('name', 'id');
             $product_services->prepend('Select Item', '');
@@ -181,8 +207,9 @@ class BillController extends Controller
             $subAccounts->where('chart_of_accounts.parent', '!=', 0);
             $subAccounts->where('chart_of_accounts.created_by', \Auth::user()->creatorId());
             $subAccounts = $subAccounts->get()->toArray();
+            $customers = Customer::where($column, $ownerId)->get();
 
-            return view('bill.create', compact('venders', 'bill_number', 'product_services', 'category', 'customFields', 'vendorId', 'chartAccounts', 'subAccounts'));
+            return view('bill.create', compact('venders', 'bill_number', 'product_services', 'category', 'customFields', 'vendorId', 'chartAccounts', 'subAccounts', 'vendorOptions', 'customers'));
         } else {
             return response()->json(['error' => __('Permission denied.')], 401);
         }
@@ -2469,11 +2496,11 @@ class BillController extends Controller
 
     public function vender(Request $request)
     {
-        $vender = Vender::where('id', '=', $request->id)->first();
-
-        return view('bill.vender_detail', compact('vender'));
+        $vendor = Vender::find($request->id);
+        return response()->json([
+            'address' => $vendor->billing_address . "\n" . $vendor->city . ", " . $vendor->zip,
+        ]);
     }
-
 
     public function venderBillSend($bill_id)
     {

@@ -2801,11 +2801,11 @@
                                                     ]) }}
                                                 </td>
                                                 <!-- <td>
-                                                                                                                                            {{ Form::text('discount', '', [
-                                                                                                                                                'class' => 'form-control input-right discount',
-                                                                                                                                                'placeholder' => '0.00',
-                                                                                                                                            ]) }}
-                                                                                                                                        </td> -->
+                                                                                                                                                {{ Form::text('discount', '', [
+                                                                                                                                                    'class' => 'form-control input-right discount',
+                                                                                                                                                    'placeholder' => '0.00',
+                                                                                                                                                ]) }}
+                                                                                                                                            </td> -->
                                                 <td>
                                                     <input type="text" name="amount"
                                                         class="form-control input-right amount" value="0.00">
@@ -3768,9 +3768,9 @@
                     <div class="invoice-footer">
                         <div class="footer-left">
                             <!-- <button type="button" class="btn btn-secondary"
-                                                                                                                                                    onclick="location.href = '{{ route('invoice.index') }}';">
-                                                                                                                                                {{ __('Cancel') }}
-                                                                                                                                            </button> -->
+                                                                                                                                                        onclick="location.href = '{{ route('invoice.index') }}';">
+                                                                                                                                                    {{ __('Cancel') }}
+                                                                                                                                                </button> -->
                         </div>
 
                         <div class="footer-center">
@@ -4000,7 +4000,7 @@
 
             function insertProposalItem(item, $insertBefore) {
                 var hasProduct = item.product_id !== null && item.product_id !== undefined && item.product_id !==
-                '';
+                    '';
 
                 if (hasProduct) {
                     // normal product/service line (use repeater like before)
@@ -4085,8 +4085,8 @@
                     insertProposalItem({
                         product_id: p.product_id || null,
                         description: (p.note && p.note.length) ?
-                            p.note :
-                            (p.proposal_number ? 'Estimate ' + p.proposal_number : 'Estimate'),
+                            p.note : (p.proposal_number ? 'Estimate ' + p.proposal_number :
+                                'Estimate'),
                         quantity: 1,
                         price: Number(p.total_amount || 0),
                         amount: Number(p.total_amount || 0)
@@ -4127,8 +4127,8 @@
                         insertProposalItem({
                             product_id: p.product_id || null,
                             description: (p.note && p.note.length) ?
-                                p.note :
-                                (p.proposal_number ? 'Estimate ' + p.proposal_number :
+                                p.note : (p.proposal_number ? 'Estimate ' + p
+                                    .proposal_number :
                                     'Estimate'),
                             quantity: 1,
                             price: Number(p.total_amount || 0),

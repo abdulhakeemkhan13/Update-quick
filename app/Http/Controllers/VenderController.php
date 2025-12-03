@@ -34,7 +34,7 @@ class VenderController extends Controller
         return view('vender.dashboard', $data);
     }
 
-    public function index()
+    public function index(\App\DataTables\VendorsListDataTable $dataTable)
     {
         if(\Auth::user()->can('manage vender'))
         {
@@ -42,9 +42,59 @@ class VenderController extends Controller
             $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
             $column = ($user->type == 'company') ? 'created_by' : 'owned_by';
 
-            $venders = Vender::where($column, $ownerId)->get();
+            // Summary Data
+            $last365 = \Carbon\Carbon::now()->subDays(365);
+            $last30 = \Carbon\Carbon::now()->subDays(30);
 
-            return view('vender.index', compact('venders'));
+            // 1. Purchase Orders (Unbilled Last 365 Days)
+            $purchases = \App\Models\Purchase::where($column, $ownerId)
+                                 ->where('created_at', '>=', $last365)
+                                 ->get();
+            $purchaseOrderCount = $purchases->count();
+            $purchaseOrderAmount = 0;
+            foreach($purchases as $purchase){
+                $purchaseOrderAmount += $purchase->getTotal();
+            }
+
+            // 2. Overdue (Unpaid Last 365 Days)
+            $overdueBills = \App\Models\Bill::where($column, $ownerId)
+                                ->where('due_date', '<', date('Y-m-d'))
+                                ->where('status', '!=', 4)
+                                ->where('bill_date', '>=', $last365->format('Y-m-d'))
+                                ->get();
+            $overdueCount = $overdueBills->count();
+            $overdueAmount = 0;
+            foreach($overdueBills as $bill){
+                $overdueAmount += $bill->getDue();
+            }
+
+            // 3. Open Bills
+            $openBills = \App\Models\Bill::where($column, $ownerId)
+                             ->where('status', '!=', 4)
+                             ->get();
+            $openBillCount = $openBills->count();
+            $openBillAmount = 0;
+            foreach($openBills as $bill){
+                $openBillAmount += $bill->getDue();
+            }
+
+            // 4. Paid Last 30 Days
+            $paidBills = \App\Models\Bill::where($column, $ownerId)
+                             ->where('status', 4)
+                             ->where('updated_at', '>=', $last30)
+                             ->get();
+            $paidCount = $paidBills->count();
+            $paidAmount = 0;
+            foreach($paidBills as $bill){
+                $paidAmount += $bill->getTotal();
+            }
+
+            return $dataTable->render('vender.index', compact(
+                'purchaseOrderCount', 'purchaseOrderAmount',
+                'overdueCount', 'overdueAmount',
+                'openBillCount', 'openBillAmount',
+                'paidCount', 'paidAmount'
+            ));
         }
         else
         {
@@ -59,7 +109,8 @@ class VenderController extends Controller
         {
             $customFields = CustomField::where('created_by', '=', \Auth::user()->creatorId())->where('module', '=', 'vendor')->get();
 
-            return view('vender.create', compact('customFields'));
+            // return view('vender.create', compact('customFields'));
+            return view('vender.create-right', compact('customFields'));
         }
         else
         {
@@ -132,6 +183,29 @@ public function store(Request $request)
             $vender->shipping_phone   = $request->shipping_phone;
             $vender->shipping_zip     = $request->shipping_zip;
             $vender->shipping_address = $request->shipping_address;
+            $vender->company_name     = $request->company_name;
+            $vender->title            = $request->title;
+            $vender->first_name       = $request->first_name;
+            $vender->middle_name      = $request->middle_name;
+            $vender->last_name        = $request->last_name;
+            $vender->suffix           = $request->suffix;
+            $vender->mobile           = $request->mobile;
+            $vender->fax              = $request->fax;
+            $vender->other            = $request->other;
+            $vender->website          = $request->website;
+            $vender->print_on_check_name = $request->print_on_check_name;
+            $vender->billing_address_2 = $request->billing_address_2;
+            $vender->notes            = $request->notes;
+            $vender->bank_account_number = $request->bank_account_number;
+            $vender->routing_number   = $request->routing_number;
+            $vender->business_id_no   = $request->business_id_no;
+            $vender->track_payments_1099 = $request->has('track_payments_1099') ? 1 : 0;
+            $vender->billing_rate     = $request->billing_rate;
+            $vender->terms            = $request->terms;
+            $vender->account_no       = $request->account_no;
+            $vender->default_expense_category = $request->default_expense_category;
+            $vender->opening_balance  = $request->opening_balance;
+            $vender->opening_balance_as_of = $request->opening_balance_as_of;
             $vender->lang             = !empty($default_language) ? $default_language->value : '';
             $vender->save();
 
@@ -294,7 +368,7 @@ public function store(Request $request)
             $vender->customField = CustomField::getData($vender, 'vendor');
             $customFields = CustomField::where('created_by', '=', \Auth::user()->creatorId())->where('module', '=', 'vendor')->get();
 
-            return view('vender.edit', compact('vender', 'customFields'));
+            return view('vender.edit-right', compact('vender', 'customFields'));
         }
         else
         {
@@ -341,6 +415,29 @@ public function store(Request $request)
             $vender->shipping_phone   = $request->shipping_phone;
             $vender->shipping_zip     = $request->shipping_zip;
             $vender->shipping_address = $request->shipping_address;
+            $vender->company_name     = $request->company_name;
+            $vender->title            = $request->title;
+            $vender->first_name       = $request->first_name;
+            $vender->middle_name      = $request->middle_name;
+            $vender->last_name        = $request->last_name;
+            $vender->suffix           = $request->suffix;
+            $vender->mobile           = $request->mobile;
+            $vender->fax              = $request->fax;
+            $vender->other            = $request->other;
+            $vender->website          = $request->website;
+            $vender->print_on_check_name = $request->print_on_check_name;
+            $vender->billing_address_2 = $request->billing_address_2;
+            $vender->notes            = $request->notes;
+            $vender->bank_account_number = $request->bank_account_number;
+            $vender->routing_number   = $request->routing_number;
+            $vender->business_id_no   = $request->business_id_no;
+            $vender->track_payments_1099 = $request->has('track_payments_1099') ? 1 : 0;
+            $vender->billing_rate     = $request->billing_rate;
+            $vender->terms            = $request->terms;
+            $vender->account_no       = $request->account_no;
+            $vender->default_expense_category = $request->default_expense_category;
+            $vender->opening_balance  = $request->opening_balance;
+            $vender->opening_balance_as_of = $request->opening_balance_as_of;
             $vender->save();
             CustomField::saveData($vender, $request->customField);
             Utility::makeActivityLog(\Auth::user()->id,'Vender',$vender->id,'Update Vender',$vender->name);

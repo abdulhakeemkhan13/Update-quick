@@ -38,6 +38,29 @@ class Vender extends Authenticatable
         'shipping_phone',
         'shipping_zip',
         'shipping_address',
+        'company_name',
+        'title',
+        'first_name',
+        'middle_name',
+        'last_name',
+        'suffix',
+        'mobile',
+        'fax',
+        'other',
+        'website',
+        'print_on_check_name',
+        'billing_address_2',
+        'notes',
+        'bank_account_number',
+        'routing_number',
+        'business_id_no',
+        'track_payments_1099',
+        'billing_rate',
+        'terms',
+        'account_no',
+        'default_expense_category',
+        'opening_balance',
+        'opening_balance_as_of',
     ];
 
     protected $hidden = [
@@ -238,6 +261,20 @@ class Vender extends Authenticatable
 
         return $due;
     }
+
+    public function getDueAmount()
+{
+    $totalDue = 0;
+    $bills = \App\Models\Bill::where('vender_id', $this->id)
+                             ->where('status', '!=', 4)
+                             ->get();
+
+    foreach ($bills as $bill) {
+        $totalDue += $bill->getDue(); // Ye method already exist karta hoga Bill model mein
+    }
+
+    return $totalDue;
+}
 
     public function bills()
     {
