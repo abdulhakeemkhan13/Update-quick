@@ -31,6 +31,12 @@
                         </a>
                     </li>
                     <li class="nav-item" role="presentation">
+                        <a class="nav-link {{ Request::segment(1) == 'receive-payment' ? 'active' : '' }}"
+                            href="{{ route('receive-payment.index') }}">
+                            <i class="ti ti-cash me-2"></i>{{ __('Payments') }}
+                        </a>
+                    </li>
+                    <li class="nav-item" role="presentation">
                         <a class="nav-link {{ Request::route()->getName() == 'invoice.recurring-invoices' ? 'active' : '' }}" href="{{ route('invoice.recurring-invoices')}}">
                             <i class="ti ti-refresh me-2"></i>{{ __('Recurring Invoices') }}
                         </a>

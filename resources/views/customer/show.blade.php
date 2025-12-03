@@ -39,6 +39,10 @@
                             <i class="ti ti-clipboard me-2"></i>{{ __('Proposal') }}
                         </a></li>
                 @endcan
+                <li><a class="dropdown-item" href="{{ route('receive-payment.create', $customer->id) }}">
+                        <i class="ti ti-clipboard me-2"></i>{{ __('Payment') }}
+                    </a></li>
+                </a>
             </ul>
         </div>
 
@@ -426,13 +430,137 @@
                     </div>
 
                     <!-- Transaction Table -->
+                    @php
+                        $items = [];
+
+                        /* ----------------------------------------------------------
+        INVOICES
+    ---------------------------------------------------------- */
+                        foreach ($customer->customerInvoice($customer->id) as $invoice) {
+                            $items[] = [
+                                'created_at' => $invoice->created_at,
+                                'date' => $invoice->issue_date,
+                                'type' => 'Invoice',
+                                'no' => Auth::user()->invoiceNumberFormat($invoice->invoice_id),
+                                'id' => $invoice->id,
+                                'amount' => $invoice->getDue(),
+                                'memo' => '-',
+                                'status' => \App\Models\Invoice::$statues[$invoice->status],
+                                'status_class' => match ($invoice->status) {
+                                    0 => 'bg-primary',
+                                    1 => 'bg-warning text-dark',
+                                    2 => 'bg-danger',
+                                    3 => 'bg-info',
+                                    4 => 'bg-success',
+                                },
+                                'link' => route('invoice.show', Crypt::encrypt($invoice->id)),
+                                'action_type' => 'invoice',
+                                'show_payment' => $invoice->status != 4 && $invoice->getDue() > 0,
+                                'credit_amount' => null,
+                            ];
+                        }
+
+                        /* ----------------------------------------------------------
+        PROPOSALS
+    ---------------------------------------------------------- */
+                        foreach ($customer->customerProposal($customer->id) as $proposal) {
+                            $items[] = [
+                                'created_at' => $proposal->created_at,
+                                'date' => $proposal->issue_date,
+                                'type' => 'Estimate',
+                                'no' => Auth::user()->proposalNumberFormat($proposal->proposal_id),
+                                'id' => $proposal->id,
+                                'amount' => $proposal->getTotal(),
+                                'memo' => '-',
+                                'status' => \App\Models\Proposal::$statues[$proposal->status],
+                                'status_class' => match ($proposal->status) {
+                                    0 => 'bg-primary',
+                                    1 => 'bg-warning text-dark',
+                                    2 => 'bg-danger',
+                                    3 => 'bg-info',
+                                    4 => 'bg-success',
+                                },
+                                'link' => route('proposal.show', Crypt::encrypt($proposal->id)),
+                                'action_type' => 'proposal',
+                                'credit_amount' => null,
+                            ];
+                        }
+
+                        /* ----------------------------------------------------------
+        DEPOSITS
+    ---------------------------------------------------------- */
+                        foreach ($customer->customerDeposits($customer->id) as $deposit) {
+                            $items[] = [
+                                'created_at' => $deposit->created_at,
+                                'date' => $deposit->txn_date,
+                                'type' => 'Deposit',
+                                'no' => $deposit->doc_number,
+                                'id' => null,
+                                'amount' => $deposit->total_amt,
+                                'memo' => $deposit->private_note ?? '-',
+                                'status' => 'Completed',
+                                'status_class' => 'bg-success',
+                                'link' => '#',
+                                'action_type' => 'deposit',
+                                'credit_amount' => null,
+                            ];
+                        }
+
+                        /* ----------------------------------------------------------
+        PAYMENTS
+    ---------------------------------------------------------- */
+                        $user = Auth::user();
+                        $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
+
+                        $paymentGroups = \App\Models\Transaction::where('user_id', $customer->id)
+                            ->where('user_type', 'Customer')
+                            ->whereNotNull('payment_no')
+                            ->where('owned_by', $ownerId)
+                            ->orderBy('created_at', 'desc')
+                            ->get()
+                            ->groupBy('payment_no');
+
+                        foreach ($paymentGroups as $paymentNo => $transactions) {
+                            $first = $transactions->first();
+
+                            $invoicePayment = $transactions->where('type', 'Partial')->sum('amount');
+                            $creditAmount = $transactions
+                                ->where('type', 'credit')
+                                ->where('category', 'Customer Credit')
+                                ->sum('amount');
+
+                            $status = $invoicePayment > 0 ? 'Payment' : ($creditAmount > 0 ? 'Credit' : 'Payment');
+                            $statusClass =
+                                $invoicePayment > 0 ? 'bg-success' : ($creditAmount > 0 ? 'bg-info' : 'bg-primary');
+
+                            $items[] = [
+                                'created_at' => $first->created_at,
+                                'date' => $first->date,
+                                'type' => 'Payment',
+                                'no' => Auth::user()->paymentNumberFormat($paymentNo),
+                                'id' => null,
+                                'amount' => $transactions->sum('amount'),
+                                'memo' => $first->description ?? '-',
+                                'status' => $status,
+                                'status_class' => $statusClass,
+                                'link' => '#',
+                                'action_type' => 'payment',
+                                'credit_amount' => $creditAmount,
+                            ];
+                        }
+
+                        /* ----------------------------------------------------------
+        FINAL SORTING BY created_at DESC
+    ---------------------------------------------------------- */
+                        $items = collect($items)->sortByDesc('created_at')->values();
+                    @endphp
+
+
                     <div class="table-responsive">
                         <table class="table table-hover qb-transactions-table">
                             <thead class="table-light">
                                 <tr>
-                                    <th width="5%">
-                                        <input class="form-check-input" type="checkbox">
-                                    </th>
+                                    <th width="5%"><input class="form-check-input" type="checkbox"></th>
                                     <th>{{ __('DATE') }} <i class="ti ti-arrow-up-down"></i></th>
                                     <th>{{ __('TYPE') }}</th>
                                     <th>{{ __('NO.') }}</th>
@@ -443,140 +571,50 @@
                                     <th>{{ __('ACTION') }}</th>
                                 </tr>
                             </thead>
+
                             <tbody>
-                                @foreach ($customer->customerInvoice($customer->id) as $invoice)
+                                @foreach ($items as $item)
                                     <tr>
-                                        <td>
-                                            <input class="form-check-input" type="checkbox">
+                                        <td><input class="form-check-input" type="checkbox"></td>
+
+                                        <td class="fw-semibold">{{ Auth::user()->dateFormat($item['date']) }}</td>
+
+                                        <td><span class="badge bg-light text-dark fw-normal">{{ $item['type'] }}</span>
                                         </td>
-                                        <td class="fw-semibold">{{ \Auth::user()->dateFormat($invoice->issue_date) }}</td>
-                                        <td><span class="badge bg-light text-dark fw-normal">{{ __('Invoice') }}</span>
-                                        </td>
-                                        <td>
-                                            <a href="{{ route('invoice.show', \Crypt::encrypt($invoice->id)) }}"
-                                                class="text-decoration-none fw-semibold">
-                                                {{ AUth::user()->invoiceNumberFormat($invoice->invoice_id) }}
-                                            </a>
-                                        </td>
+
+                                        <td class="fw-semibold">{{ $item['no'] }}</td>
+
                                         <td>{{ $customer['name'] }}</td>
-                                        <td class="text-muted small">-</td>
-                                        <td class="fw-bold">{{ \Auth::user()->priceFormat($invoice->getDue()) }}</td>
+
+                                        <td class="text-muted small">{{ $item['memo'] }}</td>
+
+                                        <td class="fw-bold">{{ Auth::user()->priceFormat($item['amount']) }}</td>
+
                                         <td>
-                                            @if ($invoice->status == 0)
-                                                <span
-                                                    class="badge bg-primary">{{ __(\App\Models\Invoice::$statues[$invoice->status]) }}</span>
-                                            @elseif($invoice->status == 1)
-                                                <span
-                                                    class="badge bg-warning text-dark">{{ __(\App\Models\Invoice::$statues[$invoice->status]) }}</span>
-                                            @elseif($invoice->status == 2)
-                                                <span
-                                                    class="badge bg-danger">{{ __(\App\Models\Invoice::$statues[$invoice->status]) }}</span>
-                                            @elseif($invoice->status == 3)
-                                                <span
-                                                    class="badge bg-info">{{ __(\App\Models\Invoice::$statues[$invoice->status]) }}</span>
-                                            @elseif($invoice->status == 4)
-                                                <span
-                                                    class="badge bg-success">{{ __(\App\Models\Invoice::$statues[$invoice->status]) }}</span>
+                                            <span class="badge {{ $item['status_class'] }}">{{ $item['status'] }}</span>
+
+                                            {{-- SEPARATE CREDIT BADGE --}}
+                                            @if ($item['credit_amount'])
+                                                <span class="text-dark ms-1" style="font-size:9px;">
+                                                    <br> + Credit {{ Auth::user()->priceFormat($item['credit_amount']) }}
+                                                </span>
                                             @endif
                                         </td>
-                                        <td>
-                                            <div class="d-flex gap-2 justify-content-end">
-                                                @can('show invoice')
-                                                    <a href="{{ route('invoice.show', \Crypt::encrypt($invoice->id)) }}"
-                                                        class="text-primary small text-decoration-none">{{ __('View/Edit') }}</a>
-                                                @endcan
-                                                <span class="text-muted">|</span>
-                                                <a href="#"
-                                                    class="text-primary small text-decoration-none">{{ __('Receive payment') }}</a>
-                                                <div class="dropdown d-inline">
-                                                    <a class="text-muted small" href="#" role="button"
-                                                        data-bs-toggle="dropdown">
-                                                        <i class="ti ti-chevron-down"></i>
-                                                    </a>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                @endforeach
 
-                                @foreach ($customer->customerProposal($customer->id) as $proposal)
-                                    <tr>
-                                        <td>
-                                            <input class="form-check-input" type="checkbox">
-                                        </td>
-                                        <td class="fw-semibold">{{ \Auth::user()->dateFormat($proposal->issue_date) }}
-                                        </td>
-                                        <td><span class="badge bg-light text-dark fw-normal">{{ __('Estimate') }}</span>
-                                        </td>
-                                        <td>
-                                            <a href="{{ route('proposal.show', \Crypt::encrypt($proposal->id)) }}"
-                                                class="text-decoration-none fw-semibold">
-                                                {{ AUth::user()->proposalNumberFormat($proposal->proposal_id) }}
-                                            </a>
-                                        </td>
-                                        <td>{{ $customer['name'] }}</td>
-                                        <td class="text-muted small">-</td>
-                                        <td class="fw-bold">{{ \Auth::user()->priceFormat($proposal->getTotal()) }}</td>
-                                        <td>
-                                            @if ($proposal->status == 0)
-                                                <span
-                                                    class="badge bg-primary">{{ __(\App\Models\Proposal::$statues[$proposal->status]) }}</span>
-                                            @elseif($proposal->status == 1)
-                                                <span
-                                                    class="badge bg-warning text-dark">{{ __(\App\Models\Proposal::$statues[$proposal->status]) }}</span>
-                                            @elseif($proposal->status == 2)
-                                                <span
-                                                    class="badge bg-danger">{{ __(\App\Models\Proposal::$statues[$proposal->status]) }}</span>
-                                            @elseif($proposal->status == 3)
-                                                <span
-                                                    class="badge bg-info">{{ __(\App\Models\Proposal::$statues[$proposal->status]) }}</span>
-                                            @elseif($proposal->status == 4)
-                                                <span
-                                                    class="badge bg-success">{{ __(\App\Models\Proposal::$statues[$proposal->status]) }}</span>
-                                            @endif
-                                        </td>
                                         <td>
                                             <div class="d-flex gap-2 justify-content-end">
-                                                @can('show proposal')
-                                                    <a href="{{ route('proposal.show', \Crypt::encrypt($proposal->id)) }}"
-                                                        class="text-primary small text-decoration-none">{{ __('View/Edit') }}</a>
-                                                @endcan
-                                                <span class="text-muted">|</span>
-                                                <a href="#"
-                                                    class="text-primary small text-decoration-none">{{ __('Send') }}</a>
-                                                <div class="dropdown d-inline">
-                                                    <a class="text-muted small" href="#" role="button"
-                                                        data-bs-toggle="dropdown">
-                                                        <i class="ti ti-chevron-down"></i>
-                                                    </a>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                @endforeach
+                                                <a href="{{ $item['link'] }}"
+                                                    class="text-primary small text-decoration-none">
+                                                    {{ in_array($item['action_type'], ['invoice', 'proposal']) ? 'View/Edit' : 'View' }}
+                                                </a>
 
-                                @foreach ($customer->customerDeposits($customer->id) as $deposit)
-                                    <tr>
-                                        <td>
-                                            <input class="form-check-input" type="checkbox">
-                                        </td>
-                                        <td class="fw-semibold">{{ \Auth::user()->dateFormat($deposit->txn_date) }}</td>
-                                        <td><span class="badge bg-light text-dark fw-normal">{{ __('Deposit') }}</span>
-                                        </td>
-                                        <td class="fw-semibold">{{ $deposit->doc_number }}</td>
-                                        <td>{{ $customer['name'] }}</td>
-                                        <td class="text-muted small">{{ $deposit->private_note ?? '-' }}</td>
-                                        <td class="fw-bold">{{ \Auth::user()->priceFormat($deposit->total_amt) }}</td>
-                                        <td>
-                                            <span class="badge bg-success">{{ __('Completed') }}</span>
-                                        </td>
-                                        <td>
-                                            <div class="d-flex gap-2 justify-content-end">
-                                                <a href="#"
-                                                    class="text-primary small text-decoration-none">{{ __('View/Edit') }}</a>
-                                                <span class="text-muted">|</span>
-                                                <a href="#"
-                                                    class="text-primary small text-decoration-none">{{ __('More') }}</a>
+                                                @if ($item['action_type'] == 'invoice' && $item['show_payment'])
+                                                    <span class="text-muted">|</span>
+                                                    <a href="{{ route('receive-payment.create', $customer->id) }}?invoice_id={{ $item['id'] }}"
+                                                        class="text-primary small text-decoration-none">
+                                                        Receive payment
+                                                    </a>
+                                                @endif
                                             </div>
                                         </td>
                                     </tr>
@@ -584,6 +622,8 @@
                             </tbody>
                         </table>
                     </div>
+
+
                 </div>
             </div>
 
@@ -1098,127 +1138,127 @@
             border-bottom: 2px solid #e5e5e5 !important;
         }
     </style>
-    @push('script-page')
-        <script>
-            (function() {
-                function openSidebarSection(collapseId, focusSelector) {
-                    const offcanvasEl = document.getElementById('customerEditSidebar');
-                    const offcanvas = bootstrap.Offcanvas.getOrCreateInstance(offcanvasEl);
-                    offcanvas.show();
+@endsection
 
-                    setTimeout(function() {
-                        if (collapseId) {
-                            const section = document.getElementById(collapseId);
-                            if (section) {
-                                const collapseInstance = bootstrap.Collapse.getOrCreateInstance(section, {
-                                    toggle: false
-                                });
-                                collapseInstance.show();
-                                section.scrollIntoView({
-                                    behavior: 'smooth',
-                                    block: 'start'
-                                });
-                            }
+@push('script-page')
+    <script>
+        (function() {
+            function openSidebarSection(collapseId, focusSelector) {
+                const offcanvasEl = document.getElementById('customerEditSidebar');
+                const offcanvas = bootstrap.Offcanvas.getOrCreateInstance(offcanvasEl);
+                offcanvas.show();
+
+                setTimeout(function() {
+                    if (collapseId) {
+                        const section = document.getElementById(collapseId);
+                        if (section) {
+                            const collapseInstance = bootstrap.Collapse.getOrCreateInstance(section, {
+                                toggle: false
+                            });
+                            collapseInstance.show();
+                            section.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'start'
+                            });
                         }
-                        if (focusSelector) {
-                            const el = document.getElementById('customerEditSidebar').querySelector(focusSelector);
-                            if (el) el.focus();
-                        }
-                    }, 320);
+                    }
+                    if (focusSelector) {
+                        const el = document.getElementById('customerEditSidebar').querySelector(focusSelector);
+                        if (el) el.focus();
+                    }
+                }, 320);
+            }
+
+            const shortcuts = [{
+                    btn: 'editNameField',
+                    collapse: 'collapseNameContact',
+                    focus: 'input[name="name"]'
+                },
+                {
+                    btn: 'openCompanyField',
+                    collapse: 'collapseNameContact',
+                    focus: 'input[name="company"]'
+                },
+                {
+                    btn: 'editPhoneField',
+                    collapse: 'collapseNameContact',
+                    focus: 'input[name="contact"]'
+                },
+                {
+                    btn: 'editEmailField',
+                    collapse: 'collapseNameContact',
+                    focus: 'input[name="email"]'
+                },
+                {
+                    btn: 'editBillingAddress',
+                    collapse: 'collapseAddresses',
+                    focus: 'input[name="billing_address"]'
+                },
+                {
+                    btn: 'editShippingAddress',
+                    collapse: 'collapseAddresses',
+                    focus: 'input[name="shipping_address"]'
+                },
+                {
+                    btn: 'openNotesSection',
+                    collapse: 'collapseNotesAttachments',
+                    focus: 'textarea[name="notes"]'
+                },
+                {
+                    btn: 'openCustomFields',
+                    collapse: 'collapseCustom',
+                    focus: '#customFieldsWrapper input'
                 }
+            ];
 
-                const shortcuts = [{
-                        btn: 'editNameField',
-                        collapse: 'collapseNameContact',
-                        focus: 'input[name="name"]'
-                    },
-                    {
-                        btn: 'openCompanyField',
-                        collapse: 'collapseNameContact',
-                        focus: 'input[name="company"]'
-                    },
-                    {
-                        btn: 'editPhoneField',
-                        collapse: 'collapseNameContact',
-                        focus: 'input[name="contact"]'
-                    },
-                    {
-                        btn: 'editEmailField',
-                        collapse: 'collapseNameContact',
-                        focus: 'input[name="email"]'
-                    },
-                    {
-                        btn: 'editBillingAddress',
-                        collapse: 'collapseAddresses',
-                        focus: 'input[name="billing_address"]'
-                    },
-                    {
-                        btn: 'editShippingAddress',
-                        collapse: 'collapseAddresses',
-                        focus: 'input[name="shipping_address"]'
-                    },
-                    {
-                        btn: 'openNotesSection',
-                        collapse: 'collapseNotesAttachments',
-                        focus: 'textarea[name="notes"]'
-                    },
-                    {
-                        btn: 'openCustomFields',
-                        collapse: 'collapseCustom',
-                        focus: '#customFieldsWrapper input'
-                    }
-                ];
+            shortcuts.forEach(function(s) {
+                const el = document.getElementById(s.btn);
+                if (el) {
+                    el.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        openSidebarSection(s.collapse, s.focus);
+                    });
+                }
+            });
+        })();
+    </script>
 
-                shortcuts.forEach(function(s) {
-                    const el = document.getElementById(s.btn);
-                    if (el) {
-                        el.addEventListener('click', function(e) {
-                            e.preventDefault();
-                            openSidebarSection(s.collapse, s.focus);
-                        });
-                    }
-                });
-            })();
-        </script>
-
-        <script>
-            (function() {
-                // Add custom field row
-                let customIndex = document.querySelectorAll('#customFieldsWrapper .custom-field-row').length || 0;
-                document.getElementById('addCustomFieldBtn').addEventListener('click', function() {
-                    const wrapper = document.getElementById('customFieldsWrapper');
-                    const idx = customIndex++;
-                    const row = document.createElement('div');
-                    row.className = 'input-group mb-2 custom-field-row';
-                    row.innerHTML = `
+    <script>
+        (function() {
+            // Add custom field row
+            let customIndex = document.querySelectorAll('#customFieldsWrapper .custom-field-row').length || 0;
+            document.getElementById('addCustomFieldBtn').addEventListener('click', function() {
+                const wrapper = document.getElementById('customFieldsWrapper');
+                const idx = customIndex++;
+                const row = document.createElement('div');
+                row.className = 'input-group mb-2 custom-field-row';
+                row.innerHTML = `
                         <input type="text" name="custom_fields[${idx}][label]" class="form-control" placeholder="Label">
                         <input type="text" name="custom_fields[${idx}][value]" class="form-control" placeholder="Value">
                         <button class="btn btn-outline-danger remove-custom-field" type="button">&times;</button>
                     `;
-                    wrapper.appendChild(row);
-                });
+                wrapper.appendChild(row);
+            });
 
-                // Delegate remove custom field
-                document.addEventListener('click', function(e) {
-                    if (e.target && e.target.classList.contains('remove-custom-field')) {
-                        const row = e.target.closest('.custom-field-row');
-                        if (row) row.remove();
-                    }
-                });
+            // Delegate remove custom field
+            document.addEventListener('click', function(e) {
+                if (e.target && e.target.classList.contains('remove-custom-field')) {
+                    const row = e.target.closest('.custom-field-row');
+                    if (row) row.remove();
+                }
+            });
 
-                // Prevent the offcanvas closing on form submit until request completes if you later handle via ajax
-                document.getElementById('customerEditForm').addEventListener('submit', function() {
-                    // Default is full submit — server will redirect/refresh.
-                    // If you want AJAX handling, replace with AJAX code here.
-                });
+            // Prevent the offcanvas closing on form submit until request completes if you later handle via ajax
+            document.getElementById('customerEditForm').addEventListener('submit', function() {
+                // Default is full submit — server will redirect/refresh.
+                // If you want AJAX handling, replace with AJAX code here.
+            });
 
-                // Enable bootstrap tooltips (if disabled on page)
-                var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-                tooltipTriggerList.forEach(function(tooltipTriggerEl) {
-                    new bootstrap.Tooltip(tooltipTriggerEl)
-                });
-            })();
-        </script>
-    @endpush
-
-@endsection
+            // Enable bootstrap tooltips (if disabled on page)
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+            tooltipTriggerList.forEach(function(tooltipTriggerEl) {
+                new bootstrap.Tooltip(tooltipTriggerEl)
+            });
+        })();
+    </script>
+@endpush

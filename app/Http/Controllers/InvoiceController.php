@@ -687,6 +687,11 @@ class InvoiceController extends Controller
                     // Determine item type
                     $itemType = $prod['type'] ?? 'product';
 
+                    // Set line_type, estimate_id and proposal_product_id if present (for items from estimates)
+                    $invoiceProduct->line_type = $prod['line_type'] ?? null;
+                    $invoiceProduct->estimate_id = $prod['estimate_id'] ?? null;
+                    $invoiceProduct->proposal_product_id = $prod['proposal_product_id'] ?? null;
+
                     if ($itemType === 'product') {
                         // Handle product items
                         $invoiceProduct->product_id = $prod['item_id'] ?? ($prod['item'] ?? null);
@@ -739,6 +744,9 @@ class InvoiceController extends Controller
                     $invoiceProduct->save();
                     $newitems[$i]['prod_id'] = $invoiceProduct->id;
                 }
+
+                // Update estimate status based on invoiced items
+                $this->updateEstimateStatusAfterInvoice($products);
 
                 // Notifications (Slack, Telegram, Twilio)
                 $setting = Utility::settings(\Auth::user()->creatorId());
@@ -952,6 +960,8 @@ class InvoiceController extends Controller
             'created_by' => $invoice->created_by,
             'prod_id' => $invoiceProducts->where('product_id', '!=', null)->first()->product_id ?? null,
             'items' => $newitems,
+            'customer_id' => $invoice->customer_id,
+            'total' => $invoice->getTotal(),
         ];
 
         $voucherId = Utility::jrentry($data);
@@ -1214,12 +1224,14 @@ class InvoiceController extends Controller
                             'itemTaxPrice' => $item->item_tax_price,
                             'itemTaxRate' => $item->item_tax_rate,
                             'amount' => $item->amount,
+                            'estimate_id' => $item->estimate_id,
+                            'line_type' => $item->line_type,
+                            'proposal_product_id' => $item->proposal_product_id,
                         ];
                     })
                     ->toArray(),
             ];
             // dd($invoiceData);
-            // Always return modal view (no direct page access)
             return view('invoice.edit_modal', compact('customers', 'invoice', 'product_services', 'category', 'customFields', 'customerId', 'taxes', 'billTo', 'shipTo', 'invoiceData'))->with('mode', 'edit');
         } else {
             return response()->json(['error' => __('Permission denied.')], 401);
@@ -1625,6 +1637,12 @@ class InvoiceController extends Controller
                     // Log activity
                     Utility::makeActivityLog(\Auth::user()->id, 'Invoice', $invoice->id, 'Update Invoice', $invoice->description);
                     \DB::commit();
+
+                    // Check for return_url in request
+                    $returnUrl = $request->input('return_url');
+                    if ($returnUrl) {
+                        return redirect($returnUrl)->with('success', __('Invoice successfully updated.'));
+                    }
                     return redirect()->route('invoice.index')->with('success', __('Invoice successfully updated.'));
                 } else {
                     return redirect()->back()->with('error', __('Permission denied.'));
@@ -1656,6 +1674,11 @@ class InvoiceController extends Controller
                 // New item - Create it
                 $invoiceProduct = new InvoiceProduct();
                 $invoiceProduct->invoice_id = $invoice->id;
+
+                // Set line_type, estimate_id and proposal_product_id if present (for items from estimates)
+                $invoiceProduct->line_type = $prod['line_type'] ?? null;
+                $invoiceProduct->estimate_id = $prod['estimate_id'] ?? null;
+                $invoiceProduct->proposal_product_id = $prod['proposal_product_id'] ?? null;
 
                 if ($itemType === 'product') {
                     // Handle product items
@@ -1715,6 +1738,11 @@ class InvoiceController extends Controller
                 if ($invoiceProduct->product_id) {
                     Utility::total_quantity('plus', $invoiceProduct->quantity, $invoiceProduct->product_id);
                 }
+
+                // Update line_type, estimate_id and proposal_product_id if present
+                $invoiceProduct->line_type = $prod['line_type'] ?? $invoiceProduct->line_type;
+                $invoiceProduct->estimate_id = $prod['estimate_id'] ?? $invoiceProduct->estimate_id;
+                $invoiceProduct->proposal_product_id = $prod['proposal_product_id'] ?? $invoiceProduct->proposal_product_id;
 
                 if ($itemType === 'product') {
 
@@ -1785,10 +1813,16 @@ class InvoiceController extends Controller
             }
             $productToDelete->delete();
         }
+
+        // Update estimate status based on invoiced items
+        $this->updateEstimateStatusAfterInvoice($products);
     }
 
     private function updateApprovedInvoice($invoice, $voucher, $products, $request)
     {
+        // Store old total for customer balance adjustment
+        $oldTotal = $invoice->getTotal();
+
         // Delete old stock reports for this invoice
         StockReport::where('type', '=', 'invoice')->where('type_id', '=', $invoice->id)->delete();
         $reciveable = 0;
@@ -1808,7 +1842,9 @@ class InvoiceController extends Controller
                 // New item added after approval
                 $invoiceProduct = new InvoiceProduct();
                 $invoiceProduct->invoice_id = $invoice->id;
-
+                $invoiceProduct->line_type = $prod['line_type'] ?? null;
+                $invoiceProduct->estimate_id = $prod['estimate_id'] ?? null;
+                $invoiceProduct->proposal_product_id = $prod['proposal_product_id'] ?? null;
                 if ($itemType === 'product') {
                     // Handle product items
                     $invoiceProduct->product_id = $productId;
@@ -2192,6 +2228,25 @@ class InvoiceController extends Controller
                 }
             }
         }
+
+        // Update estimate status based on invoiced items
+        $this->updateEstimateStatusAfterInvoice($products);
+
+        // Update customer balance if invoice total has changed
+        // Refresh the invoice to get updated totals after product changes
+        $invoice->refresh();
+        $newTotal = $invoice->getTotal();
+
+        if ($invoice->customer_id != 0 && $oldTotal != $newTotal) {
+            $difference = $newTotal - $oldTotal;
+            if ($difference > 0) {
+                // New total is higher, increase customer balance (debit)
+                Utility::updateUserBalance('customer', $invoice->customer_id, $difference, 'debit');
+            } else {
+                // New total is lower, decrease customer balance (credit)
+                Utility::updateUserBalance('customer', $invoice->customer_id, abs($difference), 'credit');
+            }
+        }
     }
 
     public function invoiceNumber()
@@ -2280,6 +2335,9 @@ class InvoiceController extends Controller
                                     'itemTaxPrice' => $item->item_tax_price,
                                     'itemTaxRate' => $item->item_tax_rate,
                                     'amount' => $item->amount,
+                                    'estimate_id' => $item->estimate_id,
+                                    'line_type' => $item->line_type,
+                                    'proposal_product_id' => $item->proposal_product_id,
                                 ];
                             })
                             ->toArray(),
@@ -3309,6 +3367,49 @@ class InvoiceController extends Controller
             ));
         } else {
             return response()->json(['error' => __('Permission denied.')], 401);
+        }
+    }
+
+    /**
+     * Update estimate/proposal status based on invoiced items
+     * - If all items from an estimate are invoiced, set status to "Close" (4)
+     * - Otherwise, keep the status as is
+     */
+    private function updateEstimateStatusAfterInvoice(array $products)
+    {
+        // Collect unique estimate IDs from the products
+        $estimateIds = collect($products)
+            ->filter(function ($prod) {
+                return !empty($prod['estimate_id']) && ($prod['line_type'] ?? null) === 'estimate';
+            })
+            ->pluck('estimate_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($estimateIds)) {
+            return;
+        }
+
+        foreach ($estimateIds as $estimateId) {
+            // Get total line items in the estimate
+            $totalEstimateItems = \App\Models\ProposalProduct::where('proposal_id', $estimateId)->count();
+
+            // Get count of unique proposal_product_ids that have been invoiced
+            $invoicedItemsCount = \App\Models\InvoiceProduct::where('estimate_id', $estimateId)
+                ->where('line_type', 'estimate')
+                ->whereNotNull('proposal_product_id')
+                ->distinct('proposal_product_id')
+                ->count('proposal_product_id');
+
+            // If all line items have been invoiced, update the estimate status to "Close" (4)
+            if ($invoicedItemsCount >= $totalEstimateItems) {
+                $proposal = \App\Models\Proposal::find($estimateId);
+                if ($proposal) {
+                    $proposal->status = 4; // Close
+                    $proposal->save();
+                }
+            }
         }
     }
 }
