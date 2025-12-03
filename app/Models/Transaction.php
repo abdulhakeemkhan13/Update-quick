@@ -15,6 +15,7 @@ class Transaction extends Model
         'created_by',
         'customer_id',
         'payment_id',
+        'payment_no',
     ];
 
 
@@ -38,6 +39,7 @@ class Transaction extends Model
         $transaction->created_by  = $request->created_by;
         $transaction->payment_id  = $request->payment_id;
         $transaction->category    = $request->category;
+        $transaction->payment_no  = $request->payment_no ?? null;
         $transaction->save();
     }
 

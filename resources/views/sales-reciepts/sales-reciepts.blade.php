@@ -1339,52 +1339,106 @@
                                     }
 
                                     var item = existingItems[currentIndex];
-                                    console.log('Loading item', currentIndex + 1, ':', item.type);
+                                    console.log('Loading item', currentIndex + 1, ':', item.type, 'taxable:', item.taxable);
 
                                     if (item.type === 'product') {
-                                        // Add product row
-                                        $('[data-repeater-create]').trigger('click');
+                                        // Create product row manually to avoid repeater conflicts
+                                        var $tbody = $('<tbody data-repeater-item></tbody>');
+                                        var rowHtml = `
+                                            <tr class="product-row">
+                                                <td>
+                                                    <div class="drag-handle sort-handler"><i class="ti ti-grid-dots"></i></div>
+                                                </td>
+                                                <td><span class="line-number">1</span></td>
+                                                <td>
+                                                    <select class="form-select item" data-url="{{ route('invoice.product') }}" required="required">
+                                                        <option value="">--</option>
+                                                        @foreach($product_services as $key => $product)
+                                                            <option value="{{ $key }}" {{ (isset($item) && $item == $key) ? 'selected' : '' }}>{{ $product }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                </td>
+                                                <td>
+                                                    <textarea class="form-control pro_description" rows="1" placeholder=""></textarea>
+                                                </td>
+                                                <td>
+                                                    <input type="text" name="quantity" class="form-control input-right quantity" required="required">
+                                                </td>
+                                                <td>
+                                                    <input type="text" name="price" class="form-control input-right price" required="required">
+                                                </td>
+                                                <td class="text-end">
+                                                    <input type="text" name="amount" class="form-control input-right amount" value="0.00" readonly>
+                                                </td>
+                                                <td>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" value="">
+                                                        <input type="hidden" name="tax" class="form-control tax">
+                                                        <input type="hidden" name="itemTaxPrice" class="form-control itemTaxPrice">
+                                                        <input type="hidden" name="itemTaxRate" class="form-control itemTaxRate">
+                                                        <input type="hidden" name="discount" class="form-control discount">
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <span class="delete-icon" data-repeater-delete>
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                                                        </svg>
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        `;
+                                        $tbody.html(rowHtml);
+                                        $('#sortable-table').append($tbody);
 
-                                        // Wait a moment for the row to be created
-                                        setTimeout(function() {
-                                            var $tbody = $('#sortable-table tbody[data-repeater-item]').last();
-                                            var $row = $tbody.find('tr.product-row');
+                                        // Now populate the fields
+                                        var $row = $tbody.find('tr.product-row');
 
-                                            // Populate product fields
-                                            if (item.item) {
-                                                $row.find('select.item').val(item.item);
-                                            }
-                                            if (item.description) {
-                                                $row.find('textarea.pro_description').val(item.description);
-                                            }
-                                            if (item.quantity) {
-                                                $row.find('input.quantity').val(item.quantity);
-                                            }
-                                            if (item.price) {
-                                                $row.find('input.price').val(item.price);
-                                            }
-                                            if (item.amount) {
-                                                $row.find('input.amount').val(item.amount);
-                                            }
-                                            if (item.taxable) {
-                                                $row.find('.form-check-input[type="checkbox"]').prop('checked', true);
-                                            }
-                                            if (item.tax) {
-                                                $row.find('input.tax').val(item.tax);
-                                            }
-                                            if (item.itemTaxRate) {
-                                                $row.find('input.itemTaxRate').val(item.itemTaxRate);
-                                            }
+                                        // Populate product fields
+                                        if (item.item) {
+                                            $row.find('select.item').val(item.item);
+                                        }
+                                        if (item.description) {
+                                            $row.find('textarea.pro_description').val(item.description);
+                                        }
+                                        if (item.quantity) {
+                                            $row.find('input.quantity').val(item.quantity);
+                                        }
+                                        if (item.price) {
+                                            $row.find('input.price').val(item.price);
+                                        }
+                                        if (item.amount) {
+                                            $row.find('input.amount').val(item.amount);
+                                        }
+                                        // Check taxable checkbox - handle both boolean and string values
+                                        if (item.taxable === 1 || item.taxable === '1' || item.taxable === true) {
+                                            $row.find('.form-check-input[type="checkbox"]').prop('checked', true);
+                                            console.log('Setting taxable checkbox to checked for item:', item.description);
+                                        } else {
+                                            $row.find('.form-check-input[type="checkbox"]').prop('checked', false);
+                                            console.log('Setting taxable checkbox to unchecked for item:', item.description);
+                                        }
+                                        if (item.tax) {
+                                            $row.find('input.tax').val(item.tax);
+                                        }
+                                        if (item.itemTaxRate) {
+                                            $row.find('input.itemTaxRate').val(item.itemTaxRate);
+                                        }
+                                        if (item.itemTaxPrice) {
+                                            $row.find('input.itemTaxPrice').val(item.itemTaxPrice);
+                                        }
+                                        if (item.discount) {
+                                            $row.find('input.discount').val(item.discount);
+                                        }
 
-                                            // Add hidden ID for update
-                                            if (item.id) {
-                                                $tbody.append('<input type="hidden" name="item_ids[]" value="' + item.id + '">');
-                                            }
+                                        // Add hidden ID for update
+                                        if (item.id) {
+                                            $tbody.append('<input type="hidden" name="item_ids[]" value="' + item.id + '">');
+                                        }
 
-                                            console.log('Product row populated:', item.description);
-                                            currentIndex++;
-                                            addNextItem(); // Add next item
-                                        }, 100);
+                                        console.log('Product row populated:', item.description);
+                                        currentIndex++;
+                                        addNextItem(); // Add next item
 
                                     } else if (item.type === 'subtotal') {
                                         // Add subtotal row

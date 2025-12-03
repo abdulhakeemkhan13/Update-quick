@@ -6128,6 +6128,12 @@ class Utility extends Model
                 ];
                 Utility::addTransactionLines($dataline, 'create');
             }
+
+            // Update customer balance when journal entry is created (invoice approved)
+            if (isset($data['customer_id']) && $data['customer_id'] != 0 && isset($data['total'])) {
+                Utility::updateUserBalance('customer', $data['customer_id'], $data['total'], 'debit');
+            }
+
             DB::commit();
             return $journal->id;
         } catch (\Exception $e) {
