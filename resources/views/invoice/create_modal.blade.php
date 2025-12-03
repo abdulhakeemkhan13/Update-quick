@@ -1282,6 +1282,18 @@
 
         <script>
             $(function() {
+                // Handle close button - redirect to return_url if present, otherwise invoice index
+                $('#invoiceCloseBtn').on('click', function(e) {
+                    e.preventDefault();
+                    var urlParams = new URLSearchParams(window.location.search);
+                    var returnUrl = urlParams.get('return_url');
+                    if (returnUrl) {
+                        location.href = decodeURIComponent(returnUrl);
+                    } else {
+                        location.href = '{{ route("invoice.index") }}';
+                    }
+                });
+
                 $('#invoice-form').on('submit', function(e) {
                     // Validate customer selection
                     var customerId = $('#customer_id').val();
@@ -1322,7 +1334,11 @@
                         if ($productRow.length) {
                             var $row = $productRow;
 
-                            lines.push({
+                            // Check if this item came from an estimate (or other source later)
+                            var estimateId = $body.attr('data-estimate-id') || null;
+                            var proposalProductId = $body.attr('data-proposal-product-id') || null;
+
+                            var lineItem = {
                                 type: 'product',
                                 item_id: $row.find('select.item').val() || null,
                                 description: $row.find('.pro_description').val() || '',
@@ -1334,7 +1350,16 @@
                                 tax_ids: ($row.find('.tax').val() || '').split(',').filter(
                                     Boolean),
                                 item_tax_rate: parseFloat($row.find('.itemTaxRate').val()) || 0
-                            });
+                            };
+
+                            // Add line_type, estimate_id and proposal_product_id if item came from an estimate
+                            if (estimateId) {
+                                lineItem.line_type = 'estimate';
+                                lineItem.estimate_id = estimateId;
+                                lineItem.proposal_product_id = proposalProductId;
+                            }
+
+                            lines.push(lineItem);
 
                             return; // continue to next tbody
                         }
@@ -1342,22 +1367,40 @@
                         // 2) SUBTOTAL ROW (tbody created by createSubtotalBody)
                         var $subtotalRow = $body.find('tr.subtotal-row');
                         if ($subtotalRow.length) {
-                            lines.push({
+                            var subtotalEstimateId = $body.attr('data-estimate-id') || null;
+                            var subtotalProposalProductId = $body.attr('data-proposal-product-id') || null;
+                            var subtotalLine = {
                                 type: 'subtotal',
                                 label: 'Subtotal',
                                 amount: parseFloat($subtotalRow.find('.subtotal-amount')
                                     .text()) || 0
-                            });
+                            };
+                            // Add line_type, estimate_id and proposal_product_id if from an estimate
+                            if (subtotalEstimateId) {
+                                subtotalLine.line_type = 'estimate';
+                                subtotalLine.estimate_id = subtotalEstimateId;
+                                subtotalLine.proposal_product_id = subtotalProposalProductId;
+                            }
+                            lines.push(subtotalLine);
                             return;
                         }
 
                         // 3) TEXT ROW (tbody created by createTextBody)
                         var $textRow = $body.find('tr.text-row');
                         if ($textRow.length) {
-                            lines.push({
+                            var textEstimateId = $body.attr('data-estimate-id') || null;
+                            var textProposalProductId = $body.attr('data-proposal-product-id') || null;
+                            var textLine = {
                                 type: 'text',
                                 text: $textRow.find('input[type="text"]').val() || ''
-                            });
+                            };
+                            // Add line_type, estimate_id and proposal_product_id if from an estimate
+                            if (textEstimateId) {
+                                textLine.line_type = 'estimate';
+                                textLine.estimate_id = textEstimateId;
+                                textLine.proposal_product_id = textProposalProductId;
+                            }
+                            lines.push(textLine);
                             return;
                         }
                     });
@@ -1655,6 +1698,14 @@
                             $row.find('.pro_description').val(p.description || '');
                             $row.find('.quantity').val(qty);
                             $row.find('.price').val(priceN.toFixed(2));
+
+                            // Store estimate_id and proposal_product_id on tbody if item came from an estimate
+                            if (p.estimate_id) {
+                                $newBody.attr('data-estimate-id', p.estimate_id);
+                            }
+                            if (p.proposal_product_id) {
+                                $newBody.attr('data-proposal-product-id', p.proposal_product_id);
+                            }
 
                             // compute amount from qty * rate
                             recalcRowAmount($row);
@@ -2391,8 +2442,7 @@
                                 </button>
 
                                 {{-- Close button (existing) --}}
-                                <button type="button" class="close-button"
-                                    onclick="location.href = '{{ route('invoice.index') }}';" aria-label="Close">
+                                <button type="button" class="close-button" id="invoiceCloseBtn" aria-label="Close">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                         color="currentColor" width="24px" height="24px" focusable="false"
                                         aria-hidden="true">
@@ -2800,12 +2850,6 @@
                                                         'required' => 'required',
                                                     ]) }}
                                                 </td>
-                                                <!-- <td>
-                                                                                                                                                {{ Form::text('discount', '', [
-                                                                                                                                                    'class' => 'form-control input-right discount',
-                                                                                                                                                    'placeholder' => '0.00',
-                                                                                                                                                ]) }}
-                                                                                                                                            </td> -->
                                                 <td>
                                                     <input type="text" name="amount"
                                                         class="form-control input-right amount" value="0.00">
@@ -3998,16 +4042,25 @@
 
             // ---------- helper: insert ONE item from proposal into table ----------
 
-            function insertProposalItem(item, $insertBefore) {
+            function insertProposalItem(item, $insertBefore, estimateId) {
                 var hasProduct = item.product_id !== null && item.product_id !== undefined && item.product_id !==
                     '';
+
+                // Use passed estimateId or from item itself
+                var estId = estimateId || item.estimate_id || null;
+                // Get the proposal_product_id (the id from proposal_products table)
+                var proposalProductId = item.id || null;
 
                 if (hasProduct) {
                     // normal product/service line (use repeater like before)
                     window.qbInsertAfterTbody = null;
                     window.qbInsertBeforeTbody = $insertBefore || null;
                     window.qbDuplicateSource = null;
-                    window.qbProposalToAdd = item;
+                    // Create a copy with estimate_id and proposal_product_id to avoid mutating original
+                    window.qbProposalToAdd = Object.assign({}, item, {
+                        estimate_id: estId,
+                        proposal_product_id: proposalProductId
+                    });
                     $('[data-repeater-create]').trigger('click');
                     return;
                 }
@@ -4020,6 +4073,14 @@
                     if (typeof window.qbCreateSubtotalBody === 'function') {
                         // amount from DB is not critical; table will recalc
                         var $body = window.qbCreateSubtotalBody('0.00');
+
+                        // Store estimate_id and proposal_product_id on subtotal tbody
+                        if (estId) {
+                            $body.attr('data-estimate-id', estId);
+                        }
+                        if (proposalProductId) {
+                            $body.attr('data-proposal-product-id', proposalProductId);
+                        }
 
                         if ($insertBefore && $insertBefore.length) {
                             $body.insertBefore($insertBefore);
@@ -4035,6 +4096,14 @@
                 // TEXT row
                 if (desc.length && typeof window.qbCreateTextBody === 'function') {
                     var $bodyText = window.qbCreateTextBody(desc);
+
+                    // Store estimate_id and proposal_product_id on text tbody
+                    if (estId) {
+                        $bodyText.attr('data-estimate-id', estId);
+                    }
+                    if (proposalProductId) {
+                        $bodyText.attr('data-proposal-product-id', proposalProductId);
+                    }
 
                     if ($insertBefore && $insertBefore.length) {
                         $bodyText.insertBefore($insertBefore);
@@ -4059,6 +4128,38 @@
                 loadCustomerSuggestions($customerSelect.val());
             }
 
+            // Helper: Check if a product row is empty (no product selected, no values)
+            function isEmptyProductRow($body) {
+                var $productRow = $body.find('tr.product-row');
+                if (!$productRow.length) return false;
+
+                var itemId = $productRow.find('select.item').val();
+                var qty = $productRow.find('.quantity').val();
+                var price = $productRow.find('.price').val();
+                var desc = $productRow.find('.pro_description').val();
+
+                // Row is empty if no product selected and no quantity/price/description
+                return (!itemId || itemId === '' || itemId === '--') &&
+                       (!qty || qty === '' || parseFloat(qty) === 0) &&
+                       (!price || price === '' || parseFloat(price) === 0) &&
+                       (!desc || desc.trim() === '');
+            }
+
+            // Helper: Remove empty default row if estimate has items
+            function removeEmptyDefaultRowIfNeeded(estimateItemCount) {
+                if (estimateItemCount <= 0) return;
+
+                var $allBodies = $('#sortable-table').children('tbody');
+                // Only remove if there's exactly one product row and it's empty
+                var $productBodies = $allBodies.filter(function() {
+                    return $(this).find('tr.product-row').length > 0;
+                });
+
+                if ($productBodies.length === 1 && isEmptyProductRow($productBodies.first())) {
+                    $productBodies.first().remove();
+                }
+            }
+
             // --- Add SINGLE estimate ---
             $(document).on('click', '.suggestion-add-button', function() {
                 const proposalId = String($(this).data('proposal-id'));
@@ -4069,6 +4170,12 @@
 
                 if (!p) return;
 
+                // Calculate how many items will be added
+                var itemCount = (p.items && p.items.length) ? p.items.length : 1;
+
+                // Remove empty default row before adding estimate items
+                removeEmptyDefaultRowIfNeeded(itemCount);
+
                 // Determine insertion point: before trailing special rows, if any
                 var $lastBody = $('#sortable-table').find('tbody').last();
                 var $insertBefore = null;
@@ -4078,7 +4185,8 @@
 
                 if (p.items && p.items.length) {
                     p.items.forEach(function(item) {
-                        insertProposalItem(item, $insertBefore);
+                        // Pass estimate_id as third parameter
+                        insertProposalItem(item, $insertBefore, p.id);
                     });
                 } else {
                     // fallback: single product row with total
@@ -4090,7 +4198,7 @@
                         quantity: 1,
                         price: Number(p.total_amount || 0),
                         amount: Number(p.total_amount || 0)
-                    }, $insertBefore);
+                    }, $insertBefore, p.id);
                 }
 
                 // remove card + update arrays
@@ -4112,6 +4220,15 @@
             $(document).on('click', '.suggestions-addall', function() {
                 if (!filteredProposals.length) return;
 
+                // Calculate total items to be added
+                var totalItemCount = 0;
+                filteredProposals.forEach(function(p) {
+                    totalItemCount += (p.items && p.items.length) ? p.items.length : 1;
+                });
+
+                // Remove empty default row before adding estimate items
+                removeEmptyDefaultRowIfNeeded(totalItemCount);
+
                 var $lastBody = $('#sortable-table').find('tbody').last();
                 var $insertBefore = null;
                 if ($lastBody.length && $lastBody.hasClass('special-body')) {
@@ -4121,7 +4238,8 @@
                 filteredProposals.forEach(function(p) {
                     if (p.items && p.items.length) {
                         p.items.forEach(function(item) {
-                            insertProposalItem(item, $insertBefore);
+                            // Pass estimate_id as third parameter
+                            insertProposalItem(item, $insertBefore, p.id);
                         });
                     } else {
                         insertProposalItem({
@@ -4133,7 +4251,7 @@
                             quantity: 1,
                             price: Number(p.total_amount || 0),
                             amount: Number(p.total_amount || 0)
-                        }, $insertBefore);
+                        }, $insertBefore, p.id);
                     }
                 });
 

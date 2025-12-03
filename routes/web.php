@@ -101,6 +101,7 @@ use App\Http\Controllers\PaytabController;
 use App\Http\Controllers\PaytmPaymentController;
 use App\Http\Controllers\PaytrController;
 use App\Http\Controllers\SalesReceipt;
+use App\Http\Controllers\ReceivePaymentController;
 use App\Http\Controllers\sync\TrialBalanceController;
 use App\Http\Controllers\sync\VoucherController;
 use App\Http\Controllers\WorkflowController;
@@ -664,6 +665,12 @@ Route::group(['middleware' => ['verified']], function () {
     Route::get('sales-receipt/{id}/resent', [SalesReceipt::class, 'resent'])->name('sales-receipt.resent')->middleware(['auth', 'XSS']);
     Route::get('sales-receipt/pdf/{id}', [SalesReceipt::class, 'pdf'])->name('sales-receipt.pdf')->middleware(['auth', 'XSS']);
     Route::get('sales-receipt/link/copy/{id}', [SalesReceipt::class, 'linkCopy'])->name('sales-receipt.link.copy')->middleware(['auth', 'XSS']);
+
+    // Receive Payment routes
+    Route::resource('receive-payment', ReceivePaymentController::class)->middleware(['auth', 'XSS']);
+    Route::get('receive-payment/create/{customerId?}', [ReceivePaymentController::class, 'create'])->name('receive-payment.create')->middleware(['auth', 'XSS']);
+    Route::post('receive-payment/outstanding-invoices', [ReceivePaymentController::class, 'getOutstandingInvoices'])->name('receive-payment.outstanding-invoices')->middleware(['auth', 'XSS']);
+    Route::post('receive-payment/payment/{invoice_id?}', [ReceivePaymentController::class, 'createPayment'])->name('receive-payment.payment')->middleware(['auth', 'XSS']);
 
     Route::group(
         [

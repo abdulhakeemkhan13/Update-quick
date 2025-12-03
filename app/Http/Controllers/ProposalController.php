@@ -1348,7 +1348,7 @@ class ProposalController extends Controller
             ->take(10)
             ->get();
 
-        // ---- NEW: load all items for these proposals in one shot ----
+        // ---- Load all items for these proposals in one shot ----
         $proposalIds = $proposals->pluck('id');
 
         $itemsByProposal = \App\Models\ProposalProduct::whereIn('proposal_id', $proposalIds)
@@ -1356,10 +1356,31 @@ class ProposalController extends Controller
             ->get()
             ->groupBy('proposal_id');
 
+        // ---- Get already invoiced items from these estimates ----
+        // Get the proposal_product_ids that have already been invoiced
+        $invoicedProposalProductIds = \App\Models\InvoiceProduct::whereIn('estimate_id', $proposalIds)
+            ->where('line_type', 'estimate')
+            ->whereNotNull('proposal_product_id')
+            ->pluck('proposal_product_id')
+            ->toArray();
+
         // Shape the data for the right-side cards
         $data = [];
         foreach ($proposals as $p) {
-            $items = $itemsByProposal->get($p->id, collect())->map(function ($item) {
+            $proposalItems = $itemsByProposal->get($p->id, collect());
+
+            // Filter out items that have already been invoiced (by proposal_product_id)
+            $remainingItems = $proposalItems->filter(function ($item) use ($invoicedProposalProductIds) {
+                // If this proposal product's id is in the invoiced list, filter it out
+                return !in_array($item->id, $invoicedProposalProductIds);
+            });
+
+            // Skip this estimate if all items have been invoiced
+            if ($remainingItems->isEmpty()) {
+                continue;
+            }
+
+            $items = $remainingItems->map(function ($item) {
                 return [
                     'id'             => $item->id,
                     'product_id'     => $item->product_id,
@@ -1382,7 +1403,7 @@ class ProposalController extends Controller
                 'issue_date'       => $p->issue_date,
                 'total_amount'     => $p->total_amount ?? $p->subtotal ?? 0,
                 'note'             => $p->note ?? '',
-                'items'            => $items,   // 👈 IMPORTANT
+                'items'            => $items,
             ];
         }
 

@@ -1273,6 +1273,216 @@
         .product-table tbody td:nth-child(10) {
             text-align: center;
         }
+
+        /* Suggestion Panel Styles */
+        #invoice-main-col {
+            max-height: calc(100vh - 120px);
+            overflow-y: auto;
+        }
+
+        .customer-suggestions-col {
+            max-height: calc(100vh - 120px);
+            overflow-y: auto;
+            border-left: 1px solid #e3e5e8;
+            background: #fafbfc;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .customer-suggestions-col::-webkit-scrollbar {
+            width: 0;
+        }
+
+        .customer-suggestions-col {
+            scrollbar-width: none;
+        }
+
+        .suggestions-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .suggestions-header h3 {
+            font-size: 16px;
+            margin: 0 0 4px 0;
+        }
+
+        .suggestions-subtitle {
+            font-size: 12px;
+            color: #6b6f73;
+            margin: 0;
+        }
+
+        .suggestions-close {
+            border: none;
+            background: transparent;
+            font-size: 20px;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        .suggestions-toolbar {
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .suggestions-filter-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 4px;
+            border: none;
+            background: transparent;
+            font-size: 14px;
+            font-weight: 700;
+            color: #6b6f73;
+            cursor: pointer;
+        }
+
+        .suggestions-filter-btn:hover {
+            background: #f4f5f8;
+            border-color: #b0b1b5;
+        }
+
+        .customer-suggestions-col .link-button {
+            border: none;
+            background: none;
+            padding: 0;
+            font-size: 12px;
+            color: #0077c5;
+            cursor: pointer;
+        }
+
+        .suggestion-card {
+            border-radius: 4px;
+            background: #ffffff;
+            border: 1px solid #D4D7DC;
+            padding: 12px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.2);
+        }
+
+        .suggestion-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .suggestion-card-body dl {
+            margin: 0;
+        }
+
+        .suggestion-card-body dt {
+            font-weight: 600;
+            display: inline-block;
+            width: 70px;
+        }
+
+        .suggestion-card-body dd {
+            display: inline-block;
+            margin: 0 0 4px 0;
+        }
+
+        .suggestion-add-button {
+            border: none;
+            background: none;
+            color: #0077c5;
+            font-size: 12px;
+            cursor: pointer;
+            padding: 0;
+            margin-top: 4px;
+            align-self: flex-end;
+        }
+
+        .suggestions-filter-panel {
+            position: absolute;
+            top: 32px;
+            left: 0;
+            width: 260px;
+            background: #ffffff;
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            padding: 10px 12px 12px;
+            font-size: 12px;
+            z-index: 10;
+            display: none;
+        }
+
+        .suggestions-filter-panel.show {
+            display: block;
+        }
+
+        .suggestions-filter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .suggestions-filter-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .suggestions-filter-reset,
+        .suggestions-filter-apply {
+            border-radius: 20px;
+            border: 1px solid #c4c4c4;
+            padding: 4px 10px;
+            font-size: 12px;
+            cursor: pointer;
+            background: #fff;
+        }
+
+        .suggestions-filter-apply {
+            background: #2ca01c;
+            color: #fff;
+            border-color: #2ca01c;
+        }
+
+        .suggestions-filter-apply:hover {
+            background: #108000;
+            border-color: #108000;
+        }
+
+        .suggestions-filter-close {
+            border: none;
+            background: none;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .suggestions-filter-title {
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .suggestions-filter-row {
+            margin-bottom: 8px;
+        }
+
+        .suggestions-filter-row label {
+            display: block;
+            margin-bottom: 3px;
+            font-weight: 500;
+        }
+
+        .suggestions-filter-row select {
+            width: 100%;
+            font-size: 12px;
+            padding: 4px 8px;
+        }
     </style>
 @endpush
 
@@ -1285,7 +1495,24 @@
 
         <script>
             $(function() {
+                // Handle close button - redirect to return_url if present, otherwise invoice index
+                $('#invoiceCloseBtn').on('click', function(e) {
+                    e.preventDefault();
+                    var urlParams = new URLSearchParams(window.location.search);
+                    var returnUrl = urlParams.get('return_url');
+                    if (returnUrl) {
+                        location.href = decodeURIComponent(returnUrl);
+                    } else {
+                        location.href = '{{ route("invoice.index") }}';
+                    }
+                });
+
                 $('#invoice-form').on('submit', function(e) {
+                    // Debug: Log form action and method
+                    console.log('Form Action:', $(this).attr('action'));
+                    console.log('Form Method:', $(this).attr('method'));
+                    console.log('_method field:', $(this).find('input[name="_method"]').val());
+
                     // Validate customer selection
                     var customerId = $('#customer_id').val();
                     if (!customerId || customerId === '' || customerId === '__add__') {
@@ -1325,7 +1552,14 @@
                         if ($productRow.length) {
                             var $row = $productRow;
 
-                            lines.push({
+                            // Get existing item ID if this is an existing item
+                            var itemId = $body.attr('data-item-id') || $body.find('input[name="item_ids[]"]').val() || null;
+
+                            // Check if this item came from an estimate (or other source)
+                            var estimateId = $body.attr('data-estimate-id') || null;
+                            var proposalProductId = $body.attr('data-proposal-product-id') || null;
+
+                            var lineItem = {
                                 type: 'product',
                                 item_id: $row.find('select.item').val() || null,
                                 description: $row.find('.pro_description').val() || '',
@@ -1337,7 +1571,21 @@
                                 tax_ids: ($row.find('.tax').val() || '').split(',').filter(
                                     Boolean),
                                 item_tax_rate: parseFloat($row.find('.itemTaxRate').val()) || 0
-                            });
+                            };
+
+                            // Add item id if exists (for update)
+                            if (itemId) {
+                                lineItem.id = itemId;
+                            }
+
+                            // Add line_type, estimate_id and proposal_product_id if item came from an estimate
+                            if (estimateId) {
+                                lineItem.line_type = 'estimate';
+                                lineItem.estimate_id = estimateId;
+                                lineItem.proposal_product_id = proposalProductId;
+                            }
+
+                            lines.push(lineItem);
 
                             return; // continue to next tbody
                         }
@@ -1345,22 +1593,50 @@
                         // 2) SUBTOTAL ROW (tbody created by createSubtotalBody)
                         var $subtotalRow = $body.find('tr.subtotal-row');
                         if ($subtotalRow.length) {
-                            lines.push({
+                            var subtotalItemId = $body.attr('data-item-id') || null;
+                            var subtotalEstimateId = $body.attr('data-estimate-id') || null;
+                            var subtotalProposalProductId = $body.attr('data-proposal-product-id') || null;
+                            var subtotalLine = {
                                 type: 'subtotal',
                                 label: 'Subtotal',
                                 amount: parseFloat($subtotalRow.find('.subtotal-amount')
                                     .text()) || 0
-                            });
+                            };
+                            // Add item id if exists (for update)
+                            if (subtotalItemId) {
+                                subtotalLine.id = subtotalItemId;
+                            }
+                            // Add line_type, estimate_id and proposal_product_id if from an estimate
+                            if (subtotalEstimateId) {
+                                subtotalLine.line_type = 'estimate';
+                                subtotalLine.estimate_id = subtotalEstimateId;
+                                subtotalLine.proposal_product_id = subtotalProposalProductId;
+                            }
+                            lines.push(subtotalLine);
                             return;
                         }
 
                         // 3) TEXT ROW (tbody created by createTextBody)
                         var $textRow = $body.find('tr.text-row');
                         if ($textRow.length) {
-                            lines.push({
+                            var textItemId = $body.attr('data-item-id') || null;
+                            var textEstimateId = $body.attr('data-estimate-id') || null;
+                            var textProposalProductId = $body.attr('data-proposal-product-id') || null;
+                            var textLine = {
                                 type: 'text',
                                 text: $textRow.find('input[type="text"]').val() || ''
-                            });
+                            };
+                            // Add item id if exists (for update)
+                            if (textItemId) {
+                                textLine.id = textItemId;
+                            }
+                            // Add line_type, estimate_id and proposal_product_id if from an estimate
+                            if (textEstimateId) {
+                                textLine.line_type = 'estimate';
+                                textLine.estimate_id = textEstimateId;
+                                textLine.proposal_product_id = textProposalProductId;
+                            }
+                            lines.push(textLine);
                             return;
                         }
                     });
@@ -1614,6 +1890,10 @@
                         if (window.qbInsertAfterTbody && $(window.qbInsertAfterTbody).length) {
                             $newBody.insertAfter($(window.qbInsertAfterTbody));
                         }
+                        // position new row BEFORE a specific tbody (e.g. before Subtotal/Text lines)
+                        if (window.qbInsertBeforeTbody && $(window.qbInsertBeforeTbody).length) {
+                            $newBody.insertBefore($(window.qbInsertBeforeTbody));
+                        }
 
                         // duplicate content from source row if requested
                         if (window.qbDuplicateSource && $(window.qbDuplicateSource).length) {
@@ -1635,9 +1915,43 @@
                             $newRow.find('.form-check-input[type="checkbox"]').prop('checked', taxChecked);
                         }
 
+                        // 🔹 Fill new product row from a suggestion (Estimate)
+                        if (window.qbProposalToAdd) {
+                            var p = window.qbProposalToAdd;
+                            var $row = $newBody.find('.product-row');
+                            var qty = p.quantity != null ? p.quantity : 1;
+                            var priceN = Number(p.price || 0);
+
+                            // Set product dropdown without triggering AJAX overwrite
+                            if (p.product_id) {
+                                $row.find('select.item')
+                                    .data('ignore-ajax', true)
+                                    .val(p.product_id)
+                                    .trigger('change')
+                                    .data('ignore-ajax', false);
+                            }
+
+                            $row.find('.pro_description').val(p.description || '');
+                            $row.find('.quantity').val(qty);
+                            $row.find('.price').val(priceN.toFixed(2));
+
+                            // Store estimate_id and proposal_product_id on tbody if item came from an estimate
+                            if (p.estimate_id) {
+                                $newBody.attr('data-estimate-id', p.estimate_id);
+                            }
+                            if (p.proposal_product_id) {
+                                $newBody.attr('data-proposal-product-id', p.proposal_product_id);
+                            }
+
+                            // compute amount from qty * rate
+                            recalcRowAmount($row);
+                        }
+
                         // reset helpers
                         window.qbInsertAfterTbody = null;
+                        window.qbInsertBeforeTbody = null;
                         window.qbDuplicateSource = null;
+                        window.qbProposalToAdd = null;
 
                         renumberInvoiceLines();
                         recalcTotals();
@@ -2182,9 +2496,12 @@
                     return $tbody;
                 }
 
-                // Make functions globally accessible for auto-population script
+                // Make functions globally accessible for auto-population and suggestion panel scripts
                 window.createSubtotalBody = createSubtotalBody;
                 window.createTextBody = createTextBody;
+                window.renumberInvoiceLines = renumberInvoiceLines;
+                window.recalcTotals = recalcTotals;
+                window.recalcRowAmount = recalcRowAmount;
 
                 // ----- bottom split button ("Add product or service" ▼) -----
 
@@ -2449,12 +2766,25 @@
                             if (item.type === 'product') {
                                 // Add product row
                                 $('[data-repeater-create]').trigger('click');
-                                
+
                                 // Wait a moment for the row to be created
                                 setTimeout(function() {
                                     var $tbody = $table.find('tbody[data-repeater-item]').last();
                                     var $row = $tbody.find('tr.product-row');
-                                    
+
+                                    // Store item id on tbody for updates
+                                    if (item.id) {
+                                        $tbody.attr('data-item-id', item.id);
+                                    }
+
+                                    // Store estimate_id and proposal_product_id on tbody if present (for items from estimates)
+                                    if (item.estimate_id) {
+                                        $tbody.attr('data-estimate-id', item.estimate_id);
+                                    }
+                                    if (item.proposal_product_id) {
+                                        $tbody.attr('data-proposal-product-id', item.proposal_product_id);
+                                    }
+
                                     // Populate product fields
                                     if (item.item) {
                                         $row.find('select.item').val(item.item);
@@ -2480,32 +2810,49 @@
                                     if (item.itemTaxRate) {
                                         $row.find('input.itemTaxRate').val(item.itemTaxRate);
                                     }
-                                    
-                                    // Add hidden ID for update
-                                    if (item.id) {
-                                        $tbody.append('<input type="hidden" name="item_ids[]" value="' + item.id + '">');  
-                                    }
-                                    
+
                                     console.log('Product row populated:', item.description);
                                     currentIndex++;
                                     addNextItem(); // Add next item
                                 }, 100);
-                                
+
                             } else if (item.type === 'subtotal') {
                                 // Add subtotal row
                                 var $subtotalBody = window.createSubtotalBody(item.amount || '0.00');
+                                // Store item id for updates
+                                if (item.id) {
+                                    $subtotalBody.attr('data-item-id', item.id);
+                                }
+                                // Store estimate_id and proposal_product_id on tbody if present
+                                if (item.estimate_id) {
+                                    $subtotalBody.attr('data-estimate-id', item.estimate_id);
+                                }
+                                if (item.proposal_product_id) {
+                                    $subtotalBody.attr('data-proposal-product-id', item.proposal_product_id);
+                                }
                                 $table.append($subtotalBody);
                                 console.log('Subtotal row added:', item.amount);
-                                
+
                                 currentIndex++;
                                 setTimeout(addNextItem, 50); // Small delay before next item
-                                
+
                             } else if (item.type === 'text') {
                                 // Add text row
                                 var $textBody = window.createTextBody(item.description || '');
+                                // Store item id for updates
+                                if (item.id) {
+                                    $textBody.attr('data-item-id', item.id);
+                                }
+                                // Store estimate_id and proposal_product_id on tbody if present
+                                if (item.estimate_id) {
+                                    $textBody.attr('data-estimate-id', item.estimate_id);
+                                }
+                                if (item.proposal_product_id) {
+                                    $textBody.attr('data-proposal-product-id', item.proposal_product_id);
+                                }
                                 $table.append($textBody);
                                 console.log('Text row added:', item.description);
-                                
+
                                 currentIndex++;
                                 setTimeout(addNextItem, 50); // Small delay before next item
                             } else {
@@ -2536,6 +2883,10 @@
                 <div class="invoice-container">
                     {{ Form::model($invoice, ['route' => ['invoice.update', $invoice->id], 'method' => 'PUT', 'id' => 'invoice-form', 'files' => true]) }}
                     <input type="hidden" name="_token" id="token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="invoice_id" value="{{ $invoice->id }}">
+                    @if(request()->has('return_url'))
+                        <input type="hidden" name="return_url" value="{{ request()->get('return_url') }}">
+                    @endif
 
                     {{-- Fixed Top Header (QuickBooks Style) --}}
                     <div class="fixed-top-header">
@@ -2570,8 +2921,7 @@
                                 </button>
 
                                 {{-- Close button (existing) --}}
-                                <button type="button" class="close-button"
-                                    onclick="location.href = '{{ route('invoice.index') }}';" aria-label="Close">
+                                <button type="button" class="close-button" id="invoiceCloseBtn" aria-label="Close">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                         color="currentColor" width="24px" height="24px" focusable="false"
                                         aria-hidden="true">
@@ -2632,6 +2982,9 @@
                         </div>
                     </div>
 
+                    <div class="row">
+                        {{-- MAIN INVOICE COLUMN (full width by default) --}}
+                        <div class="col-md-12" id="invoice-main-col">
                     <div class="invoice-card">
                         {{-- Header --}}
                         <div class="invoice-header">
@@ -2697,6 +3050,8 @@
                                             'class' => 'form-select',
                                             'id' => 'customer_id',
                                             'data-url' => route('invoice.customer'),
+                                            'data-proposals-url' => route('invoice.customer.proposals'),
+                                            'data-proposal-edit-url' => route('proposal.edit', '__id__'),
                                             'required' => 'required',
                                             'data-create-url' => route('customer.create'),
                                             'data-create-title' => __('Create New Customer'),
@@ -3673,9 +4028,434 @@
 
 
                     {{ Form::close() }}
+                        </div>
+                        {{-- SIDE SUGGESTION PANEL (hidden by default) --}}
+                        <div class="col-md-3 d-none" id="suggestion-col">
+                            @include('invoice.partials.suggestion_panel')
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+    <script>
+        $(function() {
+            const $customerSelect = $('#customer_id');
+            const proposalsUrl = $customerSelect.data('proposals-url');
+            const proposalEditUrlPattern = $customerSelect.data('proposal-edit-url');
+            const $list = $('#suggestions-list');
+            const $suggestionCol = $('#suggestion-col');
+            const $mainCol = $('#invoice-main-col');
+            const $filterPanel = $('#suggestions-filter-panel');
+
+            let allProposals = [];
+            let filteredProposals = [];
+
+            function formatDate(raw) {
+                if (!raw) return '';
+                const d = new Date(raw);
+                if (isNaN(d)) return raw;
+                return d.toLocaleDateString();
+            }
+
+            function normalizeProposals(data) {
+                if (Array.isArray(data)) return data;
+                if (data && Array.isArray(data.proposals)) return data.proposals;
+                if (data && Array.isArray(data.data)) return data.data;
+                if (data && typeof data === 'object') return Object.values(data);
+                return [];
+            }
+
+            function showSuggestionsPanel(show) {
+                if (show) {
+                    $mainCol.removeClass('col-md-12').addClass('col-md-9');
+                    $suggestionCol.removeClass('d-none');
+                } else {
+                    $mainCol.removeClass('col-md-9').addClass('col-md-12');
+                    $suggestionCol.addClass('d-none');
+                }
+            }
+
+            function renderSuggestions(list) {
+                $list.empty();
+
+                if (!list || !list.length) {
+                    $list.html(
+                        '<p style="font-size:12px;color:#6b6f73;">' +
+                        'No suggested transactions found for this customer.' +
+                        '</p>'
+                    );
+                    return;
+                }
+
+                list.forEach(function(p) {
+                    const cardHtml = `
+                    <div class="suggestion-card" data-proposal-id="${p.id}">
+                        <div class="suggestion-card-header">
+                            <span>
+                                ${
+                                    (p.proposal_number || p.proposal_id)
+                                        ? `Estimate ${p.proposal_number || p.proposal_id}`
+                                        : 'Estimate'
+                                }
+                            </span>
+                            <a href="${proposalEditUrlPattern.replace('__id__', p.encrypted_id)}"
+                               target="_blank"
+                               style="font-size:11px;color:#6B6C72;">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                                     viewBox="0 0 24 24" color="currentColor"
+                                     width="20px" height="20px" focusable="false"
+                                     aria-hidden="true" class="icon">
+                                    <path fill="currentColor"
+                                          d="M20 11.03a1 1 0 0 0-1 1l-.01 5.715a1.29 1.29 0 0 1-1.29 1.282l-11.425-.018a1.286 1.286 0 0 1-1.283-1.287l.017-11.43A1.284 1.284 0 0 1 6.294 5.01l5.714.009a1 1 0 1 0 0-2L6.3 3.008h-.006A3.284 3.284 0 0 0 3.009 6.29l-.017 11.428a3.29 3.29 0 0 0 3.28 3.29l11.429.019a3.29 3.29 0 0 0 3.287-3.281L21 12.032a1 1 0 0 0-1-1.002"></path>
+                                    <path fill="currentColor"
+                                          d="m20.013 3.03-4-.006a1 1 0 0 0 0 2h1.586L13.3 9.314a1 1 0 1 0 1.412 1.415l4.3-4.287v1.586a1 1 0 0 0 2 0l.006-4a1 1 0 0 0-1.005-.998"></path>
+                                </svg>
+                            </a>
+                        </div>
+                        <div class="suggestion-card-body">
+                            <dl>
+                                <dt>Date:</dt><dd>${formatDate(p.issue_date)}</dd><br>
+                                <dt>Total:</dt><dd>$${Number(p.total_amount || 0).toFixed(2)}</dd><br>
+                                <dt>Notes:</dt><dd>${p.note ? p.note : ''}</dd>
+                            </dl>
+                        </div>
+                        <button type="button"
+                                class="suggestion-add-button"
+                                data-proposal-id="${p.id}">
+                            Add
+                        </button>
+                    </div>
+                `;
+                    $list.append(cardHtml);
+                });
+            }
+
+            // ---------- apply filter ----------
+
+            function applyFilter() {
+                const typeFilter = $('#suggestions-filter-type').val();
+                const dateFilter = $('#suggestions-filter-date').val();
+                const now = new Date();
+
+                let list = allProposals.slice();
+
+                if (typeFilter === 'estimate') {
+                    // placeholder if you ever add other types
+                    list = list;
+                }
+
+                if (dateFilter !== 'all') {
+                    list = list.filter(function(p) {
+                        if (!p.issue_date) return true;
+                        const d = new Date(p.issue_date);
+                        if (isNaN(d)) return true;
+                        const diffDays = (now - d) / 86400000;
+                        if (dateFilter === 'last30') return diffDays <= 30;
+                        if (dateFilter === 'last365') return diffDays <= 365;
+                        return true;
+                    });
+                }
+
+                filteredProposals = list;
+                renderSuggestions(filteredProposals);
+            }
+
+            // ---------- load proposals for a customer ----------
+
+            function loadCustomerSuggestions(customerId) {
+                if (!customerId) {
+                    $list.html(
+                        '<p style="font-size:12px;color:#6b6f73;">' +
+                        'Select a customer to see suggested transactions.' +
+                        '</p>'
+                    );
+                    allProposals = [];
+                    filteredProposals = [];
+                    showSuggestionsPanel(false);
+                    return;
+                }
+
+                $.get(proposalsUrl, {
+                        customer_id: customerId
+                    })
+                    .done(function(data) {
+                        allProposals = normalizeProposals(data);
+                        filteredProposals = allProposals.slice();
+
+                        renderSuggestions(filteredProposals);
+                        showSuggestionsPanel(allProposals.length > 0);
+                    })
+                    .fail(function() {
+                        $list.html(
+                            '<p style="font-size:12px;color:#d9534f;">' +
+                            'Failed to load suggested transactions.' +
+                            '</p>'
+                        );
+                        allProposals = [];
+                        filteredProposals = [];
+                        showSuggestionsPanel(false);
+                    });
+            }
+
+            // ---------- helper: insert ONE item from proposal into table ----------
+
+            function insertProposalItem(item, $insertBefore, estimateId) {
+                var hasProduct = item.product_id !== null && item.product_id !== undefined && item.product_id !== '';
+
+                // Use passed estimateId or from item itself
+                var estId = estimateId || item.estimate_id || null;
+                // Get the proposal_product_id (the id from proposal_products table)
+                var proposalProductId = item.id || null;
+
+                if (hasProduct) {
+                    // normal product/service line (use repeater like before)
+                    window.qbInsertAfterTbody = null;
+                    window.qbInsertBeforeTbody = $insertBefore || null;
+                    window.qbDuplicateSource = null;
+                    // Create a copy with estimate_id and proposal_product_id to avoid mutating original
+                    window.qbProposalToAdd = Object.assign({}, item, {
+                        estimate_id: estId,
+                        proposal_product_id: proposalProductId
+                    });
+                    $('[data-repeater-create]').trigger('click');
+                    return;
+                }
+
+                // product_id is NULL -> it's either Subtotal line or Text line
+                var desc = (item.description || '').trim();
+
+                // SUBTOTAL row
+                if (desc.toLowerCase() === 'subtotal') {
+                    if (typeof window.createSubtotalBody === 'function') {
+                        // amount from DB is not critical; table will recalc
+                        var $body = window.createSubtotalBody('0.00');
+
+                        // Store estimate_id and proposal_product_id on subtotal tbody
+                        if (estId) {
+                            $body.attr('data-estimate-id', estId);
+                        }
+                        if (proposalProductId) {
+                            $body.attr('data-proposal-product-id', proposalProductId);
+                        }
+
+                        if ($insertBefore && $insertBefore.length) {
+                            $body.insertBefore($insertBefore);
+                        } else {
+                            $('#sortable-table').append($body);
+                        }
+
+                        if (typeof window.recalcTotals === 'function') window.recalcTotals();
+                    }
+                    return;
+                }
+
+                // TEXT row
+                if (desc.length && typeof window.createTextBody === 'function') {
+                    var $bodyText = window.createTextBody(desc);
+
+                    // Store estimate_id and proposal_product_id on text tbody
+                    if (estId) {
+                        $bodyText.attr('data-estimate-id', estId);
+                    }
+                    if (proposalProductId) {
+                        $bodyText.attr('data-proposal-product-id', proposalProductId);
+                    }
+
+                    if ($insertBefore && $insertBefore.length) {
+                        $bodyText.insertBefore($insertBefore);
+                    } else {
+                        $('#sortable-table').append($bodyText);
+                    }
+
+                    if (typeof window.renumberInvoiceLines === 'function') window.renumberInvoiceLines();
+                    if (typeof window.recalcTotals === 'function') window.recalcTotals();
+                }
+            }
+
+            // ---------- events ----------
+
+            // reload suggestions when customer changes
+            $customerSelect.on('change', function() {
+                loadCustomerSuggestions($(this).val());
+            });
+
+            // initial load if customer preselected
+            if ($customerSelect.val()) {
+                loadCustomerSuggestions($customerSelect.val());
+            }
+
+            // Helper: Check if a product row is empty (no product selected, no values)
+            function isEmptyProductRow($body) {
+                var $productRow = $body.find('tr.product-row');
+                if (!$productRow.length) return false;
+
+                var itemId = $productRow.find('select.item').val();
+                var qty = $productRow.find('.quantity').val();
+                var price = $productRow.find('.price').val();
+                var desc = $productRow.find('.pro_description').val();
+
+                // Row is empty if no product selected and no quantity/price/description
+                return (!itemId || itemId === '' || itemId === '--') &&
+                       (!qty || qty === '' || parseFloat(qty) === 0) &&
+                       (!price || price === '' || parseFloat(price) === 0) &&
+                       (!desc || desc.trim() === '');
+            }
+
+            // Helper: Remove empty default row if estimate has items
+            function removeEmptyDefaultRowIfNeeded(estimateItemCount) {
+                if (estimateItemCount <= 0) return;
+
+                var $allBodies = $('#sortable-table').children('tbody');
+                // Only remove if there's exactly one product row and it's empty
+                var $productBodies = $allBodies.filter(function() {
+                    return $(this).find('tr.product-row').length > 0;
+                });
+
+                if ($productBodies.length === 1 && isEmptyProductRow($productBodies.first())) {
+                    $productBodies.first().remove();
+                }
+            }
+
+            // --- Add SINGLE estimate ---
+            $(document).on('click', '.suggestion-add-button', function() {
+                const proposalId = String($(this).data('proposal-id'));
+
+                const p =
+                    filteredProposals.find(x => String(x.id) === proposalId) ||
+                    allProposals.find(x => String(x.id) === proposalId);
+
+                if (!p) return;
+
+                // Calculate how many items will be added
+                var itemCount = (p.items && p.items.length) ? p.items.length : 1;
+
+                // Remove empty default row before adding estimate items
+                removeEmptyDefaultRowIfNeeded(itemCount);
+
+                // Determine insertion point: before trailing special rows, if any
+                var $lastBody = $('#sortable-table').find('tbody').last();
+                var $insertBefore = null;
+                if ($lastBody.length && $lastBody.hasClass('special-body')) {
+                    $insertBefore = $lastBody;
+                }
+
+                if (p.items && p.items.length) {
+                    p.items.forEach(function(item) {
+                        // Pass estimate_id as third parameter
+                        insertProposalItem(item, $insertBefore, p.id);
+                    });
+                } else {
+                    // fallback: single product row with total
+                    insertProposalItem({
+                        product_id: p.product_id || null,
+                        description: (p.note && p.note.length) ?
+                            p.note :
+                            (p.proposal_number ? 'Estimate ' + p.proposal_number : 'Estimate'),
+                        quantity: 1,
+                        price: Number(p.total_amount || 0),
+                        amount: Number(p.total_amount || 0)
+                    }, $insertBefore, p.id);
+                }
+
+                // remove card + update arrays
+                $(this).closest('.suggestion-card').remove();
+                allProposals = allProposals.filter(x => String(x.id) !== proposalId);
+                filteredProposals = filteredProposals.filter(x => String(x.id) !== proposalId);
+
+                if (!allProposals.length) {
+                    $list.html(
+                        '<p style="font-size:12px;color:#6b6f73;">' +
+                        'All suggested transactions have been added.' +
+                        '</p>'
+                    );
+                    showSuggestionsPanel(false);
+                }
+            });
+
+            // --- Add ALL visible estimates ---
+            $(document).on('click', '.suggestions-addall', function() {
+                if (!filteredProposals.length) return;
+
+                // Calculate total items to be added
+                var totalItemCount = 0;
+                filteredProposals.forEach(function(p) {
+                    totalItemCount += (p.items && p.items.length) ? p.items.length : 1;
+                });
+
+                // Remove empty default row before adding estimate items
+                removeEmptyDefaultRowIfNeeded(totalItemCount);
+
+                var $lastBody = $('#sortable-table').find('tbody').last();
+                var $insertBefore = null;
+                if ($lastBody.length && $lastBody.hasClass('special-body')) {
+                    $insertBefore = $lastBody;
+                }
+
+                filteredProposals.forEach(function(p) {
+                    if (p.items && p.items.length) {
+                        p.items.forEach(function(item) {
+                            // Pass estimate_id as third parameter
+                            insertProposalItem(item, $insertBefore, p.id);
+                        });
+                    } else {
+                        insertProposalItem({
+                            product_id: p.product_id || null,
+                            description: (p.note && p.note.length) ?
+                                p.note :
+                                (p.proposal_number ? 'Estimate ' + p.proposal_number :
+                                    'Estimate'),
+                            quantity: 1,
+                            price: Number(p.total_amount || 0),
+                            amount: Number(p.total_amount || 0)
+                        }, $insertBefore, p.id);
+                    }
+                });
+
+                allProposals = [];
+                filteredProposals = [];
+                $list.html(
+                    '<p style="font-size:12px;color:#6b6f73;">' +
+                    'All suggested transactions have been added.' +
+                    '</p>'
+                );
+                showSuggestionsPanel(false);
+            });
+
+            // Close suggestions panel with the X
+            $(document).on('click', '.suggestions-close', function() {
+                showSuggestionsPanel(false);
+            });
+
+            // ---------- Filter UI ----------
+            $(document).on('click', '.suggestions-filter-btn', function(e) {
+                e.stopPropagation();
+                $filterPanel.toggleClass('show');
+            });
+
+            $(document).on('click', '.suggestions-filter-close', function() {
+                $filterPanel.removeClass('show');
+            });
+
+            // click outside closes filter popup
+            $(document).on('click', function(e) {
+                if (!$(e.target).closest('#suggestions-filter-panel, .suggestions-filter-btn').length) {
+                    $filterPanel.removeClass('show');
+                }
+            });
+
+            $('#suggestions-filter-reset').on('click', function() {
+                $('#suggestions-filter-type').val('all');
+                $('#suggestions-filter-date').val('all');
+                filteredProposals = allProposals.slice();
+                renderSuggestions(filteredProposals);
+            });
+
+            $('#suggestions-filter-apply').on('click', function() {
+                applyFilter();
+                $filterPanel.removeClass('show');
+            });
+        });
+    </script>
 @endsection
 <script src=\"{{ asset('js/invoice-items-payload-handler.js') }}\"></script>
