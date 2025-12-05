@@ -26,17 +26,26 @@
 @section('action-btn')
     <div class="float-end">
         @can('create bill')
-            {{-- <a href="{{ route('expense.create',0) }}" class="btn btn-sm btn-primary" data-bs-toggle="tooltip" title="{{__('Create')}}">
-                {{__('Create Expense')}}
-                <i class="ti ti-plus"></i>
-            </a> --}}
-            <a href="#" data-url="{{ route('expense.create',0) }}"  class="btn btn-sm btn-primary"
+
+            <button class="btn btn-sm btn-primary openExpenseModal" data-url="{{ route('expense.create', 0) }}" data-bs-toggle="tooltip" title="{{__('Create Expense')}}">
+                {{ __('Create Expense') }}
+
+           {{-- <a href="#" data-url="{{ route('expense.create',0) }}"  class="btn btn-sm btn-primary"
                 data-ajax-popup="true" data-size="fullscreen"
                 data-bs-toggle="tooltip" title="Create Expense">
-                {{__('Create Expense')}}
+                {{__('Create Expense')}}--}}
+
                 <i class="ti ti-plus"></i>
-            </a>
+            </button>
         @endcan
+        <a href="{{ route('timeActivity.create') }}" class="btn btn-sm btn-primary" data-bs-toggle="tooltip" title="{{__('Create Time Activity')}}">
+            {{__('Create Time Activity')}}
+            <i class="ti ti-plus"></i>
+        </a>
+        <button class="btn btn-sm btn-primary openChecksModal" data-url="{{ route('checks.create') }}" data-bs-toggle="tooltip" title="{{__('Create Checks')}}">
+            {{__('Create Checks')}}
+            <i class="ti ti-plus"></i>
+        </button>
     </div>
 @endsection
 
@@ -44,7 +53,34 @@
 @section('content')
     {{-- tabs --}}
     @include('expense.expense-tabs')
+    <div class="modal fade" id="ajaxModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-fullscreen">
+            <div class="modal-content">
+            </div>
+        </div>
 
+
+    </div>
+    <script>
+        $(document).on('click', '.openChecksModal', function (e) {
+            e.preventDefault();
+
+            var url = $(this).data('url');
+
+            $('#ajaxModal').modal('show');
+
+            $.ajax({
+                url: url,
+                type: 'GET',
+                success: function (res) {
+                    $('#ajaxModal .modal-content').html(res);
+                },
+                error: function () {
+                    alert('Something went wrong!');
+                }
+            });
+        });
+    </script>
 {{-- Filters Dropdown --}}
 <div class="dropdown mt-4 mb-2">
     <button class="btn btn-outline-primary dropdown-toggle d-flex align-items-center" type="button"

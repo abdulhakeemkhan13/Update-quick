@@ -26,6 +26,7 @@ use App\Models\WorkFlow;
 use App\Models\Notification;
 use App\Models\Tax;
 use App\Models\WorkFlowAction;
+use App\Models\Project;
 use App\Services\JournalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -2024,5 +2025,211 @@ class ExpenseController extends Controller
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
+    }
+
+    public function timeActivityCreate()
+    {
+        if (\Auth::user()->can('create bill')) {
+            $employees = Employee::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
+            $venders = Vender::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
+            
+            $customers = Customer::where('created_by', '=', \Auth::user()->creatorId())->get()->pluck('name', 'id');
+            $projects = Project::where('created_by', '=', \Auth::user()->creatorId())->get()->pluck('project_name', 'id');
+
+            $services = ProductService::where('created_by', \Auth::user()->creatorId())->where('type', 'service')->get()->pluck('name', 'id');
+
+            return view('expense.create_time_activity', compact('employees', 'venders', 'customers', 'projects', 'services'));
+        } else {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+    }
+
+    public function storeTimeActivity(Request $request)
+    {
+        if (\Auth::user()->can('create bill')) {
+            $validator = \Validator::make(
+                $request->all(),
+                [
+                    'date' => 'required',
+                    'user_id' => 'required',
+                ]
+            );
+            if ($validator->fails()) {
+                $messages = $validator->getMessageBag();
+                return redirect()->back()->with('error', $messages->first());
+            }
+
+            $timeActivity = new \App\Models\TimeActivity();
+            $timeActivity->user_type = $request->user_type;
+            $timeActivity->user_id = $request->user_id;
+            $timeActivity->customer_id = $request->customer_id;
+            $timeActivity->service_id = $request->service_id;
+            $timeActivity->date = $request->date;
+            $timeActivity->start_time = $request->start_time;
+            $timeActivity->end_time = $request->end_time;
+            $timeActivity->duration = $request->duration;
+            $timeActivity->break_duration = $request->break_duration;
+            $timeActivity->billable = $request->has('billable') ? 1 : 0;
+            $timeActivity->rate = $request->rate;
+            $timeActivity->taxable = $request->has('taxable') ? 1 : 0;
+            $timeActivity->notes = $request->notes;
+            $timeActivity->created_by = \Auth::user()->creatorId();
+            $timeActivity->save();
+
+            return redirect()->route('timeActivity.create')->with('success', __('Time Activity successfully created.'));
+        } else {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+    }
+
+    public function updateTimeActivity(Request $request, $id)
+    {
+        if (\Auth::user()->can('edit bill')) {
+            $timeActivity = \App\Models\TimeActivity::find($id);
+            if ($timeActivity->created_by == \Auth::user()->creatorId()) {
+                $validator = \Validator::make(
+                    $request->all(),
+                    [
+                        'date' => 'required',
+                        'user_id' => 'required',
+                    ]
+                );
+                if ($validator->fails()) {
+                    $messages = $validator->getMessageBag();
+                    return redirect()->back()->with('error', $messages->first());
+                }
+
+                $timeActivity->user_type = $request->user_type;
+                $timeActivity->user_id = $request->user_id;
+                $timeActivity->customer_id = $request->customer_id;
+                $timeActivity->service_id = $request->service_id;
+                $timeActivity->date = $request->date;
+                $timeActivity->start_time = $request->start_time;
+                $timeActivity->end_time = $request->end_time;
+                $timeActivity->duration = $request->duration;
+                $timeActivity->break_duration = $request->break_duration;
+                $timeActivity->billable = $request->has('billable') ? 1 : 0;
+                $timeActivity->rate = $request->rate;
+                $timeActivity->taxable = $request->has('taxable') ? 1 : 0;
+                $timeActivity->notes = $request->notes;
+                $timeActivity->save();
+
+                return redirect()->route('timeActivity.create')->with('success', __('Time Activity successfully updated.'));
+            } else {
+                return redirect()->back()->with('error', __('Permission denied.'));
+            }
+        } else {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+    }
+
+    public function checksCreate($Id = 0)
+    {
+        if (\Auth::user()->can('create bill')) {
+            $user = \Auth::user();
+            $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
+            $column = ($user->type == 'company') ? 'created_by' : 'owned_by';
+            $customFields = CustomField::where('created_by', '=', \Auth::user()->creatorId())->where('module', '=', 'bill')->get();
+            $category = ProductServiceCategory::where('created_by', \Auth::user()->creatorId())
+                ->whereNotIn('type', ['product & service', 'income'])
+                ->get()->pluck('name', 'id')->toArray();
+            $category = ['__add__' => '➕ Add New category'] + ['' => 'Select Category'] + $category;
+
+            $expense_number = \Auth::user()->expenseNumberFormat($this->expenseNumber());
+
+            $employees = Employee::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id')->toArray();
+            $employees = ['__add__' => '➕ Add New employee'] + ['' => 'Select Employee'] + $employees;
+
+            $customers = Customer::where('created_by', '=', \Auth::user()->creatorId())->get()->pluck('name', 'id')->toArray();
+            // $customers = ['__add__' => '➕ Add New customer'] + ['' => 'Select Customer'] + $customers;
+
+            $venders = Vender::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id')->toArray();
+            $venders = ['__add__' => '➕ Add New vendor'] + ['' => 'Select Vendor'] + $venders;
+
+            $product_services = ProductService::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
+            $product_services->prepend('Select Item', '');
+
+            $chartAccounts = ChartOfAccount::select(\DB::raw('CONCAT(code, " - ", name) AS code_name, id'))
+                ->where('created_by', \Auth::user()->creatorId())->get()
+                ->pluck('code_name', 'id');
+            $chartAccounts->prepend('Select Account', '');
+
+            $subAccounts = ChartOfAccount::select('chart_of_accounts.id', 'chart_of_accounts.code', 'chart_of_accounts.name', 'chart_of_account_parents.account');
+            $subAccounts->leftjoin('chart_of_account_parents', 'chart_of_accounts.parent', 'chart_of_account_parents.id');
+            $subAccounts->where('chart_of_accounts.parent', '!=', 0);
+            $subAccounts->where('chart_of_accounts.created_by', \Auth::user()->creatorId());
+            $subAccounts = $subAccounts->get()->toArray();
+
+            $accounts = BankAccount::select('*', \DB::raw("CONCAT(bank_name,' ',holder_name) AS name"))
+                ->where('created_by', \Auth::user()->creatorId())
+                ->get()->pluck('name', 'id')->toArray();
+            $accounts = ['__add__' => '➕ Add New Account'] + ['' => 'Select Account'] + $accounts;
+            // $customers = Customer::where($column, $ownerId)->get();
+
+            return view('expense.checks', compact('employees', 'customers', 'venders', 'expense_number', 'product_services', 'category', 'customFields', 'Id', 'chartAccounts', 'accounts', 'subAccounts'));
+        } else {
+            return response()->json(['error' => __('Permission denied.')], 401);
+        }
+    }
+
+    /**
+     * Get address for a payee (customer, vendor, or employee)
+     */
+    public function getPayeeAddress(Request $request)
+    {
+        $payeeValue = $request->payee;
+        
+        if (empty($payeeValue)) {
+            return response()->json(['address' => '']);
+        }
+
+        // Parse the payee value (format: type_id, e.g., "vendor_5")
+        $parts = explode('_', $payeeValue, 2);
+        if (count($parts) !== 2) {
+            return response()->json(['address' => '']);
+        }
+
+        $type = $parts[0];
+        $id = $parts[1];
+
+        $address = '';
+
+        switch ($type) {
+            case 'vendor':
+                $vendor = Vender::find($id);
+                if ($vendor) {
+                    $addressParts = array_filter([
+                        $vendor->billing_address,
+                        $vendor->billing_address_2,
+                        $vendor->billing_city,
+                        $vendor->billing_state,
+                        $vendor->billing_zip,
+                        $vendor->billing_country
+                    ]);
+                    $address = implode(', ', $addressParts);
+                }
+                break;
+            case 'customer':
+                $customer = Customer::find($id);
+                if ($customer) {
+                    $addressParts = array_filter([
+                        $customer->billing_address,
+                        $customer->billing_city,
+                        $customer->billing_state,
+                        $customer->billing_zip,
+                        $customer->billing_country
+                    ]);
+                    $address = implode(', ', $addressParts);
+                }
+                break;
+            case 'employee':
+                $employee = Employee::find($id);
+                if ($employee) {
+                    $address = $employee->address ?? '';
+                }
+                break;
+        }
+
+        return response()->json(['address' => $address]);
     }
 }
