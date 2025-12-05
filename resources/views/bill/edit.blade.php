@@ -1,943 +1,975 @@
-@extends('layouts.admin')
-@section('page-title')
-    {{__('Bill Edit')}}
-@endsection
-@section('breadcrumb')
-    <li class="breadcrumb-item"><a href="{{route('dashboard')}}">{{__('Dashboard')}}</a></li>
-    <li class="breadcrumb-item"><a href="{{route('bill.index')}}">{{__('Bill')}}</a></li>
-    <li class="breadcrumb-item">{{__('Bill Edit')}}</li>
-@endsection
+<style>
+    .qbo-bill-container {
+        background: #f8f9fa;
+        min-height: 100vh;
+        padding: 20px;
+    }
 
-@push('script-page')
-    <script src="{{asset('js/jquery-ui.min.js')}}"></script>
-    <script src="{{asset('js/jquery.repeater.min.js')}}"></script>
-    <script src="{{ asset('js/jquery-searchbox.js') }}"></script>
-    <script>
-        var selector = "body";
-        if ($(selector + " .repeater").length) {
-            var $dragAndDrop = $("body .repeater tbody").sortable({
-                handle: '.sort-handler'
-            });
-            var $repeater = $(selector + ' .repeater').repeater({
-                initEmpty: true,
-                defaultValues: {
-                    'status': 1
-                },
-                show: function () {
-                    $(this).slideDown();
-                    var file_uploads = $(this).find('input.multi');
-                    if (file_uploads.length) {
-                        $(this).find('input.multi').MultiFile({
-                            max: 3,
-                            accept: 'png|jpg|jpeg',
-                            max_size: 2048
-                        });
-                    }
+    .qbo-bill-header {
+        background: white;
+        padding: 20px;
+        border-bottom: 1px solid #e0e0e0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
 
-                    // for item SearchBox ( this function is  custom Js )
-                    JsSearchBox();
+    .qbo-bill-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #333;
+    }
 
-                    if($('.select2').length) {
-                        $('.select2').select2();
-                    }
-                },
-                hide: function (deleteElement) {
+    .qbo-total-badge {
+        font-size: 28px;
+        font-weight: 700;
+        color: #2ca01c;
+    }
 
-                    $(this).slideUp(deleteElement);
-                    $(this).remove();
-                    var inputs = $(".amount");
-                    var subTotal = 0;
-                    for (var i = 0; i < inputs.length; i++) {
-                        subTotal = parseFloat(subTotal) + parseFloat($(inputs[i]).html());
-                    }
-                    $('.subTotal').html(subTotal.toFixed(2));
-                    $('.totalAmount').html(subTotal.toFixed(2));
+    .qbo-form-section {
+        background: white;
+        padding: 30px;
+        margin-top: 20px;
+        border-radius: 4px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
 
-                },
-                ready: function (setIndexes) {
-                    $dragAndDrop.on('drop', setIndexes);
-                },
-                isFirstItemUndeletable: true
-            });
-            var value = $(selector + " .repeater").attr('data-value');
-            if (typeof value != 'undefined' && value.length != 0) {
-                value = JSON.parse(value);
-                $repeater.setList(value);
-                for (var i = 0; i < value.length; i++) {
-                    var tr = $('#sortable-table .id[value="' + value[i].id + '"]').parent();
-                    tr.find('.item').val(value[i].product_id);
-                    changeItem(tr.find('.item'));
-                }
-            }
+    .qbo-grid-section {
+        margin-top: 30px;
+    }
+
+    .qbo-section-header {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        margin-bottom: 15px;
+    }
+
+    .qbo-section-title {
+        font-weight: 600;
+        color: #393a3d;
+        font-size: 16px;
+        margin-left: 10px;
+    }
+
+    .qbo-grid-content {
+        background: white;
+        padding: 20px;
+        border-radius: 4px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .qbo-grid-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 10px;
+    }
+
+    .qbo-grid-table thead {
+        background: #f3f4f6;
+        border-top: 1px solid #e0e0e0;
+        border-bottom: 1px solid #e0e0e0;
+    }
+
+    .qbo-grid-table th {
+        padding: 8px;
+        text-align: left;
+        font-size: 12px;
+        font-weight: 600;
+        color: #6b7280;
+    }
+
+    .qbo-grid-table td {
+        padding: 8px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .qbo-grid-table tbody tr:hover {
+        background: #f9fafb;
+    }
+
+    .qbo-line-number {
+        color: #9ca3af;
+        font-weight: 500;
+    }
+
+    .qbo-add-line-btn {
+        background: none;
+        border: none;
+        color: #0077c5;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        padding: 8px 0;
+    }
+
+    .qbo-add-line-btn:hover {
+        text-decoration: underline;
+    }
+
+    .qbo-clear-btn {
+        background: none;
+        border: none;
+        color: #6b7280;
+        font-size: 14px;
+        margin-left: 20px;
+        cursor: pointer;
+    }
+
+    .qbo-clear-btn:hover {
+        text-decoration: underline;
+    }
+
+    .row-actions i {
+        color: #9ca3af;
+        cursor: pointer;
+        font-size: 16px;
+    }
+
+    .row-actions i:hover {
+        color: #ef4444;
+    }
+
+    .qbo-checkbox {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+    }
+
+    .qbo-total-section {
+        text-align: right;
+        padding: 20px 0;
+    }
+
+    .qbo-total-row {
+        display: flex;
+        justify-content: flex-end;
+        padding: 8px 0;
+        font-size: 14px;
+    }
+
+    .qbo-total-row span:first-child {
+        margin-right: 40px;
+        color: #6b7280;
+    }
+
+    .qbo-total-row span:last-child {
+        font-weight: 600;
+        min-width: 100px;
+    }
+
+    .qbo-total-row.grand-total {
+        border-top: 2px solid #e0e0e0;
+        padding-top: 12px;
+        margin-top: 8px;
+    }
+
+    .qbo-total-row.grand-total span {
+        font-size: 16px;
+        font-weight: 700;
+    }
+
+    .qbo-footer {
+        margin-top: 30px;
+    }
+
+    .qbo-action-buttons {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #e0e0e0;
+    }
+
+    .btn-qbo-cancel,
+    .btn-qbo-clear,
+    .btn-qbo-save {
+        padding: 10px 24px;
+        font-size: 14px;
+        font-weight: 500;
+        border-radius: 4px;
+        border: 1px solid #d1d5db;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+    }
+
+    .btn-qbo-cancel {
+        background: white;
+        color: #6b7280;
+    }
+
+    .btn-qbo-clear {
+        background: white;
+        color: #6b7280;
+    }
+
+    .btn-qbo-save {
+        background: #2ca01c;
+        color: white;
+        border-color: #2ca01c;
+    }
+
+    .btn-qbo-save:hover {
+        background: #24881 7;
+    }
+
+    /* QBO Style Container */
+    .qbo-bill-container {
+        background: #f4f5f8;
+        /* Light gray background like QBO */
+        padding: 20px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    /* Header Section */
+    .qbo-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+
+    .qbo-bill-title {
+        font-size: 24px;
+        font-weight: 700;
+        color: #393a3d;
+        display: flex;
+        align-items: center;
+    }
+
+    .qbo-balance-section {
+        text-align: right;
+    }
+
+    .qbo-balance-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        color: #6b6c72;
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+
+    .qbo-balance-amount {
+        font-size: 28px;
+        font-weight: 700;
+        color: #393a3d;
+    }
+
+    /* Form Elements */
+    .qbo-label {
+        font-size: 13px;
+        color: #6b6c72;
+        margin-bottom: 5px;
+        font-weight: 400;
+    }
+
+    .qbo-input {
+        border: 1px solid #babec5;
+        border-radius: 2px;
+        padding: 8px;
+        font-size: 14px;
+        height: 36px;
+        width: 100%;
+        background-color: #fff;
+    }
+
+    .qbo-input:focus {
+        border-color: #2ca01c;
+        /* QuickBooks Green focus */
+        outline: none;
+        box-shadow: 0 0 0 1px #2ca01c;
+    }
+
+    .qbo-textarea {
+        height: 80px;
+        resize: none;
+    }
+
+    /* Grid Layout for Inputs */
+    .qbo-input-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+        align-items: flex-start;
+    }
+
+    /* Vendor Dropdown specific width */
+    .vendor-wrapper {
+        width: 25%;
+        min-width: 250px;
+        margin-bottom: 20px;
+    }
+
+    /* The row containing Address, Terms, Dates */
+    .details-row {
+        display: flex;
+        gap: 15px;
+        width: 100%;
+    }
+
+    .col-address {
+        flex: 0 0 25%;
+    }
+
+    /* Matches vendor width */
+    .col-term {
+        flex: 1;
+    }
+
+    .col-date {
+        flex: 1;
+    }
+
+    .col-number {
+        flex: 1;
+    }
+
+    /* Mobile Responsiveness */
+    @media (max-width: 768px) {
+        .details-row {
+            flex-direction: column;
         }
 
-        $(document).on('change', '#vender', function () {
-            $('#vender_detail').removeClass('d-none');
-            $('#vender_detail').addClass('d-block');
-            $('#vender-box').removeClass('d-block');
-            $('#vender-box').addClass('d-none');
-            var id = $(this).val();
-            var url = $(this).data('url');
-            $.ajax({
-                url: url,
-                type: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': jQuery('#token').val()
-                },
-                data: {
-                    'id': id
-                },
-                cache: false,
-                success: function (data) {
-                    if (data != '') {
-                        $('#vender_detail').html(data);
-                    } else {
-                        $('#vender-box').removeClass('d-none');
-                        $('#vender-box').addClass('d-block');
-                        $('#vender_detail').removeClass('d-block');
-                        $('#vender_detail').addClass('d-none');
-                    }
-                },
-
-            });
-        });
-        $(document).on('click', '#remove', function () {
-            $('#vender-box').removeClass('d-none');
-            $('#vender-box').addClass('d-block');
-            $('#vender_detail').removeClass('d-block');
-            $('#vender_detail').addClass('d-none');
-        });
-
-        $(document).on('change', '.item', function () {
-
-            changeItem($(this));
-        });
-
-        var bill_id = '{{$bill->id}}';
-
-        function changeItem(element) {
-
-            var iteams_id = element.val();
-            var url = element.data('url');
-            var el = element;
-
-            $.ajax({
-                url: url,
-                type: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': jQuery('#token').val()
-                },
-                data: {
-                    'product_id': iteams_id,
-                },
-                cache: false,
-                success: function (data) {
-                    var item = JSON.parse(data);
-
-                    $.ajax({
-                        url: '{{route('bill.items')}}',
-                        type: 'GET',
-                        headers: {
-                            'X-CSRF-TOKEN': jQuery('#token').val()
-                        },
-                        data: {
-                            'bill_id': bill_id,
-                            'product_id': iteams_id,
-                        },
-                        cache: false,
-                        success: function (data) {
-                            var billItems = JSON.parse(data);
-
-                            if (billItems != null) {
-                                var amount = (billItems.price * billItems.quantity);
-                                // console.log(billItems)
-                                $(el.parent().parent().parent().find('.quantity')).val(billItems.quantity);
-                                $(el.parent().parent().parent().find('.price')).val(billItems.price);
-                                $(el.parent().parent().parent().find('.discount')).val(billItems.discount);
-                                $(el.parent().parent().parent().parent().find('.pro_description')).val(billItems.description);
-
-                            } else {
-                                $(el.parent().parent().parent().find('.quantity')).val(1);
-                                $(el.parent().parent().parent().find('.price')).val(item.product.purchase_price);
-                                $(el.parent().parent().parent().find('.discount')).val(0);
-                                $(el.parent().parent().parent().parent().find('.pro_description')).val(item.product.description);
-                            }
-
-
-                            var taxes = '';
-                            var tax = [];
-
-                            var totalItemTaxRate = 0;
-                            for (var i = 0; i < item.taxes.length; i++) {
-
-                                taxes += '<span class="badge bg-primary p-2 px-3 rounded mt-1 mr-1">' + item.taxes[i].name + ' ' + '(' + item.taxes[i].rate + '%)' + '</span>';
-                                tax.push(item.taxes[i].id);
-                                totalItemTaxRate += parseFloat(item.taxes[i].rate);
-
-                            }
-
-                            var discount=$(el.parent().parent().parent().find('.discount')).val();
-
-                            if (billItems != null) {
-                                var itemTaxPrice = parseFloat((totalItemTaxRate / 100)) * parseFloat((billItems.price * billItems.quantity)- discount);
-                            } else {
-                                var itemTaxPrice = parseFloat((totalItemTaxRate / 100)) * parseFloat((item.product.purchase_price * 1)- discount);
-                            }
-
-
-                            $(el.parent().parent().parent().find('.itemTaxPrice')).val(itemTaxPrice.toFixed(2));
-                            $(el.parent().parent().parent().find('.itemTaxRate')).val(totalItemTaxRate.toFixed(2));
-                            $(el.parent().parent().parent().find('.taxes')).html(taxes);
-                            $(el.parent().parent().parent().find('.tax')).val(tax);
-                            $(el.parent().parent().parent().find('.unit')).html(item.unit);
-                            // $(el.parent().parent().find('.discount')).val(0);
-
-                            var inputs = $(".amount");
-                            var subTotal = 0;
-                            for (var i = 0; i < inputs.length; i++) {
-                                subTotal = parseFloat(subTotal) + parseFloat($(inputs[i]).html());
-                            }
-
-
-
-                            var accountinputs = $(".accountamount");
-                            var accountSubTotal = 0;
-                            for (var i = 0; i < accountinputs.length; i++)
-                            {
-                                var currentInputValue = parseFloat(accountinputs[i].innerHTML);
-                                if (!isNaN(currentInputValue))
-                                {
-                                    accountSubTotal += currentInputValue;
-                                }
-                            }
-                            
-                            // var totalItemPrice = 0;
-                            // var inputs_quantity = $(".quantity");
-                            // var priceInput = $('.price');
-                            // for (var j = 0; j < priceInput.length; j++) {
-                            //     totalItemPrice += (parseFloat(priceInput[j].value) * parseFloat(inputs_quantity[j].value));
-                            // }
-
-                            var totalItemPrice = 0;
-                            var inputs_quantity = $(".quantity");
-                            var priceInput = $('.price');
-                            var acinputs = $(".accountAmount");
-                            for (var j = 0; j < priceInput.length; j++) {
-                                var accountAmount = parseFloat(acinputs[j].value);
-                                if (isNaN(accountAmount)) {
-                                    accountAmount = 0;
-                                }
-
-                                var itemTotal = (parseFloat(priceInput[j].value) * parseFloat(inputs_quantity[j].value) + accountAmount);
-
-                                totalItemPrice += itemTotal;
-                            }
-
-
-
-                            var totalItemTaxPrice = 0;
-                            var itemTaxPriceInput = $('.itemTaxPrice');
-                            for (var j = 0; j < itemTaxPriceInput.length; j++) {
-                                totalItemTaxPrice += parseFloat(itemTaxPriceInput[j].value);
-                                if (billItems != null) {
-                                    $(el.parent().parent().parent().find('.amount')).html(parseFloat(amount)+parseFloat(itemTaxPrice)-parseFloat(discount));
-                                } else {
-                                    $(el.parent().parent().parent().find('.amount')).html(parseFloat(item.totalAmount)+parseFloat(itemTaxPrice));
-                                }
-
-                            }
-
-
-                            var totalItemDiscountPrice = 0;
-                            var itemDiscountPriceInput = $('.discount');
-
-                            for (var k = 0; k < itemDiscountPriceInput.length; k++) {
-                                totalItemDiscountPrice += parseFloat(itemDiscountPriceInput[k].value);
-                            }
-
-
-                            // alert(accountSubTotal)
-
-                            $('.subTotal').html(totalItemPrice.toFixed(2));
-                            $('.totalTax').html(totalItemTaxPrice.toFixed(2));
-                            $('.totalAmount').html((parseFloat(totalItemPrice) - parseFloat(totalItemDiscountPrice) + parseFloat(totalItemTaxPrice)).toFixed(2));
-                            $('.totalDiscount').html(totalItemDiscountPrice.toFixed(2));
-
-
-                        }
-                    });
-
-
-                },
-            });
+        .vendor-wrapper,
+        .col-address {
+            width: 100%;
         }
-
-
-        $(document).on('keyup', '.quantity', function () {
-            var quntityTotalTaxPrice = 0;
-
-            var el = $(this).parent().parent().parent().parent();
-
-            var quantity = $(this).val();
-            var price = $(el.find('.price')).val();
-            var discount = $(el.find('.discount')).val();
-            if(discount.length <= 0)
-            {
-                discount = 0 ;
-            }
-
-            var totalItemPrice = (quantity * price) - discount;
-
-            var amount = (totalItemPrice);
-
-
-            var totalItemTaxRate = $(el.find('.itemTaxRate')).val();
-            var itemTaxPrice = parseFloat((totalItemTaxRate / 100) * (totalItemPrice));
-            $(el.find('.itemTaxPrice')).val(itemTaxPrice.toFixed(2));
-
-            $(el.find('.amount')).html(parseFloat(itemTaxPrice)+parseFloat(amount));
-
-            var totalItemTaxPrice = 0;
-            var itemTaxPriceInput = $('.itemTaxPrice');
-            for (var j = 0; j < itemTaxPriceInput.length; j++) {
-                totalItemTaxPrice += parseFloat(itemTaxPriceInput[j].value);
-            }
-
-
-            var totalInputItemPrice = 0;
-            var inputs_quantity = $(".quantity");
-            var priceInput = $('.price');
-            for (var j = 0; j < priceInput.length; j++) {
-                totalInputItemPrice += (parseFloat(priceInput[j].value) * parseFloat(inputs_quantity[j].value));
-            }
-
-            var totalAccount = 0;
-            var accountInput = $('.accountAmount');
-
-
-            for (var j = 0; j < accountInput.length; j++) {
-                // if(typeof accountInput[j].value != 'undefined')
-                if(accountInput[j].value!='')
-                {
-                    var accountInputPrice = accountInput[j].value;
-                }
-                else {
-                    var accountInputPrice = 0;
-                }
-
-                totalAccount += (parseFloat(accountInputPrice));
-
-            }
-
-
-
-            var inputs = $(".amount");
-            var subTotal = 0;
-            for (var i = 0; i < inputs.length; i++) {
-                subTotal = parseFloat(subTotal) + parseFloat($(inputs[i]).html());
-            }
-
-            var sumAmount = totalInputItemPrice + totalAccount;
-
-            // console.log(totalAccount)
-
-            $('.subTotal').html(sumAmount.toFixed(2));
-            $('.totalTax').html(totalItemTaxPrice.toFixed(2));
-            $('.totalAmount').html((parseFloat(subTotal)+totalAccount).toFixed(2));
-
-        })
-
-        $(document).on('keyup change', '.price', function () {
-            var el = $(this).parent().parent().parent().parent();
-            var price = $(this).val();
-            var quantity = $(el.find('.quantity')).val();
-            var discount = $(el.find('.discount')).val();
-            if(discount.length <= 0)
-            {
-                discount = 0 ;
-            }
-
-            var totalItemPrice = (quantity * price)-discount;
-
-            var amount = (totalItemPrice);
-
-            var totalItemTaxRate = $(el.find('.itemTaxRate')).val();
-            var itemTaxPrice = parseFloat((totalItemTaxRate / 100) * (totalItemPrice));
-            $(el.find('.itemTaxPrice')).val(itemTaxPrice.toFixed(2));
-
-            $(el.find('.amount')).html(parseFloat(itemTaxPrice)+parseFloat(amount));
-
-            var totalItemTaxPrice = 0;
-            var itemTaxPriceInput = $('.itemTaxPrice');
-            for (var j = 0; j < itemTaxPriceInput.length; j++) {
-                totalItemTaxPrice += parseFloat(itemTaxPriceInput[j].value);
-            }
-
-
-            var totalItemPrice = 0;
-            var inputs_quantity = $(".quantity");
-            var priceInput = $('.price');
-            for (var j = 0; j < priceInput.length; j++) {
-                totalItemPrice += (parseFloat(priceInput[j].value) * parseFloat(inputs_quantity[j].value));
-            }
-
-
-            var totalAccount = 0;
-            var accountInput = $('.accountAmount');
-            for (var j = 0; j < accountInput.length; j++) {
-                if(accountInput[j].value!='')
-                {
-                    var accountInputPrice = accountInput[j].value;
-                }
-                else {
-                    var accountInputPrice = 0;
-                }
-
-                totalAccount += (parseFloat(accountInputPrice));
-            }
-            var inputs = $(".amount");
-            var subTotal = 0;
-            for (var i = 0; i < inputs.length; i++) {
-                subTotal = parseFloat(subTotal) + parseFloat($(inputs[i]).html());
-            }
-
-            var sumAmount = totalItemPrice + totalAccount;
-
-
-            $('.subTotal').html(sumAmount.toFixed(2));
-            $('.totalTax').html(totalItemTaxPrice.toFixed(2));
-
-            $('.totalAmount').html((parseFloat(subTotal) + totalAccount).toFixed(2));
-
-        })
-
-        $(document).on('keyup change', '.discount', function () {
-            var el = $(this).parent().parent().parent();
-            var discount = $(this).val();
-            if(discount.length <= 0)
-            {
-                discount = 0 ;
-            }
-            var price = $(el.find('.price')).val();
-
-            var quantity = $(el.find('.quantity')).val();
-            var totalItemPrice = (quantity * price) - discount;
-
-            var amount = (totalItemPrice);
-
-            var totalItemTaxRate = $(el.find('.itemTaxRate')).val();
-            var itemTaxPrice = parseFloat((totalItemTaxRate / 100) * (totalItemPrice));
-            $(el.find('.itemTaxPrice')).val(itemTaxPrice.toFixed(2));
-
-            $(el.find('.amount')).html(parseFloat(itemTaxPrice)+parseFloat(amount));
-
-
-            var totalItemTaxPrice = 0;
-            var itemTaxPriceInput = $('.itemTaxPrice');
-            for (var j = 0; j < itemTaxPriceInput.length; j++) {
-                totalItemTaxPrice += parseFloat(itemTaxPriceInput[j].value);
-            }
-
-
-            var totalItemPrice = 0;
-            var inputs_quantity = $(".quantity");
-            var priceInput = $('.price');
-            for (var j = 0; j < priceInput.length; j++) {
-                totalItemPrice += (parseFloat(priceInput[j].value) * parseFloat(inputs_quantity[j].value));
-            }
-
-            var inputs = $(".amount");
-            var subTotal = 0;
-            for (var i = 0; i < inputs.length; i++) {
-                subTotal = parseFloat(subTotal) + parseFloat($(inputs[i]).html());
-            }
-
-
-            var totalItemDiscountPrice = 0;
-            var itemDiscountPriceInput = $('.discount');
-            for (var k = 0; k < itemDiscountPriceInput.length; k++) {
-
-                totalItemDiscountPrice += parseFloat(itemDiscountPriceInput[k].value);
-            }
-
-            var totalAccount = 0;
-            var accountInput = $('.accountAmount');
-            for (var j = 0; j < accountInput.length; j++) {
-                if(accountInput[j].value!='')
-                {
-                    var accountInputPrice = accountInput[j].value;
-                }
-                else {
-                    var accountInputPrice = 0;
-                }
-
-                totalAccount += (parseFloat(accountInputPrice));
-            }
-
-            var sumAmount = totalItemPrice + totalAccount;
-
-            console.log(totalItemDiscountPrice)
-
-            $('.subTotal').html(sumAmount.toFixed(2));
-            $('.totalTax').html(totalItemTaxPrice.toFixed(2));
-
-            $('.totalAmount').html((parseFloat(subTotal) + totalAccount).toFixed(2));
-            $('.totalDiscount').html(totalItemDiscountPrice.toFixed(2));
-
-        })
-
-        $(document).on('keyup change', '.accountAmount', function () {
-
-            var el1 = $(this).parent().parent().parent().parent();
-            var el = $(this).parent().parent().parent().parent().parent();
-
-            var quantityDiv = $(el.find('.quantity'));
-            var priceDiv = $(el.find('.price'));
-            var discountDiv = $(el.find('.discount'));
-
-            var itemSubTotal=0;
-            var itemSubTotalDiscount=0;
-            for (var p = 0; p < priceDiv.length; p++) {
-                var quantity=quantityDiv[p].value;
-                var price=priceDiv[p].value;
-                var discount=discountDiv[p].value;
-                if(discount.length <= 0)
-                {
-                    discount = 0 ;
-                }
-                itemSubTotal += (quantity*price);
-                itemSubTotalDiscount += (quantity*price) - (discount);
-
-
-            }
-
-
-            // var totalItemTaxPrice = 0;
-            // var itemTaxPriceInput = $('.itemTaxPrice');
-            // for (var j = 0; j < itemTaxPriceInput.length; j++) {
-            //
-            //     totalItemTaxPrice += parseFloat(itemTaxPriceInput[j].value);
-            //
-            // }
-
-            var totalItemTaxPrice = 0;
-            var itemTaxPriceInput = $('.itemTaxPrice');
-
-            for (var j = 0; j < itemTaxPriceInput.length; j++) {
-                var parsedValue = parseFloat(itemTaxPriceInput[j].value);
-
-                if (!isNaN(parsedValue)) {
-                    totalItemTaxPrice += parsedValue;
-                }
-            }
-
-
-            var amount = $(this).val();
-            el1.find('.accountamount').html(amount);
-            var totalAccount = 0;
-            var accountInput = $('.accountAmount');
-            for (var j = 0; j < accountInput.length; j++) {
-                totalAccount += (parseFloat(accountInput[j].value) );
-            }
-
-
-            var inputs = $(".accountamount");
-            var subTotal = 0;
-            for (var i = 0; i < inputs.length; i++) {
-
-                subTotal = parseFloat(subTotal) + parseFloat($(inputs[i]).html());
-            }
-
-
-            $('.subTotal').text((totalAccount+itemSubTotal).toFixed(2));
-            $('.totalAmount').text((parseFloat((subTotal + itemSubTotalDiscount) + (totalItemTaxPrice))).toFixed(2));
-
-
-        })
-
-
-        $(document).on('click', '[data-repeater-create]', function () {
-            $('.item :selected').each(function () {
-                var id = $(this).val();
-                $(".item option[value=" + id + "]").prop("disabled", true);
-            });
-        })
-
-        $(document).on('click', '[data-repeater-delete]', function () {
-            // $('.delete_item').click(function () {
-            if (confirm('Are you sure you want to delete this element?')) {
-                var el = $(this).parent().parent();
-                var id = $(el.find('.id')).val();
-                var amount = $(el.find('.amount')).html();
-                var account_id = $(el.find('.account_id')).val();
-
-                $.ajax({
-                    url: '{{route('bill.product.destroy')}}',
-                    type: 'POST',
-                    headers: {
-                        'X-CSRF-TOKEN': jQuery('#token').val()
-                    },
-                    data: {
-                        'id': id,
-                        'amount': amount,
-                        'account_id':account_id,
-
-                    },
-                    cache: false,
-                    success: function (data) {
-
-                    },
-                });
-
-            }
-        });
-
-        $('.accountAmount').trigger('keyup');
-
-    </script>
-    <script>
-        $(document).on('click', '[data-repeater-delete]', function () {
-            $(".price").change();
-            $(".discount").change();
-        });
-    </script>
-        <script>
-        $(document).ready(function() {
-            var currentSelect = null;
-
-            function openAddNewModal($select) {
-                if ($select.val() !== '__add__') return;
-                $select.val(''); // reset dropdown
-                currentSelect = $select; // save reference
-                var url = $select.data('create-url');
-                var title = $select.data('create-title') || 'Create New';
-
-                // prevent duplicate modal
-                if ($('#globalAddNewModal').length) {
-                    $('#globalAddNewModal').modal('show');
-                    return;
-                }
-
-                var $modal = $(`
-            <div class="modal fade" id="globalAddNewModal" tabindex="-1">
-              <div class="modal-dialog">
-                <div class="modal-content">
-                  <div class="modal-header">
-                    <h5 class="modal-title">${title}</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                  </div>
-                  <div class="modal-body">Loading...</div>
-                </div>
-              </div>
+    }
+</style>
+
+<div class="qbo-bill-container">
+    {{ Form::open(['route' => ['bill.update', $bill->id], 'method' => 'PUT', 'enctype' => 'multipart/form-data', 'id' => 'bill-form']) }}
+    <div class="qbo-bill-container">
+
+        {{-- Header Section --}}
+        <div class="qbo-header">
+            <div class="qbo-bill-title">
+                <i class="ti ti-receipt me-2"></i> {{ __('Edit Bill') }}
             </div>
-        `);
-
-                $('body').append($modal);
-
-                $.get(url, function(html) {
-                    $modal.find('.modal-body').html(html);
-
-                    // z-index stacking
-                    var zIndex = 1070 + ($('.modal:visible').length * 10);
-                    $modal.css('z-index', zIndex);
-                    setTimeout(function() {
-                        $('.modal-backdrop').last().css('z-index', zIndex - 1).addClass(
-                            'modal-stack');
-                    }, 0);
-
-                    $modal.modal('show');
-                });
-
-                $modal.on('hidden.bs.modal', function() {
-                    $modal.remove();
-                });
-            }
-
-            // Detect "Add New" selection
-            $(document).on('change', 'select', function() {
-                var $select = $(this);
-                if ($select.val() === '__add__') {
-                    openAddNewModal($select);
-                }
-            });
-
-            // AJAX submit for dynamic modal
-            $(document).off('submit', '#globalAddNewModal form').on('submit', '#globalAddNewModal form', function(
-                e) {
-                e.preventDefault();
-                var $form = $(this);
-                var $modal = $form.closest('#globalAddNewModal');
-
-                // Find the select that triggered this modal
-                var $select = currentSelect;
-
-                $.ajax({
-                    url: $form.attr('action'),
-                    method: $form.attr('method') || 'POST',
-                    data: $form.serialize(),
-                    success: function(response) {
-                        if (response.success) {
-                            // 🔹 Insert new option before the "Add New" of the same select
-                            var $addNewOption = $select.find('option[value="__add__"]').first();
-                            var $newOption = $('<option>', {
-                                value: response.data.id,
-                                text: response.data.name
-                            });
-
-                            if ($addNewOption.length) {
-                                $select.append($newOption);
-                                // $newOption.insertBefore($addNewOption);
-                            } else {
-                                $select.append($newOption);
-                            }
-
-                            $select.val(response.data.id).trigger('change');
-                            $modal.modal('hide');
-                        } else {
-                            alert(response.message || 'Something went wrong!');
-                        }
-                    },
-                    error: function(xhr) {
-                        if (xhr.status === 422) {
-                            var errors = xhr.responseJSON.errors;
-                            $form.find('.invalid-feedback').remove();
-                            $.each(errors, function(key, msgs) {
-                                $form.find('[name="' + key + '"]').after(
-                                    `<small class="invalid-feedback text-danger">${msgs[0]}</small>`
-                                );
-                            });
-                        } else {
-                            alert('Server error!');
-                        }
-                    }
-                });
-            });
-
-        });
-    </script>
-@endpush
-@section('content')
-    <div class="row">
-        {{ Form::model($bill, array('route' => array('bill.update', $bill->id), 'method' => 'PUT','class'=>'w-100')) }}
-        <div class="col-12">
-            <input type="hidden" name="_token" id="token" value="{{ csrf_token() }}">
-            <div class="card">
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="form-group" id="vender-box">
-                                {{ Form::label('vender_id', __('Vendor'),['class'=>'form-label']) }}
-                                {{ Form::select('vender_id', $venders,null, array('class' => 'form-control select','id'=>'vender',
-                                'data-url'=>route('bill.vender'),'required'=>'required',
-                                'data-create-url' => route('vender.create'), 'data-create-title' => __('Create New Vendor'))) }}
-                            </div>
-                            <div id="vender_detail" class="d-none">
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        {{ Form::label('bill_date', __('Bill Date'),['class'=>'form-label']) }}
-                                        {{Form::date('bill_date',null,array('class'=>'form-control','required'=>'required'))}}
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        {{ Form::label('due_date', __('Due Date'),['class'=>'form-label']) }}
-                                        {{Form::date('due_date',null,array('class'=>'form-control','required'=>'required'))}}
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        {{ Form::label('bill_number', __('Bill Number'),['class'=>'form-label']) }}
-                                        <input type="text" class="form-control" value="{{$bill_number}}" readonly>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        {{ Form::label('category_id', __('Category'),['class'=>'form-label']) }}
-                                        {{ Form::select('category_id', $category,null, array('class' => 'form-control select',
-                                        'data-create-url'=>route('product-category.create'),'data-create-title'=>__('Create New Category'))) }}
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        {{ Form::label('order_number', __('Order Number'),['class'=>'form-label']) }}
-                                        {{ Form::number('order_number', null, array('class' => 'form-control')) }}
-                                    </div>
-                                </div>
-
-                                @if(!$customFields->isEmpty())
-                                    <div class="col-md-6">
-                                        <div class="tab-pane fade show" id="tab-2" role="tabpanel">
-                                            @include('customFields.formBuilder')
-                                        </div>
-                                    </div>
-                                @endif
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <div class="qbo-balance-section">
+                <div class="qbo-balance-label">{{ __('BALANCE DUE') }}</div>
+                <div class="qbo-balance-amount" id="grand-total-display">${{ number_format($bill->total ?? 0, 2) }}</div>
             </div>
         </div>
 
+        {{-- Form Section --}}
+        <div class="qbo-form-section">
 
-        <div class="col-12">
-            <h5 class=" d-inline-block mb-4">{{__('Product & Services')}}</h5>
-            <div class="card repeater" data-value='{!! json_encode($items) !!}'>
-                <div class="item-section py-2">
-                    <div class="row justify-content-between align-items-center">
-                        <div class="col-md-12 d-flex align-items-center justify-content-between justify-content-md-end">
-                            <div class="all-button-box me-2">
-                                <a href="#" data-repeater-create="" class="btn btn-primary" data-bs-toggle="modal" data-target="#add-bank">
-                                    <i class="ti ti-plus"></i> {{__('Add item')}}
-                                </a>
-                            </div>
-                        </div>
-                    </div>
+            {{-- Row 1: Vendor Selection --}}
+            <div class="vendor-wrapper">
+                <label class="qbo-label required">{{ __('Vendor') }}</label>
+                <select name="vender_id" class="form-control qbo-input" data-url="{{ route('bill.vender') }}"
+                    id="vender_selector" required>
+                    <option value="">{{ __('Choose a vendor') }}</option>
+                    @foreach ($venders as $id => $vendor)
+                        <option value="{{ $id }}" {{ $bill->vender_id == $id ? 'selected' : '' }}>
+                            {{ $vendor }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            {{-- Row 2: Horizontal layout for Address, Terms, Dates, Bill No --}}
+            <div class="details-row">
+
+                {{-- Column 1: Mailing Address (Matches width of Vendor above) --}}
+                <div class="col-address">
+                    <label class="qbo-label">{{ __('Mailing address') }}</label>
+                    {{-- Using a textarea to mimic the box look in the screenshot --}}
+                    <textarea class="form-control qbo-input qbo-textarea" name="mailing_address" id="vendor_address">{{ $bill->mailing_address ?? '' }}</textarea>
                 </div>
-                <div class="card-body table-border-style">
-                    <div class="table-responsive">
-                        <table class="table mb-0" data-repeater-list="items" id="sortable-table">
-                            <thead>
-                                <tr>
-                                <th width="20%">{{__('Items')}}</th>
-                                <th>{{__('Quantity')}}</th>
-                                <th>{{__('Price')}} </th>
-                                <th>{{__('Discount')}}</th>
-                                <th>{{__('Tax')}} (%)</th>
-                                <th class="text-end">{{__('Amount')}}
-                                    <br><small class="text-danger font-bold">{{__('after tax & discount')}}</small>
-                                </th>
-                                <th></th>
-                            </tr>
-                            </thead>
-                            <tbody class="ui-sortable" data-repeater-item>
-                                <tr>
-                                    {{ Form::hidden('id',null, array('class' => 'form-control id')) }}
-                                    {{ Form::hidden('account_id',null, array('class' => 'form-control account_id')) }}
-                                    <td width="25%" class="form-group pt-0">
-                                        {{ Form::select('items', $product_services,null, array('class' => 'form-control select item','data-url'=>route('bill.product'))) }}
-                                    </td>
-                                    <td>
-                                        <div class="form-group price-input input-group search-form">
-                                            {{ Form::text('quantity',null, array('class' => 'form-control quantity','placeholder'=>__('Qty'))) }}
-                                            <span class="unit input-group-text bg-transparent"></span>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="form-group price-input input-group search-form">
-                                            {{ Form::text('price',null, array('class' => 'form-control price','placeholder'=>__('Price'))) }}
-                                            <span class="input-group-text bg-transparent">{{\Auth::user()->currencySymbol()}}</span>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="form-group price-input input-group search-form">
-                                            {{ Form::text('discount',null, array('class' => 'form-control discount','placeholder'=>__('Discount'))) }}
-                                            <span class="input-group-text bg-transparent">{{\Auth::user()->currencySymbol()}}</span>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="form-group">
-                                            <div class="input-group">
-                                                <div class="taxes"></div>
-                                                {{ Form::hidden('tax','', array('class' => 'form-control tax')) }}
-                                                {{ Form::hidden('itemTaxPrice','', array('class' => 'form-control itemTaxPrice')) }}
-                                                {{ Form::hidden('itemTaxRate','', array('class' => 'form-control itemTaxRate')) }}
-                                            </div>
-                                        </div>
-                                    </td>
 
-                                    <td class="text-end amount">
-                                        0.00
-                                    </td>
+                {{-- Column 2: Terms --}}
+                <div class="col-term">
+                    <label class="qbo-label">{{ __('Terms') }}</label>
+                    <select name="terms" class="form-control qbo-input">
+                        <option value="" {{ !$bill->terms ? 'selected' : '' }}>Due on receipt</option>
+                        <option value="Net 15" {{ $bill->terms == 'Net 15' ? 'selected' : '' }}>Net 15</option>
+                        <option value="Net 30" {{ $bill->terms == 'Net 30' ? 'selected' : '' }}>Net 30</option>
+                        <option value="Net 60" {{ $bill->terms == 'Net 60' ? 'selected' : '' }}>Net 60</option>
+                    </select>
+                </div>
 
+                {{-- Column 3: Bill Date --}}
+                <div class="col-date">
+                    <label class="qbo-label required">{{ __('Bill date') }}</label>
+                    <input type="date" name="bill_date" class="form-control qbo-input" required
+                        value="{{ $bill->bill_date }}">
+                </div>
+
+                {{-- Column 4: Due Date --}}
+                <div class="col-date">
+                    <label class="qbo-label required">{{ __('Due date') }}</label>
+                    <input type="date" name="due_date" class="form-control qbo-input" required
+                        value="{{ $bill->due_date }}">
+                </div>
+
+                {{-- Column 5: Bill No --}}
+                <div class="col-number">
+                    <label class="qbo-label">{{ __('Bill no.') }}</label>
+                    <input type="text" name="bill_number" class="form-control qbo-input"
+                        value="{{ $bill_number }}">
+                </div>
+                <div class="col-number">
+
+                </div>
+            </div>
+
+        </div>
+        {{-- </div> --}}
+
+        {{-- Category Details Section --}}
+        <div class="qbo-grid-section">
+            <div class="qbo-section-header">
+                <i class="fas fa-chevron-down"></i>
+                <span class="qbo-section-title">{{ __('Category details') }}</span>
+            </div>
+            <div class="qbo-grid-content">
+                <table class="qbo-grid-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;">#</th>
+                            <th style="width: 20%;">{{ __('Account') }}</th>
+                            <th style="width: 30%;">{{ __('Description') }}</th>
+                            <th style="width: 12%;">{{ __('Amount') }}</th>
+                            <th style="width: 8%;" class="text-center">{{ __('Billable') }}</th>
+                            <th style="width: 8%;">{{ __('Tax') }}</th>
+                            <th style="width: 15%;">{{ __('Customer') }}</th>
+                            <th style="width: 40px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="category-tbody">
+                        @if (count($categoryDetails) > 0)
+                            @foreach ($categoryDetails as $index => $category)
+                                <tr class="category-row">
+                                    <td class="qbo-line-number">{{ $index + 1 }}</td>
                                     <td>
-                                        @can('delete proposal product')
-                                            <a href="#" class="ti ti-trash text-white repeater-action-btn bg-danger ms-2 bs-pass-para" data-repeater-delete></a>
-                                        @endcan
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td class="form-group">
-                                        {{-- {{ Form::select('chart_account_id', $chartAccounts,null, array('class' => 'form-control select js-searchBox')) }} --}}
-                                        <select name="chart_account_id" class="form-control">
-                                            @foreach ($chartAccounts as $key => $chartAccount)
-                                                <option value="{{ $key }}" class="subAccount">{{ $chartAccount}}</option>
-                                                @foreach ($subAccounts as $subAccount)
-                                                    @if ($key == $subAccount['account'])
-                                                        <option value="{{ $subAccount['id'] }}" class="ms-5"> &nbsp; &nbsp;&nbsp; {{ $subAccount['name'] }}</option>
-                                                    @endif
-                                                @endforeach
+                                        <!-- Hidden ID field for existing category -->
+                                        <input type="hidden" name="category[{{ $index }}][id]"
+                                            value="{{ $category->id }}">
+                                        <select name="category[{{ $index }}][account_id]"
+                                            class="form-control category-account">
+                                            <option value="">{{ __('Select account') }}</option>
+                                            @foreach ($chartAccounts as $id => $account)
+                                                <option value="{{ $id }}"
+                                                    {{ $category->chart_account_id == $id ? 'selected' : '' }}>
+                                                    {{ $account }}</option>
                                             @endforeach
                                         </select>
                                     </td>
-                                    <td class="form-group">
-                                        <div class="input-group ">
-                                            {{ Form::text('amount',null, array('class' => 'form-control accountAmount','placeholder'=>__('Amount'))) }}
-                                            <span class="input-group-text bg-transparent">{{\Auth::user()->currencySymbol()}}</span>
-                                        </div>
+                                    <td>
+                                        <textarea name="category[{{ $index }}][description]" class="form-control" rows="1">{{ $category->description }}</textarea>
                                     </td>
-
-                                    <td colspan="2" class="form-group">
-                                            {{ Form::textarea('description', null, ['class'=>'form-control pro_description','rows'=>'1','placeholder'=>__('Description')]) }}
+                                    <td><input type="number" name="category[{{ $index }}][amount]"
+                                            class="form-control category-amount" step="0.01"
+                                            value="{{ $category->price }}"></td>
+                                    <td class="text-center"><input type="checkbox"
+                                            name="category[{{ $index }}][billable]" class="qbo-checkbox"
+                                            value="1" {{ $category->billable ? 'checked' : '' }}></td>
+                                    <td>
+                                        <input type="checkbox" name="category[{{ $index }}][tax]"
+                                            class="qbo-checkbox category-tax" {{ $category->tax ? 'checked' : '' }}>
                                     </td>
-                                    <td></td>
-                                    <td class="text-end accountamount">
-                                        0.00
+                                    <td>
+                                        <select name="category[{{ $index }}][customer_id]"
+                                            class="form-control customer-select">
+                                            <option value="">-</option>
+                                            @foreach ($customers as $customer)
+                                                <option value="{{ $customer->id }}"
+                                                    {{ $category->customer_id == $customer->id ? 'selected' : '' }}>
+                                                    {{ $customer->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </td>
+                                    <td class="row-actions">
+                                        <i class="fas fa-trash delete-row"></i>
                                     </td>
                                 </tr>
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <td>&nbsp;</td>
-                                    <td>&nbsp;</td>
-                                    <td>&nbsp;</td>
-                                    <td></td>
-                                    <td><strong>{{__('Sub Total')}} ({{\Auth::user()->currencySymbol()}})</strong></td>
-                                    <td class="text-end subTotal">0.00</td>
-                                    <td></td>
-                                </tr>
-                                <tr>
-                                    <td>&nbsp;</td>
-                                    <td>&nbsp;</td>
-                                    <td>&nbsp;</td>
-                                    <td></td>
-                                    <td><strong>{{__('Discount')}} ({{\Auth::user()->currencySymbol()}})</strong></td>
-                                    <td class="text-end totalDiscount">0.00</td>
-                                    <td></td>
-                                </tr>
-                                <tr>
-                                    <td>&nbsp;</td>
-                                    <td>&nbsp;</td>
-                                    <td>&nbsp;</td>
-                                    <td></td>
-                                    <td><strong>{{__('Tax')}} ({{\Auth::user()->currencySymbol()}})</strong></td>
-                                    <td class="text-end totalTax">0.00</td>
-                                    <td></td>
-                                </tr>
-                                <tr>
-                                    <td>&nbsp;</td>
-                                    <td>&nbsp;</td>
-                                    <td>&nbsp;</td>
-                                    <td>&nbsp;</td>
-                                    <td class="blue-text"><strong>{{__('Total Amount')}} ({{\Auth::user()->currencySymbol()}})</strong></td>
-                                    <td class="blue-text text-end totalAmount">0.00</td>
-                                    <td></td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
+                            @endforeach
+                        @else
+                            <tr class="category-row">
+                                <td class="qbo-line-number">1</td>
+                                <td>
+                                    <select name="category[0][account_id]" class="form-control category-account">
+                                        <option value="">{{ __('Select account') }}</option>
+                                        @foreach ($chartAccounts as $id => $account)
+                                            <option value="{{ $id }}">{{ $account }}</option>
+                                        @endforeach
+                                    </select>
+                                </td>
+                                <td>
+                                    <textarea name="category[0][description]" class="form-control" rows="1"></textarea>
+                                </td>
+                                <td><input type="number" name="category[0][amount]"
+                                        class="form-control category-amount" step="0.01" value="0.00"></td>
+                                <td class="text-center"><input type="checkbox" name="category[0][billable]"
+                                        class="qbo-checkbox" value="1"></td>
+                                <td>
+                                    <input type="checkbox" name="category[0][tax]" class="qbo-checkbox category-tax">
+                                </td>
+                                <td>
+                                    <select name="category[0][customer_id]" class="form-control customer-select">
+                                        <option value="">-</option>
+                                        @foreach ($customers as $customer)
+                                            <option value="{{ $customer->id }}">{{ $customer->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </td>
+                                <td class="row-actions">
+                                    <i class="fas fa-trash delete-row"></i>
+                                </td>
+                            </tr>
+                        @endif
+                    </tbody>
+                </table>
+                <button type="button" class="qbo-add-line-btn" id="add-category-line">{{ __('Add line') }}</button>
+                <button type="button" class="qbo-clear-btn"
+                    id="clear-category-lines">{{ __('Clear all lines') }}</button>
             </div>
         </div>
 
-        <div class="modal-footer">
-            <input type="button" value="{{__('Cancel')}}" onclick="location.href = '{{route("bill.index")}}';" class="btn btn-light me-3">
-            <input type="submit" value="{{__('Update')}}" class="btn btn-primary">
+        {{-- Item Details Section --}}
+        <div class="qbo-grid-section">
+            <div class="qbo-section-header">
+                <i class="fas fa-chevron-down"></i>
+                <span class="qbo-section-title">{{ __('Item details') }}</span>
+            </div>
+            <div class="qbo-grid-content">
+                <table class="qbo-grid-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;">#</th>
+                            <th style="width: 18%;">{{ __('Product/Service') }}</th>
+                            <th style="width: 25%;">{{ __('Description') }}</th>
+                            <th style="width: 10%;">{{ __('Qty') }}</th>
+                            <th style="width: 12%;">{{ __('Rate') }}</th>
+                            <th style="width: 12%;">{{ __('Amount') }}</th>
+                            <th style="width: 7%;" class="text-center">{{ __('Billable') }}</th>
+                            <th style="width: 7%;">{{ __('Tax') }}</th>
+                            <th style="width: 12%;">{{ __('Customer') }}</th>
+                            <th style="width: 40px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="item-tbody">
+                        @if (count($items) > 0)
+                            @foreach ($items as $index => $item)
+                                <tr class="item-row">
+                                    <td class="qbo-line-number">{{ $index + 1 }}</td>
+                                    <td>
+                                        <!-- Hidden ID field for existing item -->
+                                        <input type="hidden" name="items[{{ $index }}][id]"
+                                            value="{{ $item->id }}">
+                                        <select name="items[{{ $index }}][product_id]"
+                                            class="form-control item-product">
+                                            <option value="">{{ __('Select product/service') }}</option>
+                                            @foreach ($product_services as $id => $product)
+                                                <option value="{{ $id }}"
+                                                    {{ $item->product_id == $id ? 'selected' : '' }}>
+                                                    {{ $product }}</option>
+                                            @endforeach
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <textarea name="items[{{ $index }}][description]" class="form-control item-description" rows="1">{{ $item->description }}</textarea>
+                                    </td>
+                                    <td><input type="number" name="items[{{ $index }}][quantity]"
+                                            class="form-control item-qty" step="1"
+                                            value="{{ $item->quantity }}"></td>
+                                    <td><input type="number" name="items[{{ $index }}][price]"
+                                            class="form-control item-rate" step="0.01"
+                                            value="{{ $item->price }}"></td>
+                                    <td><input type="number" name="items[{{ $index }}][amount]"
+                                            class="form-control item-amount" step="0.01"
+                                            value="{{ $item->line_total ?? $item->quantity * $item->price }}"
+                                            readonly></td>
+                                    <td class="text-center"><input type="checkbox"
+                                            name="items[{{ $index }}][billable]" class="qbo-checkbox"
+                                            {{ $item->billable ? 'checked' : '' }}></td>
+                                    <td>
+                                        <input type="checkbox" name="items[{{ $index }}][tax]"
+                                            class="qbo-checkbox item-tax" {{ $item->tax ? 'checked' : '' }}>
+                                    </td>
+                                    <td>
+                                        <select name="items[{{ $index }}][customer_id]"
+                                            class="form-control customer-select">
+                                            <option value="">-</option>
+                                            @foreach ($customers as $customer)
+                                                <option value="{{ $customer->id }}"
+                                                    {{ $item->customer_id == $customer->id ? 'selected' : '' }}>
+                                                    {{ $customer->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </td>
+                                    <td class="row-actions">
+                                        <i class="fas fa-trash delete-row"></i>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        @else
+                            <tr class="item-row">
+                                <td class="qbo-line-number">1</td>
+                                <td>
+                                    <select name="items[0][product_id]" class="form-control item-product">
+                                        <option value="">{{ __('Select product/service') }}</option>
+                                        @foreach ($product_services as $id => $product)
+                                            <option value="{{ $id }}">{{ $product }}</option>
+                                        @endforeach
+                                    </select>
+                                </td>
+                                <td>
+                                    <textarea name="items[0][description]" class="form-control item-description" rows="1"></textarea>
+                                </td>
+                                <td><input type="number" name="items[0][quantity]" class="form-control item-qty"
+                                        step="1" value="1"></td>
+                                <td><input type="number" name="items[0][price]" class="form-control item-rate"
+                                        step="0.01" value="0.00"></td>
+                                <td><input type="number" name="items[0][amount]" class="form-control item-amount"
+                                        step="0.01" value="0.00" readonly></td>
+                                <td class="text-center"><input type="checkbox" name="items[0][billable]"
+                                        class="qbo-checkbox"></td>
+                                <td>
+                                    <input type="checkbox" name="items[0][tax]" class="qbo-checkbox item-tax">
+                                </td>
+                                <td>
+                                    <select name="items[0][customer_id]" class="form-control customer-select">
+                                        <option value="">-</option>
+                                        @foreach ($customers as $customer)
+                                            <option value="{{ $customer->id }}">{{ $customer->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </td>
+                                <td class="row-actions">
+                                    <i class="fas fa-trash delete-row"></i>
+                                </td>
+                            </tr>
+                        @endif
+                    </tbody>
+                </table>
+                <button type="button" class="qbo-add-line-btn" id="add-item-line">{{ __('Add line') }}</button>
+                <button type="button" class="qbo-clear-btn"
+                    id="clear-item-lines">{{ __('Clear all lines') }}</button>
+            </div>
         </div>
-        {{ Form::close() }}
-    </div>
-@endsection
 
+    </div>
+
+    {{-- Footer Section --}}
+    <input type="file" name="attachments[]" id="attachments" multiple class="d-none">
+    <label for="attachments" style="cursor: pointer; margin: 0;">
+        <i class="fas fa-cloud-upload-alt" style="font-size: 24px; color: #0077c5;"></i>
+        <p class="mb-0 mt-2">{{ __('Add attachments') }}</p>
+        <small class="text-muted">{{ __('Max file size: 20 MB') }}</small>
+    </label>
+
+    <div id="attachment-list" class="mt-2"></div>
+
+
+    <div class="col-md-6">
+        <div class="qbo-total-section">
+            <div class="qbo-total-row">
+                <span>{{ __('Subtotal') }}</span>
+                <span id="subtotal-display">$0.00</span>
+            </div>
+            <div class="qbo-total-row grand-total">
+                <span>{{ __('Total') }}</span>
+                <span id="total-display">$0.00</span>
+            </div>
+        </div>
+    </div>
+
+
+    <input type="hidden" name="subtotal" id="subtotal" value="0">
+    <input type="hidden" name="total" id="total" value="0">
+
+    {{-- Action Buttons --}}
+    <div class="qbo-action-buttons">
+        <a href="{{ route('bill.index') }}" class="btn-qbo-cancel">{{ __('Cancel') }}</a>
+        <button type="button" class="btn-qbo-clear" id="clear-form">{{ __('Clear') }}</button>
+        <button type="submit" class="btn-qbo-save">{{ __('Save') }}</button>
+    </div>
+
+
+    {{ Form::close() }}
+
+
+    <script>
+        $(document).ready(function() {
+            // Initialize line counters based on existing data
+            let categoryLineCount = {{ count($categoryDetails) > 0 ? count($categoryDetails) : 1 }};
+            let itemLineCount = {{ count($items) > 0 ? count($items) : 1 }};
+
+            // Add Category Line
+            $('#add-category-line').on('click', function() {
+                const newRow = `
+            <tr class="category-row">
+                <td class="qbo-line-number">${++categoryLineCount}</td>
+                <td>
+                    <select name="category[${categoryLineCount}][account_id]" class="form-control category-account">
+                        <option value="">{{ __('Select account') }}</option>
+                        @foreach ($chartAccounts as $id => $account)
+                            <option value="{{ $id }}">{{ $account }}</option>
+                        @endforeach
+                    </select>
+                </td>
+                <td><textarea name="category[${categoryLineCount}][description]" class="form-control" rows="1"></textarea></td>
+                <td><input type="number" name="category[${categoryLineCount}][amount]" class="form-control category-amount" step="0.01" value="0.00"></td>
+                <td class="text-center"><input type="checkbox" name="category[${categoryLineCount}][billable]" class="qbo-checkbox" value="1"></td>
+                <td><input type="checkbox" name="category[${categoryLineCount}][tax]" class="qbo-checkbox category-tax"></td>
+                <td>
+                    <select name="category[${categoryLineCount}][customer_id]" class="form-control customer-select">
+                        <option value="">-</option>
+                        @foreach ($customers as $customer)
+                            <option value="{{ $customer->id }}">{{ $customer->name }}</option>
+                        @endforeach
+                    </select>
+                </td>
+                <td class="row-actions"><i class="fas fa-trash delete-row"></i></td>
+            </tr>
+        `;
+                $('#category-tbody').append(newRow);
+                updateLineNumbers();
+            });
+
+            // Add Item Line
+            $('#add-item-line').on('click', function() {
+                const newRow = `
+            <tr class="item-row">
+                <td class="qbo-line-number">${++itemLineCount}</td>
+                <td>
+                    <select name="items[${itemLineCount}][product_id]" class="form-control item-product">
+                        <option value="">{{ __('Select product/service') }}</option>
+                        @foreach ($product_services as $id => $product)
+                            <option value="{{ $id }}">{{ $product }}</option>
+                        @endforeach
+                    </select>
+                </td>
+                <td><textarea name="items[${itemLineCount}][description]" class="form-control item-description" rows="1"></textarea></td>
+                <td><input type="number" name="items[${itemLineCount}][quantity]" class="form-control item-qty" step="1" value="1"></td>
+                <td><input type="number" name="items[${itemLineCount}][price]" class="form-control item-rate" step="0.01" value="0.00"></td>
+                <td><input type="number" name="items[${itemLineCount}][amount]" class="form-control item-amount" step="0.01" value="0.00" readonly></td>
+                <td class="text-center"><input type="checkbox" name="items[${itemLineCount}][billable]" class="qbo-checkbox"></td>
+                <td><input type="checkbox" name="items[${itemLineCount}][tax]" class="qbo-checkbox item-tax"></td>
+                <td>
+                    <select name="items[${itemLineCount}][customer_id]" class="form-control customer-select">
+                        <option value="">-</option>
+                        @foreach ($customers as $customer)
+                            <option value="{{ $customer->id }}">{{ $customer->name }}</option>
+                        @endforeach
+                    </select>
+                </td>
+                <td class="row-actions"><i class="fas fa-trash delete-row"></i></td>
+            </tr>
+        `;
+                $('#item-tbody').append(newRow);
+                updateLineNumbers();
+            });
+
+            // Delete Row
+            $(document).on('click', '.delete-row', function() {
+                $(this).closest('tr').remove();
+                updateLineNumbers();
+                calculateTotal();
+            });
+
+            // Clear Lines
+            $('#clear-category-lines').on('click', function() {
+                $('#category-tbody').empty();
+                categoryLineCount = 0;
+                calculateTotal();
+            });
+
+            $('#clear-item-lines').on('click', function() {
+                $('#item-tbody').empty();
+                itemLineCount = 0;
+                calculateTotal();
+            });
+
+            // Update Line Numbers
+            function updateLineNumbers() {
+                $('.category-row').each(function(index) {
+                    $(this).find('.qbo-line-number').text(index + 1);
+                });
+                $('.item-row').each(function(index) {
+                    $(this).find('.qbo-line-number').text(index + 1);
+                });
+            }
+
+            // Calculate Item Amount (Qty × Rate)
+            $(document).on('input', '.item-qty, .item-rate', function() {
+                const row = $(this).closest('tr');
+                const qty = parseFloat(row.find('.item-qty').val()) || 0;
+                const rate = parseFloat(row.find('.item-rate').val()) || 0;
+                row.find('.item-amount').val((qty * rate).toFixed(2));
+                calculateTotal();
+            });
+
+            // Category Amount Change
+            $(document).on('input', '.category-amount', function() {
+                calculateTotal();
+            });
+
+            // Calculate Total
+            function calculateTotal() {
+                let subtotal = 0;
+                $('.category-amount').each(function() {
+                    subtotal += parseFloat($(this).val()) || 0;
+                });
+                $('.item-amount').each(function() {
+                    subtotal += parseFloat($(this).val()) || 0;
+                });
+
+                $('#subtotal').val(subtotal.toFixed(2));
+                $('#total').val(subtotal.toFixed(2));
+                $('#subtotal-display').text('$' + subtotal.toFixed(2));
+                $('#total-display').text('$' + subtotal.toFixed(2));
+                $('#grand-total-display').text('$' + subtotal.toFixed(2));
+            }
+
+            // File Upload Display
+            $('#attachments').on('change', function() {
+                const files = this.files;
+                $('#attachment-list').empty();
+                for (let i = 0; i < files.length; i++) {
+                    $('#attachment-list').append(
+                        `<div class="small text-muted"><i class="fas fa-paperclip"></i> ${files[i].name}</div>`
+                    );
+                }
+            });
+
+            // Product Auto-fill - loads product details when selected
+            $(document).on('change', '.item-product', function() {
+                const productId = $(this).val();
+                const currentRow = $(this).closest('tr');
+
+                if (!productId) return;
+
+                $.ajax({
+                    url: '{{ route('invoice.product') }}',
+                    method: 'POST',
+                    data: {
+                        _token: '{{ csrf_token() }}',
+                        product_id: productId
+                    },
+                    success: function(response) {
+                        // Parse JSON if it's a string
+                        const data = typeof response === 'string' ? JSON.parse(response) :
+                            response;
+
+                        if (data.product) {
+                            // Get description (or name if description doesn't exist)
+                            const description = data.product.description || data.product.name ||
+                                '';
+                            currentRow.find('.item-description').val(description);
+
+                            // Get purchase price
+                            const rate = parseFloat(data.product.purchase_price) || 0;
+                            currentRow.find('.item-rate').val(rate.toFixed(2));
+
+                            // Set quantity to 1
+                            const qty = 1;
+                            currentRow.find('.item-qty').val(qty);
+
+                            // Calculate amount (qty × rate)
+                            const amount = qty * rate;
+                            currentRow.find('.item-amount').val(amount.toFixed(2));
+
+                            // Recalculate subtotal and grand total
+                            calculateTotal();
+                        }
+                    },
+                    error: function(xhr) {
+                        console.error('Error fetching product:', xhr);
+                        show_toastr('Error',
+                            'Failed to load product details. Please try again.', 'error');
+                    }
+                });
+            });
+
+            // Form Submit
+            $('#bill-form').on('submit', function(e) {
+                e.preventDefault();
+                $('.btn-qbo-save').prop('disabled', true).text('{{ __('Saving...') }}');
+
+                $.ajax({
+                    url: $(this).attr('action'),
+                    method: 'POST',
+                    data: new FormData(this),
+                    processData: false,
+                    contentType: false,
+                    success: function(response) {
+                        if (response.status === 'success') {
+                            $('#commonModalOver').modal('hide');
+                            if (typeof show_toastr === 'function') {
+                                show_toastr('success',
+                                    '{{ __('Bill updated successfully') }}', 'success');
+                            }
+                            setTimeout(() => window.location.reload(), 500);
+                        } else {
+                            show_toastr('Error', response.message ||
+                                '{{ __('Error updating bill') }}', 'error');
+                            $('.btn-qbo-save').prop('disabled', false).text(
+                                '{{ __('Save') }}');
+                        }
+                    },
+                    error: function(xhr) {
+                        let message = '{{ __('Error updating bill') }}';
+                        if (xhr.responseJSON && xhr.responseJSON.message) {
+                            message = xhr.responseJSON.message;
+                        }
+                        show_toastr('Error', message, 'error');
+                        $('.btn-qbo-save').prop('disabled', false).text(
+                            '{{ __('Save') }}');
+                    }
+                });
+            });
+
+            // Initialize total calculation on page load
+            calculateTotal();
+        });
+
+        // Vendor selector change handler (runs outside document.ready)
+        $(document).on('change', '#vender_selector', function() {
+            var id = $(this).val();
+            var url = $(this).data('url');
+
+            // Clear the box or show loading state
+            $('#vendor_address').val('');
+
+            if (id) {
+                $.ajax({
+                    url: url,
+                    type: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': jQuery('meta[name="csrf-token"]').attr(
+                            'content') // OR jQuery('#token').val()
+                    },
+                    data: {
+                        'id': id
+                    },
+                    cache: false,
+                    success: function(data) {
+                        // CASE 1: If your controller returns JSON (Best Practice)
+                        // Example: return response()->json(['address' => '123 Main St...']);
+                        if (typeof data === 'object' && data.address) {
+                            $('#vendor_address').val(data.address);
+                        }
+
+                        // CASE 2: If your controller returns an HTML View (Old way)
+                        // Since we are using a textarea, we need to strip the HTML tags (<br>, <p>)
+                        // so they don't show up as code in the box.
+                        else {
+                            // This creates a temporary element to strip tags and extract text
+                            var tempDiv = document.createElement("div");
+                            tempDiv.innerHTML = data;
+
+                            // If the data had <br> tags, replace them with newlines first
+                            var addressText = tempDiv.innerText || tempDiv.textContent;
+
+                            $('#vendor_address').val(addressText.trim());
+                        }
+                    },
+                });
+            }
+        });
+    </script>

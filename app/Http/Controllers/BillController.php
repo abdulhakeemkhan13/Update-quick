@@ -12,9 +12,11 @@ use App\Models\ChartOfAccount;
 use App\Models\ChartOfAccountSubType;
 use App\Models\ChartOfAccountType;
 use App\Models\CustomField;
+use App\Models\Customer;
 use App\Models\DebitNote;
 use App\Models\JournalEntry;
 use App\Models\JournalItem;
+use App\Models\Settings;
 use App\Models\ProductService;
 use App\Models\ProductServiceCategory;
 use App\Models\Customer;
@@ -28,6 +30,7 @@ use App\Models\Notification;
 use App\Models\Tax;
 use App\Models\WorkFlowAction;
 use App\Models\TransactionLines;
+use App\Services\JournalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -209,7 +212,15 @@ public function index(Request $request)
             $subAccounts = $subAccounts->get()->toArray();
             $customers = Customer::where($column, $ownerId)->get();
 
-            return view('bill.create', compact('venders', 'bill_number', 'product_services', 'category', 'customFields', 'vendorId', 'chartAccounts', 'subAccounts', 'vendorOptions', 'customers'));
+
+            // Get taxes for the form
+            $taxes = Tax::where('created_by', $ownerId)->get()->pluck('name', 'id');
+
+            // Get customers for billable items
+            $customers = Customer::where($column, $ownerId)->orderBy('name')->get();
+
+            return view('bill.create', compact('venders', 'bill_number', 'product_services', 'category', 'customFields', 'vendorId', 'chartAccounts', 'subAccounts', 'taxes', 'customers', 'vendorOptions'));
+
         } else {
             return response()->json(['error' => __('Permission denied.')], 401);
         }
@@ -531,33 +542,51 @@ public function index(Request $request)
                 );
                 if ($validator->fails()) {
                     $messages3 = $validator->getMessageBag();
+                    // Return JSON for AJAX requests
+                    if ($request->ajax() || $request->wantsJson()) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => $messages3->first()
+                        ], 422);
+                    }
                     return redirect()->back()->with('error', $messages3->first());
                 }
 
-                if (!empty($request->items) && empty($request->items[0]['item']) && empty($request->items[0]['chart_account_id']) && empty($request->items[0]['amount'])) {
-                    $itemValidator = \Validator::make(
-                        $request->all(),
-                        [
-                            'item' => 'required'
-                        ]
-                    );
-                    if ($itemValidator->fails()) {
-                        $messages1 = $itemValidator->getMessageBag();
-                        return redirect()->back()->with('error', $messages1->first());
+                // Validate billable items have customers
+                $billableValidationError = null;
+                
+                // Check category items
+                if ($request->has('category') && is_array($request->category)) {
+                    foreach ($request->category as $index => $categoryData) {
+                        if (isset($categoryData['billable']) && $categoryData['billable']) {
+                            if (empty($categoryData['customer_id'])) {
+                                $billableValidationError = __('Select a customer for each billable split line.') . ' (Category row ' . ($index + 1) . ')';
+                                break;
+                            }
+                        }
                     }
                 }
-
-                if (!empty($request->items) && empty($request->items[0]['chart_account_id']) && !empty($request->items[0]['amount'])) {
-                    $accountValidator = \Validator::make(
-                        $request->all(),
-                        [
-                            'chart_account_id' => 'required'
-                        ]
-                    );
-                    if ($accountValidator->fails()) {
-                        $messages2 = $accountValidator->getMessageBag();
-                        return redirect()->back()->with('error', $messages2->first());
+                
+                // Check item details
+                if (!$billableValidationError && $request->has('items') && is_array($request->items)) {
+                    foreach ($request->items as $index => $itemData) {
+                        if (isset($itemData['billable']) && $itemData['billable']) {
+                            if (empty($itemData['customer_id'])) {
+                                $billableValidationError = __('Select a customer for each billable split line.') . ' (Item row ' . ($index + 1) . ')';
+                                break;
+                            }
+                        }
                     }
+                }
+                
+                if ($billableValidationError) {
+                    if ($request->ajax() || $request->wantsJson()) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => $billableValidationError
+                        ], 422);
+                    }
+                    return redirect()->back()->with('error', $billableValidationError);
                 }
 
                 // Create Bill
@@ -565,91 +594,104 @@ public function index(Request $request)
                 $bill->bill_id = $this->billNumber();
                 $bill->vender_id = $request->vender_id;
                 $bill->bill_date = $request->bill_date;
+                $bill->due_date = $request->due_date;
                 $bill->status = 0; // Draft
                 $bill->type = 'Bill';
                 $bill->user_type = 'vendor';
-                $bill->due_date = $request->due_date;
+                
+                // New QBO fields
+                $bill->terms = $request->terms;
+                $bill->notes = $request->notes;
+                $bill->subtotal = $request->subtotal ?? 0;
+                $bill->total = $request->total ?? 0;
+                
                 $bill->category_id = !empty($request->category_id) ? $request->category_id : 0;
                 $bill->order_number = !empty($request->order_number) ? $request->order_number : 0;
                 $bill->created_by = \Auth::user()->creatorId();
                 $bill->owned_by = \Auth::user()->ownedId();
                 $bill->save();
 
-                CustomField::saveData($bill, $request->customField);
+                // Save Custom Fields
+                if ($request->has('customField')) {
+                    CustomField::saveData($bill, $request->customField);
+                }
 
-                $products = $request->items;
-                $newitems = $request->items;
-                $total_amount = 0;
+                $newitems = [];
 
-                // Save Bill Products and Accounts
-                for ($i = 0; $i < count($products); $i++) {
-                    if (!empty($products[$i]['item'])) {
+                // Process CATEGORY DETAILS (Account-based expenses)
+                if ($request->has('category') && is_array($request->category)) {
+                    foreach ($request->category as $index => $categoryData) {
+                        // Skip empty rows
+                        if (empty($categoryData['account_id']) && empty($categoryData['amount'])) {
+                            continue;
+                        }
+
+                        $billAccount = new BillAccount();
+                        $billAccount->ref_id = $bill->id;
+                        $billAccount->type = 'Bill';
+                        $billAccount->chart_account_id = $categoryData['account_id'] ?? null;
+                        $billAccount->description = $categoryData['description'] ?? '';
+                        $billAccount->price = $categoryData['amount'] ?? 0;
+                        
+                        // Handle billable and customer fields
+                        $billAccount->billable = isset($categoryData['billable']) ? 1 : 0;
+                        $billAccount->customer_id = $categoryData['customer_id'] ?? null;
+                        
+                        // Handle tax checkbox (store as 1 or 0)
+                        $billAccount->tax = isset($categoryData['tax']) ? 1 : 0;
+                        
+                        // IMPORTANT: Save order to maintain exact row position
+                        $billAccount->order = $index;
+                        
+                        $billAccount->save();
+                        
+                        $newitems[] = [
+                            'bill_account_id' => $billAccount->id,
+                            'chart_account_id' => $billAccount->chart_account_id,
+                            'amount' => $billAccount->price,
+                            'description' => $billAccount->description,
+                            'order' => $index,
+                        ];
+                    }
+                }
+
+                // Process ITEM DETAILS (Product/Service-based)
+                if ($request->has('items') && is_array($request->items)) {
+                    foreach ($request->items as $index => $itemData) {
+                        // Skip empty rows
+                        if (empty($itemData['product_id']) && empty($itemData['quantity']) && empty($itemData['price'])) {
+                            continue;
+                        }
+                        $product = ProductService::find($itemData['product_id']);
+                        if ($product) {
+                            if($product->type == 'product'){
+                                $account = $product->asset_chartaccount_id ?? $product->expense_chartaccount_id;
+                            }else{
+                                $account = $product->expense_chartaccount_id;
+                            }
+                        }
+
                         $billProduct = new BillProduct();
                         $billProduct->bill_id = $bill->id;
-                        $billProduct->product_id = $products[$i]['item'];
-                        $billProduct->quantity = $products[$i]['quantity'];
-                        $billProduct->tax = $products[$i]['tax'];
-                        $billProduct->discount = $products[$i]['discount'];
-                        $billProduct->price = $products[$i]['price'];
-                        $billProduct->description = $products[$i]['description'];
-                        $billProduct->save();
-                        $newitems[$i]['prod_id'] = $billProduct->id;
-                    }
-
-                    $billTotal = 0;
-                    if (!empty($products[$i]['chart_account_id'])) {
-                        $billAccount = new BillAccount();
-                        $billAccount->chart_account_id = $products[$i]['chart_account_id'];
-                        $billAccount->price = $products[$i]['amount'] ? $products[$i]['amount'] : 0;
-                        $billAccount->description = $products[$i]['description'];
-                        $billAccount->type = 'Bill';
-                        $billAccount->ref_id = $bill->id;
-                        $billAccount->save();
-                        $newitems[$i]['bill_account_id'] = $billAccount->id;
-                        $billTotal = $billAccount->price;
-                    }
-
-                    // Inventory management (Quantity)
-                    if (!empty($billProduct)) {
-                        Utility::total_quantity('plus', $billProduct->quantity, $billProduct->product_id);
-                    }
-
-                    // Product Stock Report
-                    if (!empty($products[$i]['item'])) {
-                        $type = 'bill';
-                        $type_id = $bill->id;
-                        $description = $products[$i]['quantity'] . '  ' . __('quantity purchase in bill') . ' ' . \Auth::user()->billNumberFormat($bill->bill_id);
-                        Utility::addProductStock($products[$i]['item'], $products[$i]['quantity'], $type, $description, $type_id);
-                        $total_amount += ((float) $billProduct->quantity * (float) $billProduct->price) + (float) $billTotal;
-                    }
-                }
-
-                // Save Bill Category Account
-                if (!empty($request->chart_account_id)) {
-                    $billaccount = ProductServiceCategory::find($request->category_id);
-                    $chart_account = ChartOfAccount::find($billaccount->chart_account_id);
-                    $billAccount = new BillAccount();
-                    $billAccount->chart_account_id = $chart_account['id'];
-                    $billAccount->price = $total_amount;
-                    $billAccount->description = $request->description;
-                    $billAccount->type = 'Bill Category';
-                    $billAccount->ref_id = $bill->id;
-                    $billAccount->save();
-                }
-
-                // WorkFlow - Check if approval is required
-                $us_mail = 'false';
-                $us_notify = 'false';
-                $us_approve = 'false';
-                $usr_Notification = [];
-                $workflow = WorkFlow::where('created_by', '=', \Auth::user()->creatorId())
-                    ->where('module', '=', 'accounts')
-                    ->where('status', 1)
-                    ->first();
-
-                if ($workflow) {
-                    $workflowaction = WorkFlowAction::where('workflow_id', $workflow->id)->where('status', 1)->get();
-                    foreach ($workflowaction as $action) {
+                        $billProduct->product_id = $itemData['product_id'] ?? null;
+                        $billProduct->description = $itemData['description'] ?? '';
+                        $billProduct->quantity = $itemData['quantity'] ?? 1;
+                        $billProduct->price = $itemData['price'] ?? 0;
+                        $billProduct->discount = $itemData['discount'] ?? 0;
+                        $billProduct->account_id = $account;
+                        
+                        // Handle tax checkbox (store as 1 or 0)
+                        $billProduct->tax = isset($itemData['tax']) ? 1 : 0;
+                        
+                        // Calculate line total
+                        $billProduct->line_total = $itemData['amount'] ?? ($billProduct->quantity * $billProduct->price);
+                        
+                        // QBO specific fields - billable and customer
+                        $billProduct->billable = isset($itemData['billable']) ? 1 : 0;
+                        $billProduct->customer_id = $itemData['customer_id'] ?? null;
+                        
+                        // IMPORTANT: Save order to maintain exact row position
+                        // This allows the same product to appear in multiple rows
                         $useraction = json_decode($action->assigned_users);
                         if (strtolower('create-bill') == $action->node_id) {
                             if (@$useraction != '') {
@@ -755,15 +797,17 @@ public function index(Request $request)
                     Utility::send_twilio_msg($vendor->contact, 'new_bill', $billNotificationArr);
                 }
 
-                // DON'T create JV here - it will be created on approval
-                // $dataret = Utility::jr_exp_entry($data);
+                // Auto-approve and create journal entry for company users
                 if (Auth::user()->type == 'company') {
-                    $this->createBillJournalVoucher($bill);
-                    $bill->status = 6;
+                    $bill->status = 6; // Approved
                     $bill->save();
+                    
+                    // Create journal entry using JournalService
+                    $this->createBillJournalEntry($bill);
+                    
                     Utility::makeActivityLog(\Auth::user()->id, 'Bill', $bill->id, 'Create Bill', 'Bill Created & Approved');
-
                 }
+                
                 // Webhook
                 $module = 'New Bill';
                 $webhook = Utility::webhookSetting($module);
@@ -774,22 +818,55 @@ public function index(Request $request)
                     if ($status == true) {
                         Utility::makeActivityLog(\Auth::user()->id, 'Bill', $bill->id, 'Create Bill', 'Bill Created (Pending Approval)');
                         \DB::commit();
+                        if ($request->ajax() || $request->wantsJson()) {
+                            return response()->json([
+                                'status' => 'success',
+                                'message' => __('Bill successfully created.'),
+                                'bill_id' => $bill->id
+                            ], 200);
+                        }
                         return redirect()->route('bill.index', $bill->id)->with('success', __('Bill successfully created and waiting for approval.'));
                     } else {
                         \DB::commit();
+                        if ($request->ajax() || $request->wantsJson()) {
+                            return response()->json([
+                                'status' => 'error',
+                                'message' => __('Webhook call failed.')
+                            ], 500);
+                        }
                         return redirect()->back()->with('error', __('Webhook call failed.'));
                     }
                 }
 
                 Utility::makeActivityLog(\Auth::user()->id, 'Bill', $bill->id, 'Create Bill', 'Bill Created (Pending Approval)');
                 \DB::commit();
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json([
+                        'status' => 'success',
+                        'message' => __('Bill successfully created.'),
+                        'bill_id' => $bill->id
+                    ], 200);
+                }
                 return redirect()->route('bill.index', $bill->id)->with('success', __('Bill successfully created and waiting for approval.'));
             } else {
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => __('Permission denied.')
+                    ], 403);
+                }
                 return redirect()->back()->with('error', __('Permission denied.'));
             }
         } catch (\Exception $e) {
             \DB::rollback();
-            dd($e);
+            // dd($e);
+            \Log::error('Bill Store Error: ' . $e->getMessage());
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $e->getMessage()
+                ], 500);
+            }
             return redirect()->back()->with('error', $e->getMessage());
         }
     }
@@ -890,7 +967,7 @@ public function index(Request $request)
             return redirect()->back()->with('success', __('Bill sent for approval successfully.'));
         } catch (\Exception $e) {
             \DB::rollBack();
-            dd($e);
+            // dd($e);
             \Log::error('Send Bill for Approval Error: ' . $e->getMessage());
             return redirect()->back()->with('error', __('Error sending bill for approval: ' . $e->getMessage()));
         }
@@ -929,7 +1006,7 @@ public function index(Request $request)
             return redirect()->route('bill.index')->with('success', __('Bill approved successfully and JV posted.'));
         } catch (\Exception $e) {
             \DB::rollBack();
-            dd($e);
+            // dd($e);
             \Log::error('Bill Approval Error: ' . $e->getMessage());
             return redirect()->back()->with('error', __('Error approving bill: ' . $e->getMessage()));
         }
@@ -956,7 +1033,7 @@ public function index(Request $request)
             return redirect()->route('bill.index')->with('success', __('Bill rejected successfully.'));
         } catch (\Exception $e) {
             \DB::rollBack();
-            dd($e);
+            // dd($e);
             \Log::error('Reject Bill Error: ' . $e->getMessage());
             return redirect()->back()->with('error', __('Error rejecting bill: ' . $e->getMessage()));
         }
@@ -1067,28 +1144,16 @@ public function index(Request $request)
                 $subAccounts->where('chart_of_accounts.created_by', \Auth::user()->creatorId());
                 $subAccounts = $subAccounts->get()->toArray();
 
-                //for item and account show in repeater
-                $item = $bill->items;
-                $accounts = $bill->accounts;
-                $items = [];
-                if (!empty($item) && count($item) > 0) {
-                    foreach ($item as $k => $val) {
-                        if (!empty($accounts[$k])) {
-                            $val['chart_account_id'] = $accounts[$k]['chart_account_id'];
-                            $val['account_id'] = $accounts[$k]['id'];
-                            $val['amount'] = $accounts[$k]['price'];
-                        }
-                        $items[] = $val;
-                    }
-                } else {
-                    foreach ($accounts as $k => $val) {
-                        $val1['chart_account_id'] = $accounts[$k]['chart_account_id'];
-                        $val1['account_id'] = $accounts[$k]['id'];
-                        $val1['amount'] = $accounts[$k]['price'];
-                        $items[] = $val1;
+                // Get taxes for the form
+                $taxes = Tax::where('created_by', $ownerId)->get()->pluck('name', 'id');
 
-                    }
-                }
+                // Get customers for billable items
+                $customers = Customer::where($column, $ownerId)->orderBy('name')->get();
+
+                // Separate category details and items (QBO style)
+                $categoryDetails = $bill->accounts; // BillAccount records
+                $items = $bill->items; // BillProduct records
+
                 return view('bill.edit', compact(
                     'venders',
                     'product_services',
@@ -1097,8 +1162,11 @@ public function index(Request $request)
                     'category',
                     'customFields',
                     'chartAccounts',
+                    'categoryDetails',
                     'items',
-                    'subAccounts'
+                    'subAccounts',
+                    'taxes',
+                    'customers'
                 ));
             } else {
                 return redirect()->back()->with('error', __('Bill Not Found.'));
@@ -1446,7 +1514,45 @@ public function index(Request $request)
                     );
                     if ($validator->fails()) {
                         $messages = $validator->getMessageBag();
-                        return redirect()->route('bill.index')->with('error', $messages->first());
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => $validator->errors()->first()
+                        ], 422);
+                        // return redirect()->route('bill.index')->with('error', $messages->first());
+                    }
+
+                    // Validate billable items have customers
+                    $billableValidationError = null;
+                    
+                    // Check category items
+                    if ($request->has('category') && is_array($request->category)) {
+                        foreach ($request->category as $index => $categoryData) {
+                            if (isset($categoryData['billable']) && $categoryData['billable']) {
+                                if (empty($categoryData['customer_id'])) {
+                                    $billableValidationError = __('Select a customer for each billable split line.') . ' (Category row ' . ($index + 1) . ')';
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Check item details
+                    if (!$billableValidationError && $request->has('items') && is_array($request->items)) {
+                        foreach ($request->items as $index => $itemData) {
+                            if (isset($itemData['billable']) && $itemData['billable']) {
+                                if (empty($itemData['customer_id'])) {
+                                    $billableValidationError = __('Select a customer for each billable split line.') . ' (Item row ' . ($index + 1) . ')';
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if ($billableValidationError) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => $billableValidationError
+                        ], 422);
                     }
 
                     // Update bill basic details
@@ -1456,6 +1562,13 @@ public function index(Request $request)
                     $bill->user_type = 'vendor';
                     $bill->order_number = $request->order_number;
                     $bill->category_id = $request->category_id;
+                    
+                    // Update QBO fields
+                    $bill->terms = $request->terms;
+                    $bill->notes = $request->notes;
+                    $bill->subtotal = $request->subtotal ?? 0;
+                    $bill->total = $request->total ?? 0;
+                    
                     $bill->save();
 
                     CustomField::saveData($bill, $request->customField);
@@ -1466,135 +1579,476 @@ public function index(Request $request)
                         ->where('voucher_type', 'JV')
                         ->first();
 
-                    $products = $request->items;
                     $isApproved = !is_null($voucher);
 
                     if ($isApproved) {
                         // SCENARIO 1: Bill is approved - Update journal entries
-                        $this->updateApprovedBill($bill, $voucher, $products, $request);
+                        $updateResult = $this->updateApprovedBill($bill, $voucher, $request);
+                        
+                        // Check if updateApprovedBill returned an error response
+                        if ($updateResult instanceof \Illuminate\Http\JsonResponse) {
+                            \DB::rollBack();
+                            return $updateResult;
+                        }
+                        
+                        // Update the journal entry to reflect bill changes
+                        $this->updateBillJournalEntry($bill, $voucher);
                     } else {
-                        // SCENARIO 2: Bill is not approved yet - Just update bill products
-                        $this->updateDraftBill($bill, $products, $request);
+                        // SCENARIO 2: Bill is not approved yet - Just update bill products and categories
+                        $this->updateDraftBill($bill, $request);
                     }
 
                     // Utility activity log
                     Utility::makeActivityLog(\Auth::user()->id, 'Bill', $bill->id, 'Update Bill', $bill->type);
                     \DB::commit();
-                    return redirect()->route('bill.index')->with('success', __('Bill successfully updated.'));
+                    return response()->json([
+                        'status' => 'success',
+                        'message' => __('Bill successfully updated.')
+                    ], 200);
+                    // return redirect()->route('bill.index')->with('success', __('Bill successfully updated.'));
                 } else {
-                    return redirect()->back()->with('error', __('Permission denied.'));
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => __('Permission denied.')
+                    ], 403);
+                    // return redirect()->back()->with('error', __('Permission denied.'));
                 }
             } else {
-                return redirect()->back()->with('error', __('Permission denied.'));
+                 return response()->json([
+                        'status' => 'error',
+                        'message' => __('Permission denied.')
+                    ], 403);
+                // return redirect()->back()->with('error', __('Permission denied.'));
             }
         } catch (\Exception $e) {
             dd($e);
             \DB::rollBack();
-            return redirect()->back()->with('error', __($e->getMessage()));
+            return response()->json([
+                'status' => 'error',
+                'message' => __($e->getMessage())
+            ], 500);
+            // return redirect()->back()->with('error', __($e->getMessage()));
         }
     }
 
     /**
      * Update Draft Bill (Before Approval)
      */
-    private function updateDraftBill($bill, $products, $request)
+    private function updateDraftBill($bill, $request)
     {
         // Delete old stock reports for this bill
         StockReport::where('type', '=', 'bill')->where('type_id', '=', $bill->id)->delete();
 
-        $total_amount = 0;
+        // ========================================
+        // HANDLE CATEGORY DETAILS (Account-based expenses)
+        // Delete ALL old category details and replace with new ones
+        // ========================================
+        BillAccount::where('ref_id', $bill->id)->where('type', 'Bill')->delete();
 
-        for ($i = 0; $i < count($products); $i++) {
-            $billProduct = BillProduct::find($products[$i]['id']);
-
-            if ($billProduct == null) {
-                // New product - Create it
-                $billProduct = new BillProduct();
-                $billProduct->bill_id = $bill->id;
-
-                if (isset($products[$i]['items'])) {
-                    // Add to inventory (purchase)
-                    Utility::total_quantity('plus', $products[$i]['quantity'], $products[$i]['items']);
-
-                    // Update vendor balance
-                    $updatePrice = ($products[$i]['price'] * $products[$i]['quantity']) + ($products[$i]['itemTaxPrice']) - ($products[$i]['discount']);
-                    Utility::updateUserBalance('vendor', $request->vender_id, $updatePrice, 'debit');
+        if ($request->has('category') && is_array($request->category)) {
+            foreach ($request->category as $index => $categoryData) {
+                // Skip empty rows
+                if (empty($categoryData['account_id']) && empty($categoryData['amount'])) {
+                    continue;
                 }
-            } else {
-                // Existing product - Restore old quantity first
-                Utility::total_quantity('minus', $billProduct->quantity, $billProduct->product_id);
-            }
 
-            // Update product details
-            if (isset($products[$i]['items'])) {
-                $billProduct->product_id = $products[$i]['items'];
-                $billProduct->quantity = $products[$i]['quantity'];
-                $billProduct->tax = $products[$i]['tax'];
-                $billProduct->discount = $products[$i]['discount'];
-                $billProduct->price = $products[$i]['price'];
-                $billProduct->description = $products[$i]['description'];
-                $billProduct->save();
-            }
-
-            // Handle Bill Account
-            $billTotal = 0;
-            if (!empty($products[$i]['chart_account_id'])) {
-                $billAccount = BillAccount::find($products[$i]['account_id']);
-
-                if ($billAccount == null) {
-                    $billAccount = new BillAccount();
-                    $billAccount->chart_account_id = $products[$i]['chart_account_id'];
-                } else {
-                    $billAccount->chart_account_id = $products[$i]['chart_account_id'];
-                }
-                $billAccount->price = $products[$i]['amount'] ? $products[$i]['amount'] : 0;
-                $billAccount->description = $products[$i]['description'];
-                $billAccount->type = 'Bill';
+                $billAccount = new BillAccount();
                 $billAccount->ref_id = $bill->id;
+                $billAccount->type = 'Bill';
+                $billAccount->chart_account_id = $categoryData['account_id'] ?? null;
+                $billAccount->description = $categoryData['description'] ?? '';
+                $billAccount->price = $categoryData['amount'] ?? 0;
+                
+                // Handle billable and customer fields
+                $billAccount->billable = isset($categoryData['billable']) ? 1 : 0;
+                $billAccount->customer_id = $categoryData['customer_id'] ?? null;
+                
+                // Handle tax checkbox
+                $billAccount->tax = isset($categoryData['tax']) ? 1 : 0;
+                
+                // IMPORTANT: Save order to maintain exact row position
+                $billAccount->order = $index;
+                
                 $billAccount->save();
-                $billTotal = $billAccount->price;
             }
-
-            // Add new quantity to inventory
-            if ($products[$i]['id'] > 0) {
-                Utility::total_quantity('plus', $products[$i]['quantity'], $billProduct->product_id);
-            }
-
-            // Add stock report
-            $type = 'bill';
-            $type_id = $bill->id;
-            $description = $products[$i]['quantity'] . '  ' . __(' quantity purchase in bill') . ' ' . \Auth::user()->billNumberFormat($bill->bill_id);
-
-            if (isset($products[$i]['items'])) {
-                Utility::addProductStock($products[$i]['items'], $products[$i]['quantity'], $type, $description, $type_id);
-            }
-
-            $total_amount += ($billProduct->quantity * $billProduct->price) + $billTotal;
         }
 
-        // Update category account if exists
-        if (!empty($request->chart_account_id)) {
-            $billaccount = ProductServiceCategory::find($request->category_id);
-            $chart_account = ChartOfAccount::find($billaccount->chart_account_id);
-            $billAccount = new BillAccount();
-            $billAccount->chart_account_id = $chart_account['id'];
-            $billAccount->price = $total_amount;
-            $billAccount->description = $request->description;
-            $billAccount->type = 'Bill Category';
-            $billAccount->ref_id = $bill->id;
-            $billAccount->save();
+        // ========================================
+        // HANDLE ITEM DETAILS (Product/Service-based)
+        // Update existing or create new items
+        // Note: We allow the same product in multiple rows (no merging)
+        // ========================================
+        $existingItemIds = [];
+        
+        if ($request->has('items') && is_array($request->items)) {
+            foreach ($request->items as $index => $itemData) {
+                // Skip empty rows
+                if (empty($itemData['product_id']) && empty($itemData['quantity']) && empty($itemData['price'])) {
+                    continue;
+                }
+
+                // Check if updating existing item or creating new
+                $billProduct = null;
+                if (!empty($itemData['id'])) {
+                    $billProduct = BillProduct::find($itemData['id']);
+                    if ($billProduct && $billProduct->bill_id == $bill->id) {
+                        $existingItemIds[] = $billProduct->id;
+                        // Restore old quantity before updating
+                        Utility::total_quantity('minus', $billProduct->quantity, $billProduct->product_id);
+                    } else {
+                        $billProduct = null;
+                    }
+                }
+
+                // Create new product if not found
+                if ($billProduct == null) {
+                    $billProduct = new BillProduct();
+                    $billProduct->bill_id = $bill->id;
+                }
+
+                // Update product details
+                $billProduct->product_id = $itemData['product_id'] ?? null;
+                $billProduct->description = $itemData['description'] ?? '';
+                $billProduct->quantity = $itemData['quantity'] ?? 1;
+                $billProduct->price = $itemData['price'] ?? 0;
+                $billProduct->discount = $itemData['discount'] ?? 0;
+                
+                // Handle tax checkbox
+                $billProduct->tax = isset($itemData['tax']) ? 1 : 0;
+                
+                // Calculate line total
+                $billProduct->line_total = $itemData['amount'] ?? ($billProduct->quantity * $billProduct->price);
+                
+                // QBO specific fields - billable and customer
+                $billProduct->billable = isset($itemData['billable']) ? 1 : 0;
+                $billProduct->customer_id = $itemData['customer_id'] ?? null;
+                
+                // IMPORTANT: Save order to maintain exact row position
+                // This allows the same product to appear in multiple rows with different settings
+                $billProduct->order = $index;
+                
+                $billProduct->save();
+                $product = ProductService::find($billProduct->product_id);
+                if ($product) {
+                    if($product->type == 'product'){
+                        $account = $product->asset_chartaccount_id ?? $product->expense_chartaccount_id;
+                    }else{
+                        $account = $product->expense_chartaccount_id;
+                    }
+                }
+                $billProduct->account_id = $account;
+                $billProduct->save();
+                $existingItemIds[] = $billProduct->id;
+
+                // Update Inventory if product exists
+                if (!empty($billProduct->product_id)) {
+                    Utility::total_quantity('plus', $billProduct->quantity, $billProduct->product_id);
+                    $type = 'bill';
+                    $type_id = $bill->id;
+                    $description = $billProduct->quantity . '  ' . __('quantity purchase in bill') . ' ' . \Auth::user()->billNumberFormat($bill->bill_id);
+                    Utility::addProductStock($billProduct->product_id, $billProduct->quantity, $type, $description, $type_id);
+                }
+            }
+        }
+
+        // Delete items that were removed (not in the existingItemIds array)
+        if (!empty($existingItemIds)) {
+            $deletedProducts = BillProduct::where('bill_id', $bill->id)
+                ->whereNotIn('id', $existingItemIds)
+                ->get();
+            
+            foreach ($deletedProducts as $deletedProduct) {
+                // Restore inventory
+                if (!empty($deletedProduct->product_id)) {
+                    Utility::total_quantity('minus', $deletedProduct->quantity, $deletedProduct->product_id);
+                }
+                $deletedProduct->delete();
+            }
+        } else {
+            // If no items remain, delete all
+            $deletedProducts = BillProduct::where('bill_id', $bill->id)->get();
+            foreach ($deletedProducts as $deletedProduct) {
+                // Restore inventory
+                if (!empty($deletedProduct->product_id)) {
+                    Utility::total_quantity('minus', $deletedProduct->quantity, $deletedProduct->product_id);
+                }
+                $deletedProduct->delete();
+            }
         }
     }
 
     /**
      * Update Approved Bill (After Approval - with Journal Entries)
+     * Note: Journal entries are now handled by updateBillJournalEntry() using JournalService
      */
-    private function updateApprovedBill($bill, $voucher, $products, $request)
+    private function updateApprovedBill($bill, $voucher, $request)
     {
         // Delete old stock reports
         StockReport::where('type', '=', 'bill')->where('type_id', '=', $bill->id)->delete();
 
-        // Delete old transaction lines and journal items
+        // Delete old transaction lines (if any exist from old system)
+        TransactionLines::where('reference_id', $bill->id)->where('reference', 'Bill')->delete();
+        TransactionLines::where('reference_id', $bill->id)->where('reference', 'Bill Account')->delete();
+
+        if ($voucher) {
+            // Note: Journal items will be recreated by JournalService::updateJournalEntry
+            // which is called after this method in the update() function
+            TransactionLines::where('reference_id', $voucher->id)->where('reference', 'Bill Journal')->delete();
+        }
+
+        // ========================================
+        // HANDLE CATEGORY DETAILS (Account-based expenses)
+        // Update existing or create new, delete only removed ones
+        // ========================================
+        $existingAccountIds = [];
+        
+        if ($request->has('category') && is_array($request->category)) {
+            foreach ($request->category as $index => $categoryData) {
+                // Skip empty rows
+                if (empty($categoryData['account_id']) && empty($categoryData['amount'])) {
+                    continue;
+                }
+
+                // Check if updating existing account or creating new
+                $billAccount = null;
+                if (!empty($categoryData['id'])) {
+                    $billAccount = BillAccount::find($categoryData['id']);
+                    if ($billAccount && $billAccount->ref_id == $bill->id && $billAccount->type == 'Bill') {
+                        $existingAccountIds[] = $billAccount->id;
+                    } else {
+                        $billAccount = null;
+                    }
+                }
+                
+                // Create new account if not found
+                if ($billAccount == null) {
+                    $billAccount = new BillAccount();
+                    $billAccount->ref_id = $bill->id;
+                    $billAccount->type = 'Bill';
+                }
+                
+                $billAccount->chart_account_id = $categoryData['account_id'] ?? null;
+                $billAccount->description = $categoryData['description'] ?? '';
+                $billAccount->price = $categoryData['amount'] ?? 0;
+                
+                // Handle billable and customer fields
+                $billAccount->billable = isset($categoryData['billable']) ? 1 : 0;
+                $billAccount->customer_id = $categoryData['customer_id'] ?? null;
+                
+                // Handle tax checkbox
+                $billAccount->tax = isset($categoryData['tax']) ? 1 : 0;
+                
+                // IMPORTANT: Save order to maintain exact row position
+                $billAccount->order = $index;
+                
+                $billAccount->save();
+                $existingAccountIds[] = $billAccount->id;
+            }
+        }
+        
+      
+
+        // Delete accounts that were removed (not in the existingAccountIds array)
+        if (!empty($existingAccountIds)) {
+            $deletedAccounts = BillAccount::where('ref_id', $bill->id)
+                ->where('type', 'Bill')
+                ->whereNotIn('id', $existingAccountIds)
+                ->get();
+               
+            
+            // Check if any being deleted are billable and linked to invoices
+            foreach ($deletedAccounts as $deletedAccount) {
+                if ($deletedAccount->billable == 1 && $deletedAccount->status == 1) {
+                    // \Log::warning('BillAccount validation triggered', [
+                    //     'account_id' => $deletedAccount->id,
+                    //     'billable' => $deletedAccount->billable,
+                    //     'status' => $deletedAccount->status,
+                    //     'account' => $deletedAccount->toArray()
+                    // ]);
+                    
+                    \DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => __('This transaction is linked to an invoice. Saving this transaction would make the invoice no longer valid. In order to make this change, edit the invoice first, remove this transaction from it and remake this change.')
+                    ], 400);
+                }
+            }
+            
+            foreach ($deletedAccounts as $deletedAccount) {
+                $deletedAccount->delete();
+            }
+        } else {
+            // If no accounts remain, delete all - check if any are billable first
+            $deletedAccounts = BillAccount::where('ref_id', $bill->id)->where('type', 'Bill')->get();
+            foreach ($deletedAccounts as $deletedAccount) {
+                if ($deletedAccount->billable == 1 && $deletedAccount->status == 1) {
+                    // \Log::warning('BillAccount validation triggered (all deleted)', [
+                    //     'account_id' => $deletedAccount->id,
+                    //     'billable' => $deletedAccount->billable,
+                    //     'status' => $deletedAccount->status
+                    // ]);
+                    
+                    \DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => __('This transaction is linked to an invoice. Saving this transaction would make the invoice no longer valid. In order to make this change, edit the invoice first, remove this transaction from it and remake this change.')
+                    ], 400);
+                }
+            }
+            
+            foreach ($deletedAccounts as $deletedAccount) {
+                $deletedAccount->delete();
+            }
+        }
+
+        // ========================================
+        // HANDLE ITEM DETAILS (Product/Service-based)
+        // Update existing or create new items
+        // Note: We allow the same product in multiple rows (no merging)
+        // ========================================
+        $existingItemIds = [];
+        
+        if ($request->has('items') && is_array($request->items)) {
+            foreach ($request->items as $index => $itemData) {
+                // Skip empty rows
+                if (empty($itemData['product_id']) && empty($itemData['quantity']) && empty($itemData['price'])) {
+                    continue;
+                }
+                // Check if updating existing item or creating new
+                $billProduct = null;
+                if (!empty($itemData['id'])) {
+                    $billProduct = BillProduct::find($itemData['id']);
+                    if ($billProduct && $billProduct->bill_id == $bill->id) {
+                        $existingItemIds[] = $billProduct->id;
+                        // Restore old quantity before updating
+                        Utility::total_quantity('minus', $billProduct->quantity, $billProduct->product_id);
+                    } else {
+                        $billProduct = null;
+                    }
+                }
+
+                // Create new product if not found
+                if ($billProduct == null) {
+                    $billProduct = new BillProduct();
+                    $billProduct->bill_id = $bill->id;
+                }
+
+                // Update product details
+                $billProduct->product_id = $itemData['product_id'] ?? null;
+                $billProduct->description = $itemData['description'] ?? '';
+                $billProduct->quantity = $itemData['quantity'] ?? 1;
+                $billProduct->price = $itemData['price'] ?? 0;
+                $billProduct->discount = $itemData['discount'] ?? 0;
+                
+                // Handle tax checkbox
+                $billProduct->tax = isset($itemData['tax']) ? 1 : 0;
+                
+                // Calculate line total
+                $billProduct->line_total = $itemData['amount'] ?? ($billProduct->quantity * $billProduct->price);
+                
+                // QBO specific fields - billable and customer
+                $billProduct->billable = isset($itemData['billable']) ? 1 : 0;
+                $billProduct->customer_id = $itemData['customer_id'] ?? null;
+                
+                // IMPORTANT: Save order to maintain exact row position
+                // This allows the same product to appear in multiple rows with different settings
+                $billProduct->order = $index;
+                
+                $billProduct->save();
+                $product = ProductService::find($billProduct->product_id);
+                if ($product) {
+                    if($product->type == 'product'){
+                        $account = $product->asset_chartaccount_id ?? $product->expense_chartaccount_id;
+                    }else{
+                        $account = $product->expense_chartaccount_id;
+                    }
+                }
+                $billProduct->account_id = $account;
+                $billProduct->save();
+                $existingItemIds[] = $billProduct->id;
+
+                // Update Inventory if product exists
+                if (!empty($billProduct->product_id)) {
+                    Utility::total_quantity('plus', $billProduct->quantity, $billProduct->product_id);
+                    $type = 'bill';
+                    $type_id = $bill->id;
+                    $description = $billProduct->quantity . '  ' . __('quantity purchase in bill') . ' ' . \Auth::user()->billNumberFormat($bill->bill_id);
+                    Utility::addProductStock($billProduct->product_id, $billProduct->quantity, $type, $description, $type_id);
+                }
+            }
+        }
+
+        // Delete items that were removed (not in the existingItemIds array)
+        if (!empty($existingItemIds)) {
+            $deletedProducts = BillProduct::where('bill_id', $bill->id)
+                ->whereNotIn('id', $existingItemIds)
+                ->get();
+            
+            // Log all products being deleted to debug
+            // \Log::info('Products being deleted', [
+            //     'bill_id' => $bill->id,
+            //     'deleted_products' => $deletedProducts->map(function($p) {
+            //         return [
+            //             'id' => $p->id,
+            //             'product_id' => $p->product_id,
+            //             'billable' => $p->billable,
+            //             'status' => $p->status,
+            //             'description' => $p->description
+            //         ];
+            //     })->toArray()
+            // ]);
+            
+            // Check if any being deleted are billable and linked to invoices
+            foreach ($deletedProducts as $deletedProduct) {
+                if ($deletedProduct->billable == 1 && $deletedProduct->status == 1) {
+                    // \Log::warning('BillProduct validation triggered', [
+                    //     'product_id' => $deletedProduct->id,
+                    //     'billable' => $deletedProduct->billable,
+                    //     'status' => $deletedProduct->status,
+                    //     'product' => $deletedProduct->toArray()
+                    // ]);
+                    
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => __('This transaction is linked to an invoice. Saving this transaction would make the invoice no longer valid. In order to make this change, edit the invoice first, remove this transaction from it and remake this change.')
+                    ], 400);
+                }
+            }
+            
+            foreach ($deletedProducts as $deletedProduct) {
+                // Restore inventory
+                if (!empty($deletedProduct->product_id)) {
+                    Utility::total_quantity('minus', $deletedProduct->quantity, $deletedProduct->product_id);
+                }
+                $deletedProduct->delete();
+            }
+        } else {
+            // If no items remain, delete all - check if any are billable first
+            $deletedProducts = BillProduct::where('bill_id', $bill->id)->get();
+            foreach ($deletedProducts as $deletedProduct) {
+                if ($deletedProduct->billable == 1 && $deletedProduct->status == 1) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => __('This transaction is linked to an invoice. Saving this transaction would make the invoice no longer valid. In order to make this change, edit the invoice first, remove this transaction from it and remake this change.')
+                    ], 400);
+                    // throw new \Exception('This transaction is linked to an invoice. Saving this transaction would make the invoice no longer valid. In order to make this change, edit the invoice first, remove this transaction from it and remake this change.');
+                }
+            }
+            
+            foreach ($deletedProducts as $deletedProduct) {
+                // Restore inventory
+                if (!empty($deletedProduct->product_id)) {
+                    Utility::total_quantity('minus', $deletedProduct->quantity, $deletedProduct->product_id);
+                }
+                $deletedProduct->delete();
+            }
+        }
+
+        // Note: Journal entries and items will be created/updated by
+        // JournalService::updateJournalEntry() which is called in the update() method
+    }
+
+    public function destroy_old(Bill $bill){
         TransactionLines::where('reference_id', $bill->id)->where('reference', 'Bill')->delete();
         TransactionLines::where('reference_id', $bill->id)->where('reference', 'Bill Account')->delete();
 
@@ -1606,75 +2060,148 @@ public function index(Request $request)
             TransactionLines::where('reference_id', $bill->voucher_id)->where('reference', 'Bill Journal')->where('product_type', 'Bill Payable')->delete();
         }
 
-        $total_amount = 0;
         $payable = 0;
 
-        // Update products
-        for ($i = 0; $i < count($products); $i++) {
-            $billProduct = BillProduct::find($products[$i]['id']);
+        // ========================================
+        // HANDLE CATEGORY DETAILS (Account-based expenses)
+        // Delete ALL old category details and replace with new ones
+        // ========================================
+        BillAccount::where('ref_id', $bill->id)->where('type', 'Bill')->delete();
 
-            if ($billProduct == null) {
-                // New product added after approval
-                $billProduct = new BillProduct();
-                $billProduct->bill_id = $bill->id;
-
-                if (isset($products[$i]['items'])) {
-                    Utility::total_quantity('plus', $products[$i]['quantity'], $products[$i]['items']);
-                    $updatePrice = ($products[$i]['price'] * $products[$i]['quantity']) + ($products[$i]['itemTaxPrice']) - ($products[$i]['discount']);
-                    Utility::updateUserBalance('vendor', $request->vender_id, $updatePrice, 'debit');
+        if ($request->has('category') && is_array($request->category)) {
+            foreach ($request->category as $index => $categoryData) {
+                // Skip empty rows
+                if (empty($categoryData['account_id']) && empty($categoryData['amount'])) {
+                    continue;
                 }
-            } else {
-                // Restore old quantity
-                Utility::total_quantity('minus', $billProduct->quantity, $billProduct->product_id);
-            }
 
-            // Update product details
-            if (isset($products[$i]['items'])) {
-                $billProduct->product_id = $products[$i]['items'];
-                $billProduct->quantity = $products[$i]['quantity'];
-                $billProduct->tax = $products[$i]['tax'];
-                $billProduct->discount = $products[$i]['discount'];
-                $billProduct->price = $products[$i]['price'];
-                $billProduct->description = $products[$i]['description'];
-                $billProduct->save();
-            }
-
-            // Handle Bill Account
-            $billTotal = 0;
-            if (!empty($products[$i]['chart_account_id'])) {
-                $billAccount = BillAccount::find($products[$i]['account_id']);
-
-                if ($billAccount == null) {
-                    $billAccount = new BillAccount();
-                    $billAccount->chart_account_id = $products[$i]['chart_account_id'];
-                } else {
-                    $billAccount->chart_account_id = $products[$i]['chart_account_id'];
-                }
-                $billAccount->price = $products[$i]['amount'] ? $products[$i]['amount'] : 0;
-                $billAccount->description = $products[$i]['description'];
-                $billAccount->type = 'Bill';
+                $billAccount = new BillAccount();
                 $billAccount->ref_id = $bill->id;
+                $billAccount->type = 'Bill';
+                $billAccount->chart_account_id = $categoryData['account_id'] ?? null;
+                $billAccount->description = $categoryData['description'] ?? '';
+                $billAccount->price = $categoryData['amount'] ?? 0;
+                
+                // Handle billable and customer fields
+                $billAccount->billable = isset($categoryData['billable']) ? 1 : 0;
+                $billAccount->customer_id = $categoryData['customer_id'] ?? null;
+                
+                // Handle tax checkbox
+                $billAccount->tax = isset($categoryData['tax']) ? 1 : 0;
+                
+                // IMPORTANT: Save order to maintain exact row position
+                $billAccount->order = $index;
+                
                 $billAccount->save();
-                $billTotal = $billAccount->price;
             }
-
-            if ($products[$i]['id'] > 0) {
-                Utility::total_quantity('plus', $products[$i]['quantity'], $billProduct->product_id);
-            }
-
-            // Add stock report
-            $type = 'bill';
-            $type_id = $bill->id;
-            $description = $products[$i]['quantity'] . '  ' . __(' quantity purchase in bill') . ' ' . \Auth::user()->billNumberFormat($bill->bill_id);
-
-            if (isset($products[$i]['items'])) {
-                Utility::addProductStock($products[$i]['items'], $products[$i]['quantity'], $type, $description, $type_id);
-            }
-
-            $total_amount += ($billProduct->quantity * $billProduct->price) + $billTotal;
         }
 
-        // Recreate journal entries for products
+        // ========================================
+        // HANDLE ITEM DETAILS (Product/Service-based)
+        // Update existing or create new items
+        // Note: We allow the same product in multiple rows (no merging)
+        // ========================================
+        $existingItemIds = [];
+        
+        if ($request->has('items') && is_array($request->items)) {
+            foreach ($request->items as $index => $itemData) {
+                // Skip empty rows
+                if (empty($itemData['product_id']) && empty($itemData['quantity']) && empty($itemData['price'])) {
+                    continue;
+                }
+
+                // Check if updating existing item or creating new
+                $billProduct = null;
+                if (!empty($itemData['id'])) {
+                    $billProduct = BillProduct::find($itemData['id']);
+                    if ($billProduct && $billProduct->bill_id == $bill->id) {
+                        $existingItemIds[] = $billProduct->id;
+                        // Restore old quantity before updating
+                        Utility::total_quantity('minus', $billProduct->quantity, $billProduct->product_id);
+                    } else {
+                        $billProduct = null;
+                    }
+                }
+
+                // Create new product if not found
+                if ($billProduct == null) {
+                    $billProduct = new BillProduct();
+                    $billProduct->bill_id = $bill->id;
+                }
+
+                // Update product details
+                $billProduct->product_id = $itemData['product_id'] ?? null;
+                $billProduct->description = $itemData['description'] ?? '';
+                $billProduct->quantity = $itemData['quantity'] ?? 1;
+                $billProduct->price = $itemData['price'] ?? 0;
+                $billProduct->discount = $itemData['discount'] ?? 0;
+                
+                // Handle tax checkbox
+                $billProduct->tax = isset($itemData['tax']) ? 1 : 0;
+                
+                // Calculate line total
+                $billProduct->line_total = $itemData['amount'] ?? ($billProduct->quantity * $billProduct->price);
+                
+                // QBO specific fields - billable and customer
+                $billProduct->billable = isset($itemData['billable']) ? 1 : 0;
+                $billProduct->customer_id = $itemData['customer_id'] ?? null;
+                
+                // IMPORTANT: Save order to maintain exact row position
+                // This allows the same product to appear in multiple rows with different settings
+                $billProduct->order = $index;
+                
+                $billProduct->save();
+                $product = ProductService::find($billProduct->product_id);
+                if ($product) {
+                    if($product->type == 'product'){
+                        $account = $product->asset_chartaccount_id ?? $product->expense_chartaccount_id;
+                    }else{
+                        $account = $product->expense_chartaccount_id;
+                    }
+                }
+                $billProduct->account_id = $account;
+                $billProduct->save();
+                $existingItemIds[] = $billProduct->id;
+
+                // Update Inventory if product exists
+                if (!empty($billProduct->product_id)) {
+                    Utility::total_quantity('plus', $billProduct->quantity, $billProduct->product_id);
+                    $type = 'bill';
+                    $type_id = $bill->id;
+                    $description = $billProduct->quantity . '  ' . __('quantity purchase in bill') . ' ' . \Auth::user()->billNumberFormat($bill->bill_id);
+                    Utility::addProductStock($billProduct->product_id, $billProduct->quantity, $type, $description, $type_id);
+                }
+            }
+        }
+
+        // Delete items that were removed (not in the existingItemIds array)
+        if (!empty($existingItemIds)) {
+            $deletedProducts = BillProduct::where('bill_id', $bill->id)
+                ->whereNotIn('id', $existingItemIds)
+                ->get();
+            
+            foreach ($deletedProducts as $deletedProduct) {
+                // Restore inventory
+                if (!empty($deletedProduct->product_id)) {
+                    Utility::total_quantity('minus', $deletedProduct->quantity, $deletedProduct->product_id);
+                }
+                $deletedProduct->delete();
+            }
+        } else {
+            // If no items remain, delete all
+            $deletedProducts = BillProduct::where('bill_id', $bill->id)->get();
+            foreach ($deletedProducts as $deletedProduct) {
+                // Restore inventory
+                if (!empty($deletedProduct->product_id)) {
+                    Utility::total_quantity('minus', $deletedProduct->quantity, $deletedProduct->product_id);
+                }
+                $deletedProduct->delete();
+            }
+        }
+
+        // ========================================
+        // RECREATE JOURNAL ENTRIES FOR PRODUCTS
+        // ========================================
         $bill_products = BillProduct::where('bill_id', $bill->id)->get();
         foreach ($bill_products as $bill_product) {
             $tax = 0;
@@ -1703,21 +2230,6 @@ public function index(Request $request)
             $payable += ((floatval($bill_product->quantity) * floatval($bill_product->price)) - floatval($bill_product->discount)) + floatval($tax);
 
             // Create transaction line for product
-            $dataline = [
-                'account_id' => $product->expense_chartaccount_id,
-                'transaction_type' => 'Debit',
-                'transaction_amount' => $journalItem->debit,
-                'reference' => 'Bill Journal',
-                'reference_id' => $bill->voucher_id,
-                'reference_sub_id' => $journalItem->id,
-                'date' => $bill->bill_date,
-                'created_at' => date('Y-m-d H:i:s', strtotime($bill->created_at)),
-                'product_id' => $bill->id,
-                'product_type' => 'Bill Product',
-                'product_item_id' => $bill_product->id,
-            ];
-            Utility::addTransactionLines($dataline, 'create');
-
             // Handle tax
             if ($tax != 0) {
                 $accounttax = Tax::where('id', $product->tax_id)->first();
@@ -1758,7 +2270,7 @@ public function index(Request $request)
                         'transaction_type' => 'Debit',
                         'transaction_amount' => $journalItem->debit,
                         'reference' => 'Bill Journal',
-                        'reference_id' => $bill->voucher_id,
+                        'reference_id' => $voucher->id,
                         'reference_sub_id' => $journalItem->id,
                         'date' => $bill->bill_date,
                         'created_at' => date('Y-m-d H:i:s', strtotime($bill->created_at)),
@@ -1771,15 +2283,17 @@ public function index(Request $request)
             }
         }
 
-        // Recreate journal entries for bill accounts
-        $bill_accounts = BillAccount::where('ref_id', $bill->id)->get();
-        foreach ($bill_accounts as $bill_product) {
+        // ========================================
+        // RECREATE JOURNAL ENTRIES FOR BILL ACCOUNTS (CATEGORIES)
+        // ========================================
+        $bill_accounts = BillAccount::where('ref_id', $bill->id)->where('type', 'Bill')->get();
+        foreach ($bill_accounts as $bill_account) {
             $journalItem = new JournalItem();
             $journalItem->journal = $voucher->id;
-            $journalItem->account = $bill_product->chart_account_id;
-            $journalItem->product_ids = $bill_product->id;
-            $journalItem->description = $bill_product->description;
-            $journalItem->debit = $bill_product->price;
+            $journalItem->account = $bill_account->chart_account_id;
+            $journalItem->product_ids = $bill_account->id;
+            $journalItem->description = $bill_account->description;
+            $journalItem->debit = $bill_account->price;
             $journalItem->credit = 0;
             $journalItem->save();
             $journalItem->created_at = date('Y-m-d H:i:s', strtotime($bill->created_at));
@@ -1791,19 +2305,21 @@ public function index(Request $request)
                 'transaction_type' => 'Debit',
                 'transaction_amount' => $journalItem->debit,
                 'reference' => 'Bill Journal',
-                'reference_id' => $bill->voucher_id,
+                'reference_id' => $voucher->id,
                 'reference_sub_id' => $journalItem->id,
                 'date' => $bill->bill_date,
                 'created_at' => date('Y-m-d H:i:s', strtotime($bill->created_at)),
                 'product_id' => $bill->id,
                 'product_type' => 'Bill Account',
-                'product_item_id' => $bill_product->id,
+                'product_item_id' => $bill_account->id,
             ];
             Utility::addTransactionLines($dataline, 'create');
-            $payable += $bill_product->price;
+            $payable += $bill_account->price;
         }
 
-        // Create Account Payable entry
+        // ========================================
+        // CREATE ACCOUNT PAYABLE ENTRY
+        // ========================================
         $types = ChartOfAccountType::where('created_by', '=', $bill->created_by)->where('name', 'Liabilities')->first();
         if ($types) {
             $sub_type = ChartOfAccountSubType::where('type', $types->id)->where('name', 'Current Liabilities')->first();
@@ -1835,24 +2351,41 @@ public function index(Request $request)
             'product_item_id' => 0,
         ];
         Utility::addTransactionLines($dataline, 'create');
-
-        // Update category account if exists
-        if (!empty($request->chart_account_id)) {
-            $billaccount = ProductServiceCategory::find($request->category_id);
-            $chart_account = ChartOfAccount::find($billaccount->chart_account_id);
-            $billAccount = new BillAccount();
-            $billAccount->chart_account_id = $chart_account['id'];
-            $billAccount->price = $total_amount;
-            $billAccount->description = $request->description;
-            $billAccount->type = 'Bill Category';
-            $billAccount->ref_id = $bill->id;
-            $billAccount->save();
-        }
     }
     public function destroy(Bill $bill)
     {
         if (\Auth::user()->can('delete bill')) {
             if ($bill->created_by == \Auth::user()->creatorId()) {
+                
+                // ========================================
+                // VALIDATION: Check if any billable items are linked to invoices
+                // ========================================
+                
+                // Check BillProducts
+                $billableProducts = BillProduct::where('bill_id', $bill->id)
+                    ->where('billable', 1)
+                    ->where('status', 1)
+                    ->count();
+                
+                if ($billableProducts > 0) {
+                    return redirect()->back()->with('error', __('This bill cannot be deleted as it has billable items linked to invoices. Please remove those items from invoices first.'));
+                }
+                
+                // Check BillAccounts
+                $billableAccounts = BillAccount::where('ref_id', $bill->id)
+                    ->where('type', 'Bill')
+                    ->where('billable', 1)
+                    ->where('status', 1)
+                    ->count();
+                
+                if ($billableAccounts > 0) {
+                    return redirect()->back()->with('error', __('This bill cannot be deleted as it has billable categories linked to invoices. Please remove those categories from invoices first.'));
+                }
+                
+                // ========================================
+                // DELETE BILL - Proceed with deletion
+                // ========================================
+                
                 $billpayments = $bill->payments;
 
                 foreach ($billpayments as $key => $value) {
@@ -1870,10 +2403,26 @@ public function index(Request $request)
 
                 //log
                 Utility::makeActivityLog(\Auth::user()->id, 'Bill', $bill->id, 'Delete Bill', $bill->type);
-                if (@$bill->voucher_id != 0 || @$value->voucher_id != null) {
-                    JournalEntry::where('id', $bill->voucher_id)->where('category', 'Bill')->delete();
-                    JournalItem::where('journal', $bill->voucher_id)->delete();
+                
+                // Delete journal entry and related records for this bill
+                $journalEntry = JournalEntry::where('category', 'Bill')
+                    ->where('reference_id', $bill->id)
+                    ->where('voucher_type', 'JV')
+                    ->first();
+                
+                if ($journalEntry) {
+                    // Delete journal items
+                    JournalItem::where('journal', $journalEntry->id)->delete();
+                    
+                    // Delete transaction lines related to this journal
+                    TransactionLines::where('reference_id', $journalEntry->id)
+                        ->where('reference', 'Bill Journal')
+                        ->delete();
+                    
+                    // Delete the journal entry itself
+                    $journalEntry->delete();
                 }
+                
                 $bill->delete();
 
                 if ($bill->vender_id != 0 && $bill->status != 0) {
@@ -2906,6 +3455,226 @@ public function index(Request $request)
 
         return $data;
     }
+
+    /**
+     * Create journal entry for a bill using JournalService
+     * 
+     * @param Bill $bill
+     * @return JournalEntry
+     * @throws Exception
+     */
+    private function createBillJournalEntry($bill)
+    {
+        // Build journal items from bill categories and products
+        $journalItems = [];
+
+        $vendor = Vender::find($bill->vender_id);
+        // Add category-based expenses (BillAccount)
+        $billAccounts = BillAccount::where('ref_id', $bill->id)->where('type', 'Bill')->get();
+        foreach ($billAccounts as $billAccount) {
+            $journalItems[] = [
+                'account_id' => $billAccount->chart_account_id,
+                'debit' => $billAccount->price,
+                'credit' => 0,
+                'description' => $billAccount->description ?: 'Expense',
+                'type' => 'Bill',
+                'sub_type' => 'bill account',
+                'name' => $vendor->name,
+                'vendor_id' => $bill->vender_id,
+                'customer_id' => null, // If billable
+                'created_user' => \Auth::user()->id,
+                'created_by' => \Auth::user()->creatorId(),
+                'company_id' => \Auth::user()->ownedId(),
+            ];
+        }
+
+        // Add product/service items (BillProduct)
+        $billProducts = BillProduct::where('bill_id', $bill->id)->get();
+        foreach ($billProducts as $billProduct) {
+            $product = $billProduct->product;
+            
+            // Determine account ID based on product type
+            $accountId = null;
+            if ($product) {
+                $accountId = $billProduct->account_id;
+            }
+
+            if($accountId == null){
+                $accountId = $product->expense_chartaccount_id;
+            }
+            
+            $journalItems[] = [
+                'account_id' => $accountId,
+                'debit' => $billProduct->line_total ?: ($billProduct->quantity * $billProduct->price),
+                'credit' => 0,
+                'description' => $billProduct->description ?: ($product ? $product->name : 'Product'),
+                'product_id' => $billProduct->product_id,
+                'type' => 'Bill',
+                'sub_type' => 'bill item',
+                'name' => $vendor ? $vendor->name : '',
+                'vendor_id' => $bill->vender_id,
+                'customer_id' => null, // If billable
+                'created_user' => \Auth::user()->id,
+                'created_by' => \Auth::user()->creatorId(),
+                'company_id' => \Auth::user()->ownedId(),
+            ];
+        }
+
+        // Get Accounts Payable account ID
+        $accountPayable = $this->getAccountPayableAccount(\Auth::user()->creatorId());
+        
+        if (!$accountPayable) {
+            throw new \Exception('Accounts Payable account not found. Please configure your chart of accounts.');
+        }
+
+        // Create journal entry using JournalService
+        // This will throw an exception if creation fails, causing the entire bill transaction to rollback
+        $journalEntry = JournalService::createJournalEntry([
+            'date' => $bill->bill_date,
+            'backdate' => true, // Set created_at/updated_at to bill_date
+            'reference' => \Auth::user()->billNumberFormat($bill->bill_id),
+            'description' => 'Bill from ' . ($bill->vender ? $bill->vender->name : 'Vendor'),
+            'journal_id' => Utility::journalNumber(),
+            'voucher_type' => 'JV',
+            'reference_id' => $bill->id,
+            'prod_id' => null,
+            'category' => 'Bill',
+            'module' => 'bill',
+            'source' => 'bill_creation',
+            'created_user' => \Auth::user()->id,
+            'created_by' => \Auth::user()->creatorId(),
+            'owned_by' => \Auth::user()->ownedId(),
+            'vendor_id' => $bill->vender_id,
+            'company_id' => \Auth::user()->ownedId(),
+            'bill_id' => $bill->id, // For transaction_lines
+            'items' => $journalItems,
+            'ap_name' => $bill->vender ? $bill->vender->name : '',
+            'ap_account_id' => $accountPayable->id,
+            'ap_amount' => $bill->getTotal(),
+            'ap_sub_type' => 'bill payable',
+            'ap_description' => 'Accounts Payable - ' . \Auth::user()->billNumberFormat($bill->bill_id),
+        ]);
+
+        \Log::info('Journal entry created for bill', [
+            'bill_id' => $bill->id,
+            'journal_entry_id' => $journalEntry->id,
+        ]);
+        
+        return $journalEntry;
+    }
+
+    /**
+     * Update journal entry for a bill using JournalService
+     * 
+     * @param Bill $bill
+     * @param JournalEntry $journalEntry
+     * @return JournalEntry
+     * @throws Exception
+     */
+    private function updateBillJournalEntry($bill, $journalEntry)
+    {
+        // Build journal items from bill categories and products
+        $journalItems = [];
+
+        $vendor = Vender::find($bill->vender_id);
+        
+        // Add category-based expenses (BillAccount)
+        $billAccounts = BillAccount::where('ref_id', $bill->id)->where('type', 'Bill')->get();
+        foreach ($billAccounts as $billAccount) {
+            $journalItems[] = [
+                'account_id' => $billAccount->chart_account_id,
+                'debit' => $billAccount->price,
+                'credit' => 0,
+                'description' => $billAccount->description ?: 'Expense',
+                'type' => 'Bill',
+                'sub_type' => 'bill account',
+                'name' => $vendor->name,
+                'vendor_id' => $bill->vender_id,
+                'customer_id' => null,
+                'created_user' => \Auth::user()->id,
+                'created_by' => \Auth::user()->creatorId(),
+                'company_id' => \Auth::user()->ownedId(),
+            ];
+        }
+
+        // Add product/service items (BillProduct)
+        $billProducts = BillProduct::where('bill_id', $bill->id)->get();
+        foreach ($billProducts as $billProduct) {
+            $product = $billProduct->product;
+            
+            // Determine account ID based on product type
+            $accountId = null;
+            if ($product) {
+                $accountId = $billProduct->account_id;
+            }
+
+            if($accountId == null && $product){
+                $accountId = $product->expense_chartaccount_id;
+            }
+            
+            $journalItems[] = [
+                'account_id' => $accountId,
+                'debit' => $billProduct->line_total ?: ($billProduct->quantity * $billProduct->price),
+                'credit' => 0,
+                'description' => $billProduct->description ?: ($product ? $product->name : 'Product'),
+                'product_id' => $billProduct->product_id,
+                'type' => 'Bill',
+                'sub_type' => 'bill item',
+                'name' => $vendor ? $vendor->name : '',
+                'vendor_id' => $bill->vender_id,
+                'customer_id' => null,
+                'created_user' => \Auth::user()->id,
+                'created_by' => \Auth::user()->creatorId(),
+                'company_id' => \Auth::user()->ownedId(),
+            ];
+        }
+
+        // Get Accounts Payable account ID
+        $accountPayable = Utility::getAccountPayableAccount(\Auth::user()->creatorId());
+        
+        if (!$accountPayable) {
+            throw new \Exception('Accounts Payable account not found. Please configure your chart of accounts.');
+        }
+
+        // Update journal entry using JournalService
+        // This will delete old journal items and create new ones
+        $updatedJournalEntry = JournalService::updateJournalEntry($journalEntry->id, [
+            'date' => $bill->bill_date,
+            'backdate' => true, // Set updated_at to bill_date
+            'reference' => \Auth::user()->billNumberFormat($bill->bill_id),
+            'description' => 'Bill from ' . ($bill->vender ? $bill->vender->name : 'Vendor'),
+            'voucher_type' => 'JV',
+            'category' => 'Bill',
+            'module' => 'bill',
+            'source' => 'bill_update',
+            'created_user' => \Auth::user()->id,
+            'created_by' => \Auth::user()->creatorId(),
+            'vendor_id' => $bill->vender_id,
+            'company_id' => \Auth::user()->ownedId(),
+            'bill_id' => $bill->id, // For transaction_lines
+            'items' => $journalItems,
+            'ap_name' => $bill->vender ? $bill->vender->name : '',
+            'ap_account_id' => $accountPayable->id,
+            'ap_amount' => $bill->getTotal(),
+            'ap_sub_type' => 'bill payable',
+            'ap_description' => 'Accounts Payable - ' . \Auth::user()->billNumberFormat($bill->bill_id),
+        ]);
+
+        \Log::info('Journal entry updated for bill', [
+            'bill_id' => $bill->id,
+            'journal_entry_id' => $updatedJournalEntry->id,
+        ]);
+        
+        return $updatedJournalEntry;
+    }
+
+
+    /**
+     * Get or create Accounts Payable account
+     * 
+     * @return ChartOfAccount|null
+     */
+    
 
 }
 

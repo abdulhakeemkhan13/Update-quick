@@ -34,7 +34,12 @@
 {{--        </a>--}}
 
         @can('create purchase')
-            <a href="{{ route('purchase.create',0) }}" class="btn btn-sm btn-primary" data-bs-toggle="tooltip" title="{{__('Create')}}">
+            {{-- <a href="{{ route('purchase.create',0) }}" class="btn btn-sm btn-primary" data-bs-toggle="tooltip" title="{{__('Create')}}">
+                <i class="ti ti-plus"></i>
+            </a> --}}
+            <a href="#" data-url="{{ route('purchase.create', 0) }}" data-ajax-popup="true" data-size="fullscreen"
+                data-title="{{ __('Create New Purchase') }}" data-bs-toggle="tooltip" title="{{ __('Create') }}"
+                class="btn btn-sm btn-primary">
                 <i class="ti ti-plus"></i>
             </a>
         @endcan
@@ -55,9 +60,12 @@
                             <tr>
                                 <th> {{__('Purchase')}}</th>
                                 <th> {{__('Vendor')}}</th>
-                                <th> {{__('Category')}}</th>
-                                <th> {{__('Purchase Date')}}</th>
+                                <th class="text-center"> {{ __('PO Date') }}</th>
+                                <th class="text-center"> {{ __('Expected Date') }}</th>
+                                <th class="text-center">{{ __('Bill Amount') }}</th>
+                                <th class="text-center">{{ __('Open Balance') }}</th>
                                 <th>{{__('Status')}}</th>
+
                                 @if(Gate::check('edit purchase') || Gate::check('delete purchase') || Gate::check('show purchase'))
                                     <th > {{__('Action')}}</th>
                                 @endif
@@ -76,8 +84,13 @@
 
                                     <td> {{ (!empty( $purchase->vender)?$purchase->vender->name:'') }} </td>
 
-                                    <td>{{ !empty($purchase->category)?$purchase->category->name:''}}</td>
-                                    <td>{{ Auth::user()->dateFormat($purchase->purchase_date) }}</td>
+                                    <td>  {{ $purchase->purchase_date ? Auth::user()->dateFormat($purchase->purchase_date) : '-' }}</td>
+
+                                    <td>  {{ $purchase->expected_date ? Auth::user()->dateFormat($purchase->expected_date) : '-' }}</td>       
+
+                                    <td>{{ \Auth::user()->priceFormat($purchase->getTotal()) }}</td>
+
+                                    <td>{{ \Auth::user()->priceFormat($purchase->getDue()) }}</td>
 
                                     <td>
                                         @if($purchase->status == 0)
@@ -108,7 +121,9 @@
                                                 @endcan
                                                 @can('edit purchase')
                                                     <div class="action-btn bg-primary ms-2">
-                                                        <a href="{{ route('purchase.edit',\Crypt::encrypt($purchase->id)) }}" class="mx-3 btn btn-sm align-items-center" data-bs-toggle="tooltip" title="Edit" data-original-title="{{__('Edit')}}">
+                                                       <a href="#" data-url="{{ route('purchase.edit', \Crypt::encrypt($purchase->id)) }}" 
+                                                            data-ajax-popup="true" data-size="fullscreen"
+                                                            data-bs-toggle="tooltip" title="{{ __('Edit') }}">
                                                             <i class="ti ti-pencil text-white"></i>
                                                         </a>
                                                     </div>

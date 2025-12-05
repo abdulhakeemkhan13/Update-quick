@@ -15,6 +15,8 @@ class BillPayment extends Model
         'description',
         'voucher_id',
         'amount',
+        'payment_type',
+        'coa_account',
     ];
 
 

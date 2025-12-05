@@ -7311,7 +7311,79 @@ class Utility extends Model
         }
     }
 
+    // new functions for online quickbooks
+    public static function getAccountPayableAccount($createdBy)
+    {
+        $possibleNames = [
+            'account payable',
+            'accounts payable',
+            'account payables',
+            'accounts payables',
+        ];
+        
+        // Check if there's a setting for account payable
+        $setting = DB::table('settings')
+            ->where('created_by', '=', $createdBy)
+            ->where('name', 'account payable')
+            ->first();
+            
+        if ($setting && !empty($setting->value)) {
+            $accountPayable = ChartOfAccount::find($setting->value);
+            if ($accountPayable) {
+                return $accountPayable;
+            }
+        }
+        
+        // Search for an existing payable account
+        $existing = ChartOfAccount::where('created_by', $createdBy)
+            ->where(function($q) use ($possibleNames) {
+                foreach ($possibleNames as $name) {
+                    $q->orWhereRaw('LOWER(name) LIKE ?', ['%' . strtolower($name) . '%']);
+                }
+            })
+            ->first();
 
+        // Find or create Liabilities type
+        $type = ChartOfAccountType::firstOrCreate(
+            ['created_by' => $createdBy, 'name' => 'Liabilities']
+        );
+
+        // Find or create Current Liabilities subtype
+        $subType = ChartOfAccountSubType::firstOrCreate(
+            ['created_by' => $createdBy, 'type' => $type->id, 'name' => 'Current Liabilities']
+        );
+
+        // If existing account belongs to the correct type, return it
+        if ($existing && $existing->type == $type->id) {
+            return $existing;
+        }
+
+        // Otherwise create new Account Payable
+        return ChartOfAccount::create([
+            'name'       => 'Account Payable',
+            'code'       => ChartOfAccount::max('code') + 1,
+            'type'       => $type->id,
+            'sub_type'   => $subType->id,
+            'is_enabled' => 1,
+            'created_by' => $createdBy,
+        ]);
+        
+        return $accountPayable;
+    }
+
+      /**
+     * Generate journal number
+     */
+        public static function journalNumber()
+        {
+            $creatorId = \Auth::user()->creatorId();
+
+            $latest = JournalEntry::where('created_by', $creatorId)
+                ->orderBy('journal_id', 'desc')
+                ->first();
+
+            return $latest ? $latest->journal_id + 1 : 1;
+        }
 
 }
 

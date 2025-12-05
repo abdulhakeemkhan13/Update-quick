@@ -1375,6 +1375,10 @@
                                                     <a class="dash-link"
                                                         href="{{ route('payment.index') }}">{{ __('Bill Payments') }}</a>
                                                 </li>
+                                                <li class="dash-item {{ Request::segment(1) == 'purchase' ? 'active' : '' }}">
+                                                    <a class="dash-link"
+                                                        href="{{ route('purchase.index') }}">{{ __('Purchase Order') }}</a>
+                                                </li>
                                                 <li class="dash-item {{ Request::segment(1) == 'vender' ? 'active' : '' }}">
                                                     <a class="dash-link"
                                                         href="{{ route('vender.index') }}">{{ __('Vendors') }}</a>

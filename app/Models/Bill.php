@@ -7,16 +7,34 @@ use Illuminate\Database\Eloquent\Model;
 class Bill extends Model
 {
     protected $fillable = [
+        'bill_id',
         'vender_id',
-        'currency',
         'bill_date',
         'due_date',
-        'bill_id',
-        'type',
-        'order_number',
+        'send_date',
         'category_id',
+        'ref_number',
+        'status',
+        'shipping_display',
+        'discount_apply',
         'created_by',
+        'workspace',
+        'type',
+        'user_type',
         'owned_by',
+        'terms',
+        'currency',
+        'exchange_rate',
+        'subtotal',
+        'discount',
+        'discount_type',
+        'tax_total',
+        'shipping',
+        'adjustments',
+        'total',
+        'paid_amount',
+        'balance_due',
+        'notes',
     ];
 
     public static $statues = [
@@ -32,37 +50,51 @@ class Bill extends Model
 
     public function customer()
     {
-        return $this->hasOne('App\Models\Customer', 'id', 'vender_id');
+        return $this->hasOne('App\\Models\\Customer', 'id', 'vender_id');
     }
 
     public function employee()
     {
-        return $this->hasOne('App\Models\Employee', 'id', 'vender_id');
+        return $this->hasOne('App\\Models\\Employee', 'id', 'vender_id');
     }
 
     public function vender()
     {
-        return $this->hasOne('App\Models\Vender', 'id', 'vender_id');
+        return $this->hasOne('App\\Models\\Vender', 'id', 'vender_id');
     }
 
     public function tax()
     {
-        return $this->hasOne('App\Models\Tax', 'id', 'tax_id');
+        return $this->hasOne('App\\Models\\Tax', 'id', 'tax_id');
     }
-
 
     public function accounts()
     {
-        return $this->hasMany('App\Models\BillAccount', 'ref_id', 'id');
+        return $this->hasMany('App\\Models\\BillAccount', 'ref_id', 'id')->orderBy('order', 'asc');
     }
-
-
 
     public function payments()
     {
-        return $this->hasMany('App\Models\BillPayment', 'bill_id', 'id');
+        return $this->hasMany('App\\Models\\BillPayment', 'bill_id', 'id');
     }
 
+    /**
+     * Get the vendor credits applied to this bill
+     */
+    public function vendorCredits()
+    {
+        return $this->belongsToMany(VendorCredit::class, 'bill_credit_applications', 'bill_id', 'vendor_credit_id')
+                    ->withPivot('amount_applied', 'applied_by')
+                    ->withTimestamps();
+    }
+
+    /**
+     * Get the total vendor credits applied
+     */
+    public function getTotalCreditsApplied()
+    {
+        return $this->vendorCredits()->sum('bill_credit_applications.amount_applied');
+    }
 
     public function getSubTotal()
     {
@@ -72,35 +104,20 @@ class Bill extends Model
         {
             $subTotal += ($product->price * $product->quantity);
         }
-
+        
         $accountTotal = 0;
         foreach ($this->accounts as $account)
         {
             $accountTotal += $account->price;
         }
-        // dd($this->accounts,$this->items);
-        // dd($subTotal,$accountTotal);
+
         return $subTotal + $accountTotal;
     }
 
     public function items()
     {
-        return $this->hasMany('App\Models\BillProduct', 'bill_id', 'id');
+        return $this->hasMany('App\\Models\\BillProduct', 'bill_id', 'id')->orderBy('order', 'asc');
     }
-
-
-    // public function getTotalTax()
-    // {
-    //     $totalTax = 0;
-    //     foreach($this->items as $product)
-    //     {
-    //         $taxes = Utility::totalTaxRate($product->tax);
-    //         $totalTax += ($taxes / 100) * ($product->price * $product->quantity - $product->discount) ;
-
-    //     }
-
-    //     return $totalTax ;
-    // }
 
     public function getTotalTax()
     {
@@ -108,12 +125,9 @@ class Bill extends Model
         $totalTax = 0;
         foreach($this->items as $product)
         {
-            // $taxes = Utility::totalTaxRate($product->tax);
-
             $taxArr = explode(',', $product->tax);
             $taxes = 0;
             foreach ($taxArr as $tax) {
-                // $tax = TaxRate::find($tax);
                 $taxes += !empty($taxData[$tax]['rate']) ? $taxData[$tax]['rate'] : 0;
             }
 
@@ -147,37 +161,29 @@ class Bill extends Model
 
     public function getTotal()
     {
-        return ($this->getSubTotal() - $this->getTotalDiscount()) + $this->getTotalTax();
+        // return ($this->getSubTotal() - $this->getTotalDiscount()) + $this->getTotalTax();
+        return ($this->getSubTotal() - $this->getTotalDiscount());
     }
 
     public function getDue()
     {
         $due = 0;
-        // dd($this->payments);
         foreach($this->payments as $payment)
         {
             $due += $payment->amount;
         }
 
-        // $accdue = 0;
-        // foreach($this->accounts as $account)
-        // {
-        //     $accdue += $account->price;
-        // }
-        // dd($this->accounts,$this->payments);    
-        // $grddue = $due + $accdue;
-        // return ($this->getTotal() - $grddue) - ($this->billTotalDebitNote());
         return ($this->getTotal() - $due) - ($this->billTotalDebitNote());
     }
 
     public function category()
     {
-        return $this->hasOne('App\Models\ProductServiceCategory', 'id', 'category_id');
+        return $this->hasOne('App\\Models\\ProductServiceCategory', 'id', 'category_id');
     }
 
     public function debitNote()
     {
-        return $this->hasMany('App\Models\DebitNote', 'bill', 'id');
+        return $this->hasMany('App\\Models\\DebitNote', 'bill', 'id');
     }
 
     public function billTotalDebitNote()
@@ -187,11 +193,11 @@ class Bill extends Model
 
     public function lastPayments()
     {
-        return $this->hasOne('App\Models\BillPayment', 'id', 'bill_id');
+        return $this->hasOne('App\\Models\\BillPayment', 'id', 'bill_id');
     }
 
     public function taxes()
     {
-        return $this->hasOne('App\Models\Tax', 'id', 'tax');
+        return $this->hasOne('App\\Models\\Tax', 'id', 'tax');
     }
 }

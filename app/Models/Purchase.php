@@ -21,7 +21,19 @@ class Purchase extends Model
         'category_id',
         'created_by',
         'voucher_id',
+        'po_date',
+        'ship_via',
+        'ref_no',
+        'ship_to',
+        'mailing_address',
+        'terms',
+        'notes',
+        'vendor_message',
+        'type',
+        'expected_date',
+        'ship_to_address',
     ];
+
     public static $statues = [
         'Draft',
         'Sent',
@@ -43,6 +55,12 @@ class Purchase extends Model
     {
         return $this->hasMany('App\Models\PurchaseProduct', 'purchase_id', 'id');
     }
+
+    public function accounts()
+    {
+        return $this->hasMany('App\Models\PurchaseOrderAccount', 'ref_id', 'id')->orderBy('order', 'asc');
+    }
+
     public function payments()
     {
         return $this->hasMany('App\Models\PurchasePayment', 'purchase_id', 'id');
@@ -59,6 +77,11 @@ class Purchase extends Model
         {
 
             $subTotal += ($product->price * $product->quantity);
+        }
+
+        foreach($this->accounts as $account)
+        {
+            $subTotal += $account->price;
         }
 
         return $subTotal;

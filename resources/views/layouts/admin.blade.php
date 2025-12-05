@@ -118,6 +118,61 @@
                 <?= $color ?>
             ;
         }
+
+        /* Make modal behave like a drawer */
+        #globalAddNewModal.modal {
+            padding: 0 !important;
+        }
+
+        /* Drawer container (modal-dialog) */
+        #globalAddNewModal .modal-dialog {
+            position: fixed !important;
+            top: 0 !important;
+            bottom: 0 !important;
+            right: -520px !important; /* start hidden */
+            margin: 0 !important;
+            height: 100%;
+            width: 520px !important;
+            max-width: 520px !important;
+
+            transform: none !important; /* override BS5 fade */
+            transition: right 0.35s ease-in-out;
+        }
+
+        /* When modal is shown → slide in */
+        #globalAddNewModal.show .modal-dialog {
+            right: 0 !important;
+        }
+
+        /* Drawer content styling */
+        #globalAddNewModal .modal-content {
+            height: 100%;
+            border-radius: 0 !important;
+            border: none !important;
+            overflow-y: auto;
+            box-shadow: -2px 0 12px rgba(0,0,0,0.18);
+        }
+
+        /* Clean header/body */
+        #globalAddNewModal .modal-header {
+            border-bottom: 1px solid #ddd;
+        }
+
+        #globalAddNewModal .modal-body {
+            padding: 16px;
+        }
+
+        /* Backdrop override */
+        .modal-backdrop.show {
+            opacity: 0.35 !important;
+        }
+
+        /* Kill Bootstrap’s fade transform interference */
+        #globalAddNewModal.fade .modal-dialog {
+            transform: none !important;
+        }
+
+
     </style>
 
     <link rel="stylesheet" href="{{ asset('css/custom-color.css') }}">
@@ -243,7 +298,7 @@
 
     <div class="modal fade" id="commonModalOver" tabindex="-1" role="dialog" aria-labelledby="commonModalLabel"
         aria-hidden="true">
-        <div class="modal-dialog" role="document">
+        <div class="modal-dialog " role="document">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="commonModalLabel"></h5>
@@ -254,6 +309,7 @@
             </div>
         </div>
     </div>
+    
 
     <div class="position-fixed top-0 end-0 p-3" style="z-index: 99999">
         <div id="liveToast" class="toast text-white fade" role="alert" aria-live="assertive" aria-atomic="true">
@@ -269,6 +325,36 @@
     
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
+        let modalDialog = modal.find('.modal-dialog');
+        if ($(this).data('size') === 'fullscreen') {
+            modalDialog.addClass('modal-fullscreen');
+        } else {
+            modalDialog.removeClass('modal-fullscreen');
+        }
+        $(document).on('click', '[data-ajax-popup="true"]', function(e) {
+            e.preventDefault();
+
+            let url = $(this).data('url');
+            let title = $(this).data('title') || '';
+
+            let modal = $('#commonModalOver');
+            modal.find('.modal-title').text(title);
+            modal.find('.modal-body').html('<div class="text-center py-5">Loading...</div>'); // optional loader
+
+            $.ajax({
+                url: url,
+                method: 'GET',
+                success: function(data) {
+                    modal.find('.modal-body').html(data);
+                    modal.modal('show');
+                },
+                error: function() {
+                    modal.find('.modal-body').html('<p class="text-danger text-center">Error loading content.</p>');
+                }
+            });
+        });
+
+
         //new export function
 
         function exportDataTable(tableId, pageTitle, format = "excel") {

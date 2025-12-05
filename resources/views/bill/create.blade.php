@@ -1,827 +1,649 @@
-@extends('layouts.admin')
-@section('page-title')
-    {{ __('Bill Create') }}
-@endsection
-@section('breadcrumb')
-    <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">{{ __('Dashboard') }}</a></li>
-    <li class="breadcrumb-item"><a href="{{ route('bill.index') }}">{{ __('Bill') }}</a></li>
-    <li class="breadcrumb-item">{{ __('Bill Create') }}</li>
-@endsection
-@push('script-page')
-    <script src="{{ asset('js/jquery-ui.min.js') }}"></script>
-    <script src="{{ asset('js/jquery.repeater.min.js') }}"></script>
-    <script src="{{ asset('js/jquery-searchbox.js') }}"></script>
-    <script>
-        var selector = "body";
-        if ($(selector + " .repeater").length) {
-            var $dragAndDrop = $("body .repeater tbody").sortable({
-                handle: '.sort-handler'
-            });
-            var $repeater = $(selector + ' .repeater').repeater({
-                initEmpty: false,
-                defaultValues: {
-                    'status': 1
-                },
-                show: function() {
-                    $(this).slideDown();
-                    var file_uploads = $(this).find('input.multi');
-                    if (file_uploads.length) {
-                        $(this).find('input.multi').MultiFile({
-                            max: 3,
-                            accept: 'png|jpg|jpeg',
-                            max_size: 2048
-                        });
-                    }
-
-                    // for item SearchBox ( this function is  custom Js )
-                    JsSearchBox();
-
-                    $('.select2').select2();
-                },
-                hide: function(deleteElement) {
-                    if (confirm('Are you sure you want to delete this element?')) {
-                        $(this).slideUp(deleteElement);
-                        $(this).remove();
-
-                        var inputs = $(".amount");
-                        var subTotal = 0;
-                        for (var i = 0; i < inputs.length; i++) {
-                            subTotal = parseFloat(subTotal) + parseFloat($(inputs[i]).html());
-                        }
-                        $('.subTotal').html(subTotal.toFixed(2));
-                        $('.totalAmount').html(subTotal.toFixed(2));
-                    }
-                },
-                ready: function(setIndexes) {
-                    $dragAndDrop.on('drop', setIndexes);
-                },
-                isFirstItemUndeletable: true
-            });
-            var value = $(selector + " .repeater").attr('data-value');
-            if (typeof value != 'undefined' && value.length != 0) {
-                value = JSON.parse(value);
-                $repeater.setList(value);
-            }
-
-        }
-
-        $(document).ready(function() {
-            var modalEl = document.getElementById('invoice-modal');
-            if (modalEl) {
-                var billModal = new bootstrap.Modal(modalEl, {
-                    backdrop: 'static',
-                    keyboard: false
-                });
-                billModal.show(); // ✅ actually open the full-screen bill modal
-            }
-        });
-
-
-        $(document).on('change', '#vender', function() {
-            // $('#vender_detail').removeClass('d-none');
-            // $('#vender_detail').addClass('d-block');
-            // $('#vender-box').removeClass('d-block');
-            // $('#vender-box').addClass('d-none');
-            var id = $(this).val();
-            var url = $(this).data('url');
-            $.ajax({
-                url: url,
-                type: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': jQuery('#token').val()
-                },
-                data: {
-                    'id': id
-                },
-                cache: false,
-                success: function(data) {
-                    if (data != '') {
-                        $('#vender_detail').html(data);
-                    } else {
-                        $('#vender-box').removeClass('d-none');
-                        $('#vender-box').addClass('d-block');
-                        $('#vender_detail').removeClass('d-block');
-                        $('#vender_detail').addClass('d-none');
-                    }
-                },
-            });
-        });
-
-        $(document).on('click', '#remove', function() {
-            $('#vender-box').removeClass('d-none');
-            $('#vender-box').addClass('d-block');
-            $('#vender_detail').removeClass('d-block');
-            $('#vender_detail').addClass('d-none');
-        })
-
-        $(document).on('change', '.item', function() {
-
-            var iteams_id = $(this).val();
-            var url = $(this).data('url');
-            var el = $(this);
-
-
-            $.ajax({
-                url: url,
-                type: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': jQuery('#token').val()
-                },
-                data: {
-                    'product_id': iteams_id
-                },
-                cache: false,
-                success: function(data) {
-                    var item = JSON.parse(data);
-                    // console.log(item)
-
-                    $(el.parent().parent().find('.quantity')).val(1);
-                    $(el.parent().parent().find('.price')).val(item.product.purchase_price);
-                    $(el.parent().parent().parent().find('.pro_description')).val(item.product
-                        .description);
-
-                    var taxes = '';
-                    var tax = [];
-
-                    var totalItemTaxRate = 0;
-                    if (item.taxes == 0) {
-                        taxes += '-';
-                    } else {
-                        for (var i = 0; i < item.taxes.length; i++) {
-                            taxes += '<span class="badge bg-primary mt-1 mr-2">' + item.taxes[i].name +
-                                ' ' + '(' + item.taxes[i].rate + '%)' + '</span>';
-                            tax.push(item.taxes[i].id);
-                            totalItemTaxRate += parseFloat(item.taxes[i].rate);
-                        }
-                    }
-                    var itemTaxPrice = parseFloat((totalItemTaxRate / 100) * (item.product
-                        .purchase_price * 1));
-
-                    $(el.parent().parent().find('.itemTaxPrice')).val(itemTaxPrice.toFixed(2));
-                    $(el.parent().parent().find('.itemTaxRate')).val(totalItemTaxRate.toFixed(2));
-                    $(el.parent().parent().find('.taxes')).html(taxes);
-                    $(el.parent().parent().find('.tax')).val(tax);
-                    $(el.parent().parent().find('.unit')).html(item.unit);
-                    $(el.parent().parent().find('.discount')).val(0);
-                    // $(el.parent().parent().find('.amount')).html(item.totalAmount);
-
-
-                    var inputs = $(".amount");
-                    var subTotal = 0;
-                    for (var i = 0; i < inputs.length; i++) {
-                        subTotal = parseFloat(subTotal) + parseFloat($(inputs[i]).html());
-                    }
-
-
-                    var accountinputs = $(".accountamount");
-                    var accountSubTotal = 0;
-                    for (var i = 0; i < accountinputs.length; i++) {
-                        var currentInputValue = parseFloat(accountinputs[i].innerHTML);
-                        if (!isNaN(currentInputValue)) {
-                            accountSubTotal += currentInputValue;
-                        }
-                    }
-
-
-
-                    var totalItemPrice = 0;
-                    var priceInput = $('.price');
-                    for (var j = 0; j < priceInput.length; j++) {
-                        totalItemPrice += parseFloat(priceInput[j].value);
-
-                    }
-
-                    var totalItemTaxPrice = 0;
-                    var itemTaxPriceInput = $('.itemTaxPrice');
-                    for (var j = 0; j < itemTaxPriceInput.length; j++) {
-                        totalItemTaxPrice += parseFloat(itemTaxPriceInput[j].value);
-                        $(el.parent().parent().find('.amount')).html(parseFloat(item.totalAmount) +
-                            parseFloat(itemTaxPriceInput[j].value));
-                    }
-
-                    var totalItemDiscountPrice = 0;
-                    var itemDiscountPriceInput = $('.discount');
-                    for (var k = 0; k < itemDiscountPriceInput.length; k++) {
-
-                        totalItemDiscountPrice += parseFloat(itemDiscountPriceInput[k].value);
-                    }
-
-
-                    $('.subTotal').html((totalItemPrice + accountSubTotal).toFixed(2));
-                    $('.totalTax').html(totalItemTaxPrice.toFixed(2));
-                    $('.totalAmount').html((parseFloat(totalItemPrice) - parseFloat(
-                        totalItemDiscountPrice) + parseFloat(totalItemTaxPrice)).toFixed(2));
-
-
-                },
-            });
-        });
-
-        $(document).on('keyup', '.quantity', function() {
-            var quntityTotalTaxPrice = 0;
-
-            var el = $(this).parent().parent().parent().parent();
-            var quantity = $(this).val();
-            var price = $(el.find('.price')).val();
-            var discount = $(el.find('.discount')).val();
-            if (discount.length <= 0) {
-                discount = 0;
-            }
-
-            var totalItemPrice = (quantity * price) - discount;
-
-
-            var amount = (totalItemPrice);
-
-            var totalItemTaxRate = $(el.find('.itemTaxRate')).val();
-            var itemTaxPrice = parseFloat((totalItemTaxRate / 100) * (totalItemPrice));
-            $(el.find('.itemTaxPrice')).val(itemTaxPrice.toFixed(2));
-
-            $(el.find('.amount')).html(parseFloat(itemTaxPrice) + parseFloat(amount));
-
-            var totalItemTaxPrice = 0;
-            var itemTaxPriceInput = $('.itemTaxPrice');
-            for (var j = 0; j < itemTaxPriceInput.length; j++) {
-                totalItemTaxPrice += parseFloat(itemTaxPriceInput[j].value);
-            }
-
-
-            var totalItemPrice = 0;
-            var inputs_quantity = $(".quantity");
-            var priceInput = $('.price');
-            for (var j = 0; j < priceInput.length; j++) {
-                totalItemPrice += (parseFloat(priceInput[j].value) * parseFloat(inputs_quantity[j].value));
-            }
-
-
-            // var totalAccount = 0;
-            // var accountInput = $('.accountAmount');
-            // for (var j = 0; j < accountInput.length; j++) {
-            //     if(typeof accountInput[j].value != 'undefined')
-            //     {
-            //         var accountInputPrice = accountInput[j].value;
-            //     }
-            //     else {
-            //        var accountInputPrice = 0;
-            //     }
-            //     totalAccount += (parseFloat(accountInputPrice));
-            // }
-
-            var totalAccount = 0;
-            var accountInput = $('.accountAmount');
-
-            for (var j = 0; j < accountInput.length; j++) {
-                if (typeof accountInput[j].value != 'undefined') {
-                    var accountInputPrice = parseFloat(accountInput[j].value);
-
-                    if (isNaN(accountInputPrice)) {
-                        totalAccount = 0;
-                    } else {
-                        totalAccount += accountInputPrice;
-                    }
-                }
-            }
-
-
-
-            var inputs = $(".amount");
-            var subTotal = 0;
-            for (var i = 0; i < inputs.length; i++) {
-                subTotal = parseFloat(subTotal) + parseFloat($(inputs[i]).html());
-            }
-
-            console.log(totalAccount)
-
-            var sumAmount = totalItemPrice + totalAccount;
 
-            $('.subTotal').html((sumAmount).toFixed(2));
-            $('.totalTax').html(totalItemTaxPrice.toFixed(2));
-            $('.totalAmount').html((parseFloat(subTotal) + totalAccount).toFixed(2));
-
-        })
-
-        $(document).on('keyup change', '.price', function() {
-            var el = $(this).parent().parent().parent().parent();
-            var price = $(this).val();
-            var quantity = $(el.find('.quantity')).val();
-
-            var discount = $(el.find('.discount')).val();
-            if (discount.length <= 0) {
-                discount = 0;
-            }
-            var totalItemPrice = (quantity * price) - discount;
-
-            var amount = (totalItemPrice);
-
-
-            var totalItemTaxRate = $(el.find('.itemTaxRate')).val();
-            var itemTaxPrice = parseFloat((totalItemTaxRate / 100) * (totalItemPrice));
-            $(el.find('.itemTaxPrice')).val(itemTaxPrice.toFixed(2));
-
-            $(el.find('.amount')).html(parseFloat(itemTaxPrice) + parseFloat(amount));
-
-            var totalItemTaxPrice = 0;
-            var itemTaxPriceInput = $('.itemTaxPrice');
-            for (var j = 0; j < itemTaxPriceInput.length; j++) {
-                totalItemTaxPrice += parseFloat(itemTaxPriceInput[j].value);
-            }
-
-
-            var totalItemPrice = 0;
-            var inputs_quantity = $(".quantity");
-            var priceInput = $('.price');
-            for (var j = 0; j < priceInput.length; j++) {
-                totalItemPrice += (parseFloat(priceInput[j].value) * parseFloat(inputs_quantity[j].value));
-            }
-
-
-            var totalAccount = 0;
-            var accountInput = $('.accountAmount');
-
-            for (var j = 0; j < accountInput.length; j++) {
-                if (typeof accountInput[j].value != 'undefined') {
-                    var accountInputPrice = parseFloat(accountInput[j].value);
-
-                    if (isNaN(accountInputPrice)) {
-                        totalAccount = 0;
-                    } else {
-                        totalAccount += accountInputPrice;
-                    }
-                }
-            }
-
-            var inputs = $(".amount");
-            var subTotal = 0;
-            for (var i = 0; i < inputs.length; i++) {
-                subTotal = parseFloat(subTotal) + parseFloat($(inputs[i]).html());
-            }
-
-
-            $('.subTotal').html((totalItemPrice + totalAccount).toFixed(2));
-            $('.totalTax').html(totalItemTaxPrice.toFixed(2));
-            $('.totalAmount').html((parseFloat(subTotal) + totalAccount).toFixed(2));
-
-
-        })
-
-        $(document).on('keyup change', '.discount', function() {
-            var el = $(this).parent().parent().parent();
-            var discount = $(this).val();
-            if (discount.length <= 0) {
-                discount = 0;
-            }
-
-            var price = $(el.find('.price')).val();
-            var quantity = $(el.find('.quantity')).val();
-            var totalItemPrice = (quantity * price) - discount;
-
-
-            var amount = (totalItemPrice);
-
-
-            var totalItemTaxRate = $(el.find('.itemTaxRate')).val();
-            var itemTaxPrice = parseFloat((totalItemTaxRate / 100) * (totalItemPrice));
-            $(el.find('.itemTaxPrice')).val(itemTaxPrice.toFixed(2));
-
-            $(el.find('.amount')).html(parseFloat(itemTaxPrice) + parseFloat(amount));
-
-            var totalItemTaxPrice = 0;
-            var itemTaxPriceInput = $('.itemTaxPrice');
-            for (var j = 0; j < itemTaxPriceInput.length; j++) {
-                totalItemTaxPrice += parseFloat(itemTaxPriceInput[j].value);
-            }
-
-
-            var totalItemPrice = 0;
-            var inputs_quantity = $(".quantity");
-
-            var priceInput = $('.price');
-            for (var j = 0; j < priceInput.length; j++) {
-                totalItemPrice += (parseFloat(priceInput[j].value) * parseFloat(inputs_quantity[j].value));
-            }
-
-            var inputs = $(".amount");
-            var subTotal = 0;
-            for (var i = 0; i < inputs.length; i++) {
-                subTotal = parseFloat(subTotal) + parseFloat($(inputs[i]).html());
-            }
-
-
-            var totalItemDiscountPrice = 0;
-            var itemDiscountPriceInput = $('.discount');
-            for (var k = 0; k < itemDiscountPriceInput.length; k++) {
-                totalItemDiscountPrice += parseFloat(itemDiscountPriceInput[k].value);
-            }
-
-            var totalAccount = 0;
-            var accountInput = $('.accountAmount');
-
-            for (var j = 0; j < accountInput.length; j++) {
-                if (typeof accountInput[j].value != 'undefined') {
-                    var accountInputPrice = parseFloat(accountInput[j].value);
-
-                    if (isNaN(accountInputPrice)) {
-                        totalAccount = 0;
-                    } else {
-                        totalAccount += accountInputPrice;
-                    }
-                }
-            }
-
-
-            // $('.subTotal').html(totalItemPrice.toFixed(2));
-            $('.subTotal').html((totalItemPrice + totalAccount).toFixed(2));
-
-            $('.totalTax').html(totalItemTaxPrice.toFixed(2));
-
-            $('.totalAmount').html((parseFloat(subTotal) + totalAccount).toFixed(2));
-            $('.totalDiscount').html(totalItemDiscountPrice.toFixed(2));
-
-
-        })
-
-
-        $(document).on('keyup change', '.accountAmount', function() {
-
-            var el1 = $(this).parent().parent().parent().parent();
-            var el = $(this).parent().parent().parent().parent().parent();
-
-            var quantityDiv = $(el.find('.quantity'));
-            var priceDiv = $(el.find('.price'));
-            var discountDiv = $(el.find('.discount'));
-
-            var itemSubTotal = 0;
-            for (var p = 0; p < priceDiv.length; p++) {
-                var quantity = quantityDiv[p].value;
-                var price = priceDiv[p].value;
-                var discount = discountDiv[p].value;
-                if (discount.length <= 0) {
-                    discount = 0;
-                }
-                itemSubTotal += (quantity * price) - (discount);
-            }
-
-
-            // var totalItemTaxPrice = 0;
-            // var itemTaxPriceInput = $('.itemTaxPrice');
-            // for (var j = 0; j < itemTaxPriceInput.length; j++) {
-            //
-            //     totalItemTaxPrice += parseFloat(itemTaxPriceInput[j].value);
-            //
-            // }
-
-            var totalItemTaxPrice = 0;
-            var itemTaxPriceInput = $('.itemTaxPrice');
-
-            for (var j = 0; j < itemTaxPriceInput.length; j++) {
-                var parsedValue = parseFloat(itemTaxPriceInput[j].value);
-
-                if (!isNaN(parsedValue)) {
-                    totalItemTaxPrice += parsedValue;
-                }
-            }
-
-
-            var amount = $(this).val();
-            el1.find('.accountamount').html(amount);
-            var totalAccount = 0;
-            var accountInput = $('.accountAmount');
-            for (var j = 0; j < accountInput.length; j++) {
-                totalAccount += (parseFloat(accountInput[j].value));
-            }
-
-
-            var inputs = $(".accountamount");
-            var subTotal = 0;
-            for (var i = 0; i < inputs.length; i++) {
-
-                subTotal = parseFloat(subTotal) + parseFloat($(inputs[i]).html());
-            }
-
-            // console.log(subTotal)
-
-
-            $('.subTotal').text((totalAccount + itemSubTotal).toFixed(2));
-            $('.totalAmount').text((parseFloat((subTotal + itemSubTotal) + (totalItemTaxPrice))).toFixed(2));
-
-
-        })
-
-
-        var vendorId = '{{ $vendorId }}';
-        if (vendorId > 0) {
-            $('#vender').val(vendorId).change();
-        }
-    </script>
-    <script>
-        $(document).on('click', '[data-repeater-delete]', function() {
-            $(".price").change();
-            $(".discount").change();
-        });
-    </script>
-    <script>
-        $(document).ready(function() {
-            var currentSelect = null;
-
-            function openAddNewModal($select) {
-                if ($select.val() !== '__add__') return;
-                $select.val(''); // reset dropdown
-                currentSelect = $select; // save reference
-                var url = $select.data('create-url');
-                var title = $select.data('create-title') || 'Create New';
-
-                // prevent duplicate modal
-                if ($('#globalAddNewModal').length) {
-                    $('#globalAddNewModal').modal('show');
-                    return;
-                }
-
-                var $modal = $(`
-                                            <div class="modal fade" id="globalAddNewModal" tabindex="-1">
-                                              <div class="modal-dialog">
-                                                <div class="modal-content">
-                                                  <div class="modal-header">
-                                                    <h5 class="modal-title">${title}</h5>
-                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                  </div>
-                                                  <div class="modal-body">Loading...</div>
-                                                </div>
-                                              </div>
-                                            </div>
-                                        `);
-
-                $('body').append($modal);
-
-                $.get(url, function(html) {
-                    $modal.find('.modal-body').html(html);
-
-                    // z-index stacking
-                    var zIndex = 1070 + ($('.modal:visible').length * 10);
-                    $modal.css('z-index', zIndex);
-                    setTimeout(function() {
-                        $('.modal-backdrop').last().css('z-index', zIndex - 1).addClass(
-                            'modal-stack');
-                    }, 0);
-
-                    $modal.modal('show');
-                });
-
-                $modal.on('hidden.bs.modal', function() {
-                    $modal.remove();
-                });
-            }
-
-            // Detect "Add New" selection
-            $(document).on('change', 'select', function() {
-                var $select = $(this);
-                if ($select.val() === '__add__') {
-                    openAddNewModal($select);
-                }
-            });
-
-            // AJAX submit for dynamic modal
-            $(document).off('submit', '#globalAddNewModal form').on('submit', '#globalAddNewModal form', function(
-                e) {
-                e.preventDefault();
-                var $form = $(this);
-                var $modal = $form.closest('#globalAddNewModal');
-
-                // Find the select that triggered this modal
-                var $select = currentSelect;
-
-                $.ajax({
-                    url: $form.attr('action'),
-                    method: $form.attr('method') || 'POST',
-                    data: $form.serialize(),
-                    success: function(response) {
-                        if (response.success) {
-                            // 🔹 Insert new option before the "Add New" of the same select
-                            var $addNewOption = $select.find('option[value="__add__"]').first();
-                            var $newOption = $('<option>', {
-                                value: response.data.id,
-                                text: response.data.name
-                            });
-
-                            if ($addNewOption.length) {
-                                $select.append($newOption);
-                                // $newOption.insertBefore($addNewOption);
-                            } else {
-                                $select.append($newOption);
-                            }
-
-                            $select.val(response.data.id).trigger('change');
-                            $modal.modal('hide');
-                        } else {
-                            alert(response.message || 'Something went wrong!');
-                        }
-                    },
-                    error: function(xhr) {
-                        if (xhr.status === 422) {
-                            var errors = xhr.responseJSON.errors;
-                            $form.find('.invalid-feedback').remove();
-                            $.each(errors, function(key, msgs) {
-                                $form.find('[name="' + key + '"]').after(
-                                    `<small class="invalid-feedback text-danger">${msgs[0]}</small>`
-                                );
-                            });
-                        } else {
-                            alert('Server error!');
-                        }
-                    }
-                });
-            });
-
-        });
-    </script>
-
-    <script>
+<style>
+    .qbo-bill-container {
+        background: #f8f9fa;
+        min-height: 100vh;
+        padding: 20px;
+    }
+
+    .qbo-bill-header {
+        background: white;
+        padding: 20px;
+        border-bottom: 1px solid #e0e0e0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .qbo-bill-title {
+        font-size: 24px;
+        font-weight: 600;
+        color: #333;
+    }
+
+    .qbo-total-badge {
+        font-size: 28px;
+        font-weight: 700;
+        color: #2ca01c;
+    }
+
+    .qbo-form-section {
+        background: white;
+        padding: 30px;
+        margin-top: 20px;
+        border-radius: 4px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .qbo-grid-section {
+        margin-top: 30px;
+    }
+
+    .qbo-section-header {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        margin-bottom: 15px;
+    }
+
+    .qbo-section-title {
+        font-weight: 600;
+        color: #393a3d;
+        font-size: 16px;
+        margin-left: 10px;
+    }
+
+    .qbo-grid-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 10px;
+    }
+
+    .qbo-grid-table thead {
+        background: #f3f4f6;
+        border-top: 1px solid #e0e0e0;
+        border-bottom: 1px solid #e0e0e0;
+    }
+
+    .qbo-grid-table th {
+        padding: 8px;
+        text-align: left;
+        font-size: 12px;
+        font-weight: 600;
+        color: #6b7280;
+    }
+
+    .qbo-grid-table td {
+        padding: 8px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .qbo-grid-table tbody tr:hover {
+        background: #f9fafb;
+    }
+
+    .qbo-line-number {
+        color: #9ca3af;
+        font-weight: 500;
+    }
+
+    .qbo-add-line-btn {
+        background: none;
+        border: none;
+        color: #0077c5;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        padding: 8px 0;
+    }
+
+    .qbo-add-line-btn:hover {
+        text-decoration: underline;
+    }
+
+    .qbo-clear-btn {
+        background: none;
+        border: none;
+        color: #6b7280;
+        font-size: 14px;
+        margin-left: 20px;
+        cursor: pointer;
+    }
+
+    .qbo-clear-btn:hover {
+        text-decoration: underline;
+    }
+
+    .row-actions i {
+        color: #9ca3af;
+        cursor: pointer;
+        font-size: 16px;
+    }
+
+    .row-actions i:hover {
+        color: #ef4444;
+    }
+
+    .qbo-checkbox {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+    }
+
+    .qbo-total-section {
+        text-align: right;
+        padding: 20px 0;
+    }
+
+    .qbo-total-row {
+        display: flex;
+        justify-content: flex-end;
+        padding: 8px 0;
+        font-size: 14px;
+    }
+
+    .qbo-total-row span:first-child {
+        margin-right: 40px;
+        color: #6b7280;
+    }
+
+    .qbo-total-row span:last-child {
+        font-weight: 600;
+        min-width: 100px;
+    }
+
+    .qbo-total-row.grand-total {
+        border-top: 2px solid #e0e0e0;
+        padding-top: 12px;
+        margin-top: 8px;
+    }
+
+    .qbo-total-row.grand-total span {
+        font-size: 16px;
+        font-weight: 700;
+    }
+
+    .qbo-footer {
+        margin-top: 30px;
+    }
+
+    .qbo-action-buttons {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #e0e0e0;
+    }
+
+    .btn-qbo-cancel,
+    .btn-qbo-clear,
+    .btn-qbo-save {
+        padding: 10px 24px;
+        font-size: 14px;
+        font-weight: 500;
+        border-radius: 4px;
+        border: 1px solid #d1d5db;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+    }
+
+    .btn-qbo-cancel {
+        background: white;
+        color: #6b7280;
+    }
+
+    .btn-qbo-clear {
+        background: white;
+        color: #6b7280;
+    }
+
+    .btn-qbo-save {
+        background: #2ca01c;
+        color: white;
+        border-color: #2ca01c;
+    }
+
+    .btn-qbo-save:hover {
+        background: #24881 7;
+    }
+    /* QBO Style Container */
+    .qbo-bill-container {
+        background: #f4f5f8; /* Light gray background like QBO */
+        padding: 20px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    /* Header Section */
+    .qbo-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    
+    .qbo-bill-title {
+        font-size: 24px;
+        font-weight: 700;
+        color: #393a3d;
+        display: flex;
+        align-items: center;
+    }
+    
+    .qbo-balance-section {
+        text-align: right;
+    }
+    
+    .qbo-balance-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        color: #6b6c72;
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+    
+    .qbo-balance-amount {
+        font-size: 28px;
+        font-weight: 700;
+        color: #393a3d;
+    }
+
+    /* Form Elements */
+    .qbo-label {
+        font-size: 13px;
+        color: #6b6c72;
+        margin-bottom: 5px;
+        font-weight: 400;
+    }
+    
+    .qbo-input {
+        border: 1px solid #babec5;
+        border-radius: 2px;
+        padding: 8px;
+        font-size: 14px;
+        height: 36px;
+        width: 100%;
+        background-color: #fff;
+    }
+    
+    .qbo-input:focus {
+        border-color: #2ca01c; /* QuickBooks Green focus */
+        outline: none;
+        box-shadow: 0 0 0 1px #2ca01c;
+    }
+
+    .qbo-textarea {
+        height: 80px;
+        resize: none;
+    }
+
+    /* Grid Layout for Inputs */
+    .qbo-input-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+        align-items: flex-start;
+    }
+
+    /* Vendor Dropdown specific width */
+    .vendor-wrapper {
+        width: 25%;
+        min-width: 250px;
+        margin-bottom: 20px;
+    }
+
+    /* The row containing Address, Terms, Dates */
+    .details-row {
+        display: flex;
+        gap: 15px;
+        width: 100%;
+    }
+
+    .col-address { flex: 0 0 25%; } /* Matches vendor width */
+    .col-term { flex: 1; }
+    .col-date { flex: 1; }
+    .col-number { flex: 1; }
+
+    /* Mobile Responsiveness */
+    @media (max-width: 768px) {
+        .details-row { flex-direction: column; }
+        .vendor-wrapper, .col-address { width: 100%; }
+    }
+</style>
+
+<div class="qbo-bill-container">
+    {{ Form::open(['route' => 'bill.store', 'method' => 'POST', 'enctype' => 'multipart/form-data', 'id' => 'bill-form']) }}
+<div class="qbo-bill-container">
+    
+    {{-- Header Section --}}
+    <div class="qbo-header">
+        <div class="qbo-bill-title">
+            <i class="ti ti-history me-2"></i> {{ __('Bill') }}
+        </div>
+        <div class="qbo-balance-section">
+            <div class="qbo-balance-label">{{ __('BALANCE DUE') }}</div>
+            <div class="qbo-balance-amount" id="grand-total-display">$0.00</div>
+        </div>
+    </div>
+
+    {{-- Form Section --}}
+    <div class="qbo-form-section">
+
+        {{-- Row 1: Vendor Selection --}}
+        <div class="vendor-wrapper">
+            <label class="qbo-label required">{{ __('Vendor') }}</label>
+            <select name="vender_id" class="form-control qbo-input" data-url="{{ route('bill.vender') }}" id="vender_selector" required>
+                <option value="">{{ __('Choose a vendor') }}</option>
+                @foreach ($venders as $id => $vendor)
+                    <option value="{{ $id }}">{{ $vendor }}</option>
+                @endforeach
+            </select>
+        </div>
+
+
+        {{-- Row 2: Horizontal layout for Address, Terms, Dates, Bill No --}}
+        <div class="details-row">
+            
+            {{-- Column 1: Mailing Address (Matches width of Vendor above) --}}
+            <div class="col-address">
+                <label class="qbo-label">{{ __('Mailing address') }}</label>
+                {{-- Using a textarea to mimic the box look in the screenshot --}}
+                <textarea class="form-control qbo-input qbo-textarea" name="mailing_address" id="vendor_address" ></textarea>
+            </div>
+
+
+            {{-- Column 2: Terms --}}
+            <div class="col-term">
+                <label class="qbo-label">{{ __('Terms') }}</label>
+                <select name="terms" class="form-control qbo-input">
+                    <option value="">Due on receipt</option>
+                    <option value="Net 15">Net 15</option>
+                    <option value="Net 30" selected>Net 30</option>
+                    <option value="Net 60">Net 60</option>
+                </select>
+            </div>
+
+
+            {{-- Column 3: Bill Date --}}
+            <div class="col-date">
+                <label class="qbo-label required">{{ __('Bill date') }}</label>
+                <input type="date" name="bill_date" class="form-control qbo-input" required value="{{ date('Y-m-d') }}">
+            </div>
+
+            {{-- Column 4: Due Date --}}
+            <div class="col-date">
+                <label class="qbo-label required">{{ __('Due date') }}</label>
+                <input type="date" name="due_date" class="form-control qbo-input" required>
+            </div>
+
+            {{-- Column 5: Bill No --}}
+            <div class="col-number">
+                <label class="qbo-label">{{ __('Bill no.') }}</label>
+                <input type="text" name="bill_number" class="form-control qbo-input" value="{{ $bill_number }}">
+            </div>
+            <div class="col-number">
+                
+            </div>
+        </div>
+
+    </div>
+{{-- </div> --}}
+
+
+        {{-- Category Details Section --}}
+        <div class="qbo-grid-section">
+            <div class="qbo-section-header">
+                <i class="fas fa-chevron-down"></i>
+                <span class="qbo-section-title">{{ __('Category details') }}</span>
+            </div>
+            <div class="qbo-grid-content">
+                <table class="qbo-grid-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;">#</th>
+                            <th style="width: 20%;">{{ __('Account') }}</th>
+                            <th style="width: 30%;">{{ __('Description') }}</th>
+                            <th style="width: 12%;">{{ __('Amount') }}</th>
+                            <th style="width: 8%;" class="text-center">{{ __('Billable') }}</th>
+                            <th style="width: 8%;">{{ __('Tax') }}</th>
+                            <th style="width: 15%;">{{ __('Customer') }}</th>
+                            <th style="width: 40px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="category-tbody">
+                        <tr class="category-row">
+                            <td class="qbo-line-number">1</td>
+                            <td>
+                                <select name="category[0][account_id]" class="form-control category-account">
+                                    <option value="">{{ __('Select account') }}</option>
+                                    @foreach ($chartAccounts as $id => $account)
+                                        <option value="{{ $id }}">{{ $account }}</option>
+                                    @endforeach
+                                </select>
+                            </td>
+                            <td>
+                                <textarea name="category[0][description]" class="form-control" rows="1"></textarea>
+                            </td>
+                            <td><input type="number" name="category[0][amount]" class="form-control category-amount"
+                                    step="0.01" value="0.00"></td>
+                            <td class="text-center"><input type="checkbox" name="category[0][billable]"
+                                    class="qbo-checkbox" value="1"></td>
+                            <td>
+                                <input type="checkbox" name="category[0][tax]" class="qbo-checkbox category-tax">
+                            </td>
+                            <td>
+                                <select name="category[0][customer_id]" class="form-control customer-select">
+                                    <option value="">-</option>
+                                    @foreach ($customers as $customer)
+                                        <option value="{{ $customer->id }}">{{ $customer->name }}</option>
+                                    @endforeach
+                                </select>
+                            </td>
+                            <td class="row-actions">
+                                <i class="fas fa-trash delete-row"></i>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <button type="button" class="qbo-add-line-btn" id="add-category-line">{{ __('Add line') }}</button>
+                <button type="button" class="qbo-clear-btn"
+                    id="clear-category-lines">{{ __('Clear all lines') }}</button>
+            </div>
+        </div>
+
+
+        {{-- Item Details Section --}}
+        <div class="qbo-grid-section">
+            <div class="qbo-section-header">
+                <i class="fas fa-chevron-down"></i>
+                <span class="qbo-section-title">{{ __('Item details') }}</span>
+            </div>
+            <div class="qbo-grid-content">
+                <table class="qbo-grid-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;">#</th>
+                            <th style="width: 18%;">{{ __('Product/Service') }}</th>
+                            <th style="width: 25%;">{{ __('Description') }}</th>
+                            <th style="width: 10%;">{{ __('Qty') }}</th>
+                            <th style="width: 12%;">{{ __('Rate') }}</th>
+                            <th style="width: 12%;">{{ __('Amount') }}</th>
+                            <th style="width: 7%;" class="text-center">{{ __('Billable') }}</th>
+                            <th style="width: 7%;">{{ __('Tax') }}</th>
+                            <th style="width: 12%;">{{ __('Customer') }}</th>
+                            <th style="width: 40px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="item-tbody">
+                        <tr class="item-row">
+                            <td class="qbo-line-number">1</td>
+                            <td>
+                                <select name="items[0][product_id]" class="form-control item-product">
+                                    <option value="">{{ __('Select product/service') }}</option>
+                                    @foreach ($product_services as $id => $product)
+                                        <option value="{{ $id }}">{{ $product }}</option>
+                                    @endforeach
+                                </select>
+                            </td>
+                            <td>
+                                <textarea name="items[0][description]" class="form-control item-description" rows="1"></textarea>
+                            </td>
+                            <td><input type="number" name="items[0][quantity]" class="form-control item-qty"
+                                    step="1" value="1"></td>
+                            <td><input type="number" name="items[0][price]" class="form-control item-rate"
+                                    step="0.01" value="0.00"></td>
+                            <td><input type="number" name="items[0][amount]" class="form-control item-amount"
+                                    step="0.01" value="0.00" readonly></td>
+                            <td class="text-center"><input type="checkbox" name="items[0][billable]"
+                                    class="qbo-checkbox"></td>
+                            <td>
+                                <input type="checkbox" name="items[0][tax]" class="qbo-checkbox item-tax">
+                            </td>
+                            <td>
+                                <select name="items[0][customer_id]" class="form-control customer-select">
+                                    <option value="">-</option>
+                                    @foreach ($customers as $customer)
+                                        <option value="{{ $customer->id }}">{{ $customer->name }}</option>
+                                    @endforeach
+                                </select>
+                            </td>
+                            <td class="row-actions">
+                                <i class="fas fa-trash delete-row"></i>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <button type="button" class="qbo-add-line-btn" id="add-item-line">{{ __('Add line') }}</button>
+                <button type="button" class="qbo-clear-btn"
+                    id="clear-item-lines">{{ __('Clear all lines') }}</button>
+            </div>
+        </div>
+
+    </div>
+
+    {{-- Footer Section --}}
+    <div class="qbo-footer">
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label class="form-label">{{ __('Memo') }}</label>
+                    <textarea name="notes" class="form-control" rows="3" placeholder="{{ __('Optional memo or notes') }}"></textarea>
+                </div>
+
+                <div class="form-group mt-3">
+                    <label class="form-label">{{ __('Attachments') }}</label>
+                    <div class="border rounded p-3 text-center" style="border-style: dashed !important;">
+                        <input type="file" name="attachments[]" id="attachments" multiple class="d-none">
+                        <label for="attachments" style="cursor: pointer; margin: 0;">
+                            <i class="fas fa-cloud-upload-alt" style="font-size: 24px; color: #0077c5;"></i>
+                            <p class="mb-0 mt-2">{{ __('Add attachments') }}</p>
+                            <small class="text-muted">{{ __('Max file size: 20 MB') }}</small>
+                        </label>
+                    </div>
+                    <div id="attachment-list" class="mt-2"></div>
+                </div>
+            </div>
+
+
+            <div class="col-md-6">
+                <div class="qbo-total-section">
+                    <div class="qbo-total-row">
+                        <span>{{ __('Subtotal') }}</span>
+                        <span id="subtotal-display">$0.00</span>
+                    </div>
+                    <div class="qbo-total-row grand-total">
+                        <span>{{ __('Total') }}</span>
+                        <span id="total-display">$0.00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <input type="hidden" name="subtotal" id="subtotal" value="0">
+        <input type="hidden" name="total" id="total" value="0">
+
+        {{-- Action Buttons --}}
+        <div class="qbo-action-buttons">
+            <a href="{{ route('bill.index') }}" class="btn-qbo-cancel">{{ __('Cancel') }}</a>
+            <button type="button" class="btn-qbo-clear" id="clear-form">{{ __('Clear') }}</button>
+            <button type="submit" class="btn-qbo-save">{{ __('Save') }}</button>
+        </div>
+
+    </div>
+
+    {{ Form::close() }}
+</div>
+
+<script>
     $(document).ready(function() {
-
-        // Category Repeater
-        // Function to enable sortable on category table
-        function initCategorySortable() {
-            $('#category-table tbody').sortable({
-                handle: '.drag-handle',
-                helper: 'clone',
-                axis: 'y',
-                update: function() {
-                    updateRowNumbers('category-table');
-                }
-            });
-        }
-        function initCategorySortable() {
-            $('#item-table tbody').sortable({
-                handle: '.drag-handle',
-                helper: 'clone',
-                axis: 'y',
-                update: function() {
-                    updateRowNumbers('item-table');
-                }
-            });
-        }
-        function updateRowNumbers(tableId) {
-            $('#' + tableId + ' tbody tr').each(function(index) {
-                $(this).find('.row-number').text(index + 1);
-            });
-        }
-
-        // Call it once on page load
-        initCategorySortable();
-
-        // Then, inside your repeater show callback:
-        var categoryRepeater = $('#category-repeater').repeater({
-            initEmpty: false,
-            isFirstItemUndeletable: false,
-            show: function() {
-                $(this).slideDown();
-                $(this).find('.select2').select2();
-                updateRowNumbers('category-table');
-
-                // Re-init sortable so the new row is draggable
-                initCategorySortable();
-            },
-            hide: function(deleteElement) {
-                if (confirm('Delete this row?')) {
-                    $(this).slideUp(deleteElement);
-                    setTimeout(() => updateRowNumbers('category-table'), 300);
-                }
-            }
-        });
-
-
-        // Item Repeater
-        var itemRepeater = $('#item-repeater').repeater({
-            initEmpty: false,
-            isFirstItemUndeletable: false,
-            show: function() {
-                $(this).slideDown();
-                $(this).find('.select2').select2();
-                updateRowNumbers('item-table');
-            },
-            hide: function(deleteElement) {
-                if (confirm('Delete this row?')) {
-                    $(this).slideUp(deleteElement);
-                    setTimeout(() => updateRowNumbers('item-table'), 300);
-                }
-            }
-        });
-
-
-    });
-</script>
-    <script>
-    $(document).ready(function() {
-        let categoryLineCount = 3;
+        let categoryLineCount = 1;
         let itemLineCount = 1;
 
         // Add Category Line
         $('#add-category-line').on('click', function() {
             const newRow = `
-                    <tr class="category-row">
-                        <td>
-                            <span class="text-muted me-2 drag-handle"
-                                style="cursor: move; font-size: 18px;"><svg
-                                    xmlns="http://www.w3.org/2000/svg" fill="none"
-                                    viewBox="0 0 24 24" color="#babec5" width="16px"
-                                    height="16px" focusable="false" aria-hidden="true"
-                                    data-testid="nine-dots-account-line-2">
-                                    <path fill="currentColor"
-                                        d="m10.636 4.565-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0">
-                                    </path>
-                                    <path fill="currentColor"
-                                        d="m10.636 4.565-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M4.636 4.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.071-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0M16.636 4.565l-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.071-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0M10.636 10.565l-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.729 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0">
-                                    </path>
-                                    <path fill="currentColor"
-                                        d="m10.636 10.565-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.729 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0M4.636 10.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M16.636 10.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M10.636 16.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0">
-                                    </path>
-                                    <path fill="currentColor"
-                                        d="m10.636 16.565-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M4.636 16.565l-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.729 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M16.636 16.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0">
-                                    </path>
-                                </svg></span>
-
-                        </td>
-                        <td class="qbo-line-number">${++categoryLineCount}</td>
-
-                        <td>
-                            <select name="category[${categoryLineCount}][account_id]" class="form-control category-account">
-                                <option value="">{{ __('Select account') }}</option>
-                                @foreach ($chartAccounts as $id => $account)
-                                    <option value="{{ $id }}">{{ $account }}</option>
-                                @endforeach
-                            </select>
-                        </td>
-                        <td><textarea name="category[${categoryLineCount}][description]" class="form-control" rows="1"></textarea></td>
-                        <td><input type="number" name="category[${categoryLineCount}][amount]" class="form-control category-amount text-end" step="0.01" value="0.00"></td>
-                        <td class="text-center text-center"><input type="checkbox" name="category[${categoryLineCount}][billable]" class="qbo-checkbox form-check-input" value="1"></td>
-                        <td class="text-center"><input type="checkbox " name="category[${categoryLineCount}][tax]" class="qbo-checkbox category-tax form-check-input"></td>
-                        <td>
-                            <select name="category[${categoryLineCount}][customer_id]" class="form-control customer-select">
-                                <option value="">-</option>
-                                
-                                @foreach ($customers as $id => $name)
-                                    <option value="{{ $id }}">{{ $name }}</option>
-                                @endforeach
-                            </select>
-                        </td>
-                        <td class="row-actions"><i class="fas fa-trash delete-row"></i></td>
-                    </tr>
-                `;
+            <tr class="category-row">
+                <td class="qbo-line-number">${++categoryLineCount}</td>
+                <td>
+                    <select name="category[${categoryLineCount}][account_id]" class="form-control category-account">
+                        <option value="">{{ __('Select account') }}</option>
+                        @foreach ($chartAccounts as $id => $account)
+                            <option value="{{ $id }}">{{ $account }}</option>
+                        @endforeach
+                    </select>
+                </td>
+                <td><textarea name="category[${categoryLineCount}][description]" class="form-control" rows="1"></textarea></td>
+                <td><input type="number" name="category[${categoryLineCount}][amount]" class="form-control category-amount" step="0.01" value="0.00"></td>
+                <td class="text-center"><input type="checkbox" name="category[${categoryLineCount}][billable]" class="qbo-checkbox" value="1"></td>
+                <td><input type="checkbox" name="category[${categoryLineCount}][tax]" class="qbo-checkbox category-tax"></td>
+                <td>
+                    <select name="category[${categoryLineCount}][customer_id]" class="form-control customer-select">
+                        <option value="">-</option>
+                        @foreach ($customers as $customer)
+                            <option value="{{ $customer->id }}">{{ $customer->name }}</option>
+                        @endforeach
+                    </select>
+                </td>
+                <td class="row-actions"><i class="fas fa-trash delete-row"></i></td>
+            </tr>
+        `;
             $('#category-tbody').append(newRow);
             updateLineNumbers();
         });
 
+
         // Add Item Line
         $('#add-item-line').on('click', function() {
             const newRow = `
-                    <tr class="item-row">
-                        <td>
-                            <span class="text-muted me-2 drag-handle"
-                                style="cursor: move; font-size: 18px;"><svg
-                                    xmlns="http://www.w3.org/2000/svg" fill="none"
-                                    viewBox="0 0 24 24" color="#babec5" width="16px"
-                                    height="16px" focusable="false" aria-hidden="true"
-                                    data-testid="nine-dots-account-line-2">
-                                    <path fill="currentColor"
-                                        d="m10.636 4.565-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0">
-                                    </path>
-                                    <path fill="currentColor"
-                                        d="m10.636 4.565-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M4.636 4.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.071-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0M16.636 4.565l-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.071-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0M10.636 10.565l-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.729 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0">
-                                    </path>
-                                    <path fill="currentColor"
-                                        d="m10.636 10.565-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.729 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0M4.636 10.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M16.636 10.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M10.636 16.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0">
-                                    </path>
-                                    <path fill="currentColor"
-                                        d="m10.636 16.565-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M4.636 16.565l-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.729 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M16.636 16.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0">
-                                    </path>
-                                </svg></span>
-
-                        </td>
-                        <td class="qbo-line-number">${++itemLineCount}</td>
-                        <td>
-                            <select name="items[${itemLineCount}][product_id]" class="form-control item-product">
-                                <option value="">{{ __('Select Item') }}</option>
-                                @foreach ($product_services as $id => $product)
-                                    <option value="{{ $id }}">{{ $product }}</option>
-                                @endforeach
-                            </select>
-                        </td>
-                        <td><textarea name="items[${itemLineCount}][description]" class="form-control item-description" rows="1"></textarea></td>
-                        <td><input type="number" name="items[${itemLineCount}][quantity]" class="form-control item-qty" step="1" value="1"></td>
-                        <td><input type="number" name="items[${itemLineCount}][price]" class="form-control item-rate" step="0.01" value="0.00"></td>
-                        <td><input type="number" name="items[${itemLineCount}][amount]" class="form-control item-amount" step="0.01" value="0.00" readonly></td>
-                        <td class="text-center"><input type="checkbox" name="items[${itemLineCount}][billable]" class="qbo-checkbox form-check-input"></td>
-                        <td class="text-center"><input type="checkbox" name="items[${itemLineCount}][tax]" class="qbo-checkbox item-tax form-check-input"></td>
-                        <td>
-                            <select name="items[${itemLineCount}][customer_id]" class="form-control customer-select">
-                                <option value="">-</option>
-                                @foreach ($customers as $id => $name)
-                                    <option value="{{ $id }}">{{ $name }}</option>
-                                @endforeach
-                            </select>
-                        </td>
-                        <td class="row-actions"><i class="fas fa-trash delete-row"></i></td>
-                    </tr>
-                `;
+            <tr class="item-row">
+                <td class="qbo-line-number">${++itemLineCount}</td>
+                <td>
+                    <select name="items[${itemLineCount}][product_id]" class="form-control item-product">
+                        <option value="">{{ __('Select product/service') }}</option>
+                        @foreach ($product_services as $id => $product)
+                            <option value="{{ $id }}">{{ $product }}</option>
+                        @endforeach
+                    </select>
+                </td>
+                <td><textarea name="items[${itemLineCount}][description]" class="form-control item-description" rows="1"></textarea></td>
+                <td><input type="number" name="items[${itemLineCount}][quantity]" class="form-control item-qty" step="1" value="1"></td>
+                <td><input type="number" name="items[${itemLineCount}][price]" class="form-control item-rate" step="0.01" value="0.00"></td>
+                <td><input type="number" name="items[${itemLineCount}][amount]" class="form-control item-amount" step="0.01" value="0.00" readonly></td>
+                <td class="text-center"><input type="checkbox" name="items[${itemLineCount}][billable]" class="qbo-checkbox"></td>
+                <td><input type="checkbox" name="items[${itemLineCount}][tax]" class="qbo-checkbox item-tax"></td>
+                <td>
+                    <select name="items[${itemLineCount}][customer_id]" class="form-control customer-select">
+                        <option value="">-</option>
+                        @foreach ($customers as $customer)
+                            <option value="{{ $customer->id }}">{{ $customer->name }}</option>
+                        @endforeach
+                    </select>
+                </td>
+                <td class="row-actions"><i class="fas fa-trash delete-row"></i></td>
+            </tr>
+        `;
             $('#item-tbody').append(newRow);
             updateLineNumbers();
         });
@@ -832,6 +654,7 @@
             updateLineNumbers();
             calculateTotal();
         });
+
 
         // Clear Lines
         $('#clear-category-lines').on('click', function() {
@@ -845,6 +668,8 @@
             itemLineCount = 0;
             calculateTotal();
         });
+
+
 
         // Update Line Numbers
         function updateLineNumbers() {
@@ -869,9 +694,6 @@
         $(document).on('input', '.category-amount', function() {
             calculateTotal();
         });
-        $(document).on('input', '.item-amount', function() {
-            calculateTotal();
-        });
 
         // Calculate Total
         function calculateTotal() {
@@ -883,12 +705,14 @@
                 subtotal += parseFloat($(this).val()) || 0;
             });
 
+
             $('#subtotal').val(subtotal.toFixed(2));
             $('#total').val(subtotal.toFixed(2));
             $('#subtotal-display').text('$' + subtotal.toFixed(2));
             $('#total-display').text('$' + subtotal.toFixed(2));
-            $('.grand-total-display').text('$' + subtotal.toFixed(2));
+            $('#grand-total-display').text('$' + subtotal.toFixed(2));
         }
+
 
         // File Upload Display
         $('#attachments').on('change', function() {
@@ -944,11 +768,12 @@
                 },
                 error: function(xhr) {
                     console.error('Error fetching product:', xhr);
-                    show_toastr('Error',
-                        'Failed to load product details. Please try again.', 'error');
+                    show_toastr('Error', 'Failed to load product details. Please try again.', 'error');
                 }
+
             });
         });
+
 
         // Form Submit
         $('#bill-form').on('submit', function(e) {
@@ -970,11 +795,11 @@
                         }
                         setTimeout(() => window.location.reload(), 500);
                     } else {
-                        show_toastr('Success', response.message ||
-                            '{{ __('Bill created successfully') }}', 'success');
+                      show_toastr('success', response.message || '{{ __("Bill created successfully") }}', 'success');
                         $('.btn-qbo-save').prop('disabled', false).text(
                             '{{ __('Save') }}');
                     }
+
                 },
                 error: function(xhr) {
                     let message = '{{ __('Error creating bill') }}';
@@ -983,1459 +808,57 @@
                     }
                     show_toastr('error', message, 'error');
 
+
                     $('.btn-qbo-save').prop('disabled', false).text('{{ __('Save') }}');
                 }
+
             });
         });
 
         // Initialize
         calculateTotal();
     });
-</script>
-    <script>
-        // ===== VENDOR AUTO FILL (DATA ATTRIBUTE METHOD) =====
-        document.getElementById('vender').addEventListener('change', function() {
-            const selectedOption = this.options[this.selectedIndex];
-            const address = selectedOption.dataset.address || '';
-            const terms = selectedOption.dataset.terms || 'Net 30';
-            const balance = parseFloat(selectedOption.dataset.balance || 0).toFixed(2);
+    $(document).on('change', '#vender_selector', function () {
+    var id = $(this).val();
+    var url = $(this).data('url');
 
-            // Fill fields
-            document.querySelector('textarea[name="billing_address"]').value = address.replace(/<br\s*\/?>/gi,
-                "\n");
-            document.querySelector('select[name="terms"]').value = terms;
-            document.querySelector('input[name="bill_date"]').value = new Date().toISOString().split('T')[0];
+    // Clear the box or show loading state
+    $('#vendor_address').val(''); 
 
-            // Calculate Due Date
-            let dueDays = 30;
-            if (terms.includes('15')) dueDays = 15;
-            else if (terms.includes('30')) dueDays = 30;
-            else if (terms.includes('45')) dueDays = 45;
-            else if (terms.includes('60')) dueDays = 60;
-            else if (terms.includes('receipt')) dueDays = 0;
+    if (id) {
+        $.ajax({
+            url: url,
+            type: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': jQuery('meta[name="csrf-token"]').attr('content') // OR jQuery('#token').val()
+            },
+            data: {
+                'id': id
+            },
+            cache: false,
+            success: function (data) {
+                // CASE 1: If your controller returns JSON (Best Practice)
+                // Example: return response()->json(['address' => '123 Main St...']);
+                if (typeof data === 'object' && data.address) {
+                    $('#vendor_address').val(data.address);
+                } 
+                
+                // CASE 2: If your controller returns an HTML View (Old way)
+                // Since we are using a textarea, we need to strip the HTML tags (<br>, <p>)
+                // so they don't show up as code in the box.
+                else {
+                    // This creates a temporary element to strip tags and extract text
+                    var tempDiv = document.createElement("div");
+                    tempDiv.innerHTML = data;
+                    
+                    // If the data had <br> tags, replace them with newlines first
+                    var addressText = tempDiv.innerText || tempDiv.textContent;
+                    
+                    $('#vendor_address').val(addressText.trim());
+                }
+            },
 
-            const dueDate = dueDays === 0 ?
-                new Date().toISOString().split('T')[0] :
-                new Date(Date.now() + dueDays * 86400000).toISOString().split('T')[0];
-
-            document.querySelector('input[name="due_date"]').value = dueDate;
-
-            // Update Balance Due
-            document.querySelector('.h3.mb-0').textContent = '$' + balance;
-        });
-
-        // Agar edit mode mein vendor already selected hai
-        @if ($vendorId && $vendorId != '__add__')
-            setTimeout(() => {
-                document.getElementById('vender').dispatchEvent(new Event('change'));
-            }, 500);
-        @endif
-    </script>
-@endpush
-@section('content')
-    <div class="modal fade" id="invoice-modal" tabindex="-1" aria-hidden="true" style="padding: 0 !important; background-color: #ffffff;">
-        <div class="modal-dialog modal-fullscreen">
-            <div class="modal-content" style="background: #f4f5f8;">
-
-
-
-                {{ Form::open(['url' => 'bill', 'class' => 'w-100']) }}
-                <div class="d-flex justify-content-between align-items-center border-bottom"
-                    style="
-                                    font-size: 15px;
-                                    font-weight: 600;
-                                    height: 50px;
-                                    background: #f4f5f8;
-                                    position: fixed;
-                                    top: 0;
-                                    left: 0;
-                                    right: 0;
-                                    z-index: 999;
-                                    padding: 0 10px;
-                                ">
-                    <div class="TrowserHeader d-flex align-items-center">
-                        <a href="#" class="text-dark me-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
-                                viewBox="0 0 24 24" color="currentColor" width="24px" height="24px" focusable="false"
-                                aria-hidden="true" class="">
-                                <path fill="currentColor"
-                                    d="M13.007 7a1 1 0 0 0-1 1L12 12a1 1 0 0 0 1 1l3.556.006a1 1 0 0 0 0-2L14 11l.005-3a1 1 0 0 0-.998-1">
-                                </path>
-                                <path fill="currentColor"
-                                    d="M19.374 5.647A8.94 8.94 0 0 0 13.014 3H13a8.98 8.98 0 0 0-8.98 8.593l-.312-.312a1 1 0 0 0-1.416 1.412l2 2a1 1 0 0 0 1.414 0l2-2a1 1 0 0 0-1.412-1.416l-.272.272A6.984 6.984 0 0 1 13 5h.012A7 7 0 0 1 13 19h-.012a7 7 0 0 1-4.643-1.775 1 1 0 1 0-1.33 1.494A9 9 0 0 0 12.986 21H13a9 9 0 0 0 6.374-15.353">
-                                </path>
-                            </svg></a>
-                        <h5 class="mb-0" style="font-size: 1.2rem;">Bill</h5>
-                    </div>
-                    <div class="TrowserHeader d-flex align-items-center">
-                        <div class="w-100 h-50">
-                            <a href="#" class="text-dark"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
-                                    viewBox="0 0 24 24" color="currentColor" width="24px" height="24px" focusable="false"
-                                    aria-hidden="true" class="">
-                                    <path fill="currentColor"
-                                        d="M14.35 2a1 1 0 0 1 0 2H6.49a2.54 2.54 0 0 0-2.57 2.5v7A2.54 2.54 0 0 0 6.49 16h1.43a1 1 0 0 1 1 1v1.74l2.727-2.48c.184-.167.424-.26.673-.26h5.03a2.54 2.54 0 0 0 2.57-2.5v-4a1 1 0 0 1 2 0v4a4.54 4.54 0 0 1-4.57 4.5h-4.643l-4.114 3.74A1.002 1.002 0 0 1 6.92 21v-3h-.43a4.54 4.54 0 0 1-4.57-4.5v-7A4.54 4.54 0 0 1 6.49 2zm6.414.6.725.726c.79.791.79 2.074 0 2.865l-5.812 5.794c-.128.128-.29.219-.465.263l-2.9.721q-.121.03-.247.031a.998.998 0 0 1-.969-1.244l.73-2.9a1 1 0 0 1 .263-.463L17.9 2.6a2.027 2.027 0 0 1 2.864 0m-1.412 1.413-.763.724L13.7 9.612l-.255 1.015 1.016-.252 5.616-5.6V4.74z">
-                                    </path>
-                                </svg></a>
-                            <span class="text-muted small me-3 ">{{ __('Give feedback') }}</span>
-                        </div>
-                        <div class="TrowserHeader">
-                            <a href="#" class="text-dark me-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
-                                    viewBox="0 0 24 24" color="currentColor" width="24px" height="24px" focusable="false"
-                                    aria-hidden="true" class="">
-                                    <path fill="currentColor"
-                                        d="M12.024 7.982h-.007a4 4 0 1 0 0 8 4 4 0 1 0 .007-8m-.006 6a2 2 0 0 1 .002-4 2 2 0 1 1 0 4z">
-                                    </path>
-                                    <path fill="currentColor"
-                                        d="m20.444 13.4-.51-.295a7.6 7.6 0 0 0 0-2.214l.512-.293a2.005 2.005 0 0 0 .735-2.733l-1-1.733a2.005 2.005 0 0 0-2.731-.737l-.512.295a8 8 0 0 0-1.915-1.113v-.59a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v.6a8 8 0 0 0-1.911 1.1l-.52-.3a2 2 0 0 0-2.725.713l-1 1.73a2 2 0 0 0 .728 2.733l.509.295a7.8 7.8 0 0 0-.004 2.22l-.51.293a2 2 0 0 0-.738 2.73l1 1.732a2 2 0 0 0 2.73.737l.513-.295A8 8 0 0 0 9.01 19.39v.586a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V19.4a8 8 0 0 0 1.918-1.107l.51.3a2 2 0 0 0 2.734-.728l1-1.73a2 2 0 0 0-.728-2.735m-2.593-2.8a5.8 5.8 0 0 1 0 2.78 1 1 0 0 0 .472 1.1l1.122.651-1 1.73-1.123-.65a1 1 0 0 0-1.187.137 6 6 0 0 1-2.4 1.387 1 1 0 0 0-.716.957v1.294h-2v-1.293a1 1 0 0 0-.713-.96 6 6 0 0 1-2.4-1.395 1.01 1.01 0 0 0-1.188-.142l-1.125.648-1-1.733 1.125-.647a1 1 0 0 0 .475-1.1 6 6 0 0 1-.167-1.387c.003-.467.06-.933.17-1.388a1 1 0 0 0-.471-1.1l-1.123-.65 1-1.73 1.124.651c.019.011.04.01.06.02a1 1 0 0 0 .186.063 1 1 0 0 0 .2.04c.02 0 .039.011.059.011a1 1 0 0 0 .136-.025 1 1 0 0 0 .17-.032q.085-.036.163-.087a1 1 0 0 0 .157-.1c.015-.013.034-.017.048-.03a6 6 0 0 1 2.4-1.39l.049-.026a1 1 0 0 0 .183-.1 1 1 0 0 0 .15-.1 1 1 0 0 0 .122-.147q.057-.073.1-.156a1 1 0 0 0 .055-.173q.03-.098.04-.2c0-.018.012-.034.012-.053V3.981h2v1.294a1 1 0 0 0 .713.96c.897.273 1.72.75 2.4 1.395a1 1 0 0 0 1.186.141l1.126-.647 1 1.733-1.125.647a1 1 0 0 0-.465 1.096">
-                                    </path>
-                                </svg></a>
-
-                        </div>
-                        <div class="TrowserHeader">
-                            <a href="#" class="text-dark me-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
-                                    viewBox="0 0 24 24" color="currentColor" width="24px" height="24px" focusable="false"
-                                    aria-hidden="true" class="">
-                                    <path fill="currentColor"
-                                        d="M12 15a1 1 0 1 0 0 2 1 1 0 0 0 0-2M15 10a3.006 3.006 0 0 0-3-3 3 3 0 0 0-2.9 2.27 1 1 0 1 0 1.937.494A1.02 1.02 0 0 1 12 9a1.006 1.006 0 0 1 1 1c0 .013.007.024.007.037s-.007.023-.007.036a.5.5 0 0 1-.276.447l-1.172.584A1 1 0 0 0 11 12v1a1 1 0 1 0 2 0v-.383l.619-.308a2.52 2.52 0 0 0 1.381-2.3z">
-                                    </path>
-                                    <path fill="currentColor"
-                                        d="M19.082 4.94A9.93 9.93 0 0 0 12.016 2H12a10 10 0 0 0-.016 20H12a10 10 0 0 0 7.082-17.06m-1.434 12.725A7.94 7.94 0 0 1 12 20h-.013A8 8 0 1 1 12 4h.012a8 8 0 0 1 5.636 13.665">
-                                    </path>
-                                </svg></a>
-
-                        </div>
-                        <div class="TrowserHeader">
-                            <a href="#" class="text-dark me-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
-                                    viewBox="0 0 24 24" color="currentColor" width="24px" height="24px" focusable="false"
-                                    aria-hidden="true" class="">
-                                    <path fill="currentColor"
-                                        d="m13.432 11.984 5.3-5.285a1 1 0 1 0-1.412-1.416l-5.3 5.285-5.285-5.3A1 1 0 1 0 5.319 6.68l5.285 5.3L5.3 17.265a1 1 0 1 0 1.412 1.416l5.3-5.285L17.3 18.7a1 1 0 1 0 1.416-1.412z">
-                                    </path>
-                                </svg></a>
-
-                        </div>
-
-                    </div>
-                </div>
-                <div class="col-12 mt-4">
-                    <input type="hidden" name="_token" id="token" value="{{ csrf_token() }}">
-                    <div class="card">
-                        <div class="card-body" style="background: #f4f5f8;">
-                            <div class="row align-items-center">
-                                <div class="col-6">
-                                    <div class="form-group mb-4" id="vender-box">
-                                        {{-- {{ Form::label('vender_id', __('Vendor'), ['class' => 'form-label']) }} --}}
-                                        <div class="form-group mb-4" id="vender-box">
-                                            {{ Form::label('vender_id', __('Vendor'), ['class' => 'form-label']) }}
-                                            <select name="vender_id" class="form-control select" id="vender"
-                                                style="width: 292px !important;" required>
-                                                @foreach ($vendorOptions as $id => $data)
-                                                    @if (is_array($data))
-                                                        <option value="{{ $id }}"
-                                                            data-address="{{ nl2br(e($data['address'])) }}"
-                                                            data-terms="{{ $data['terms'] }}"
-                                                            data-balance="{{ $data['balance'] }}">
-                                                            {{ $data['name'] }}
-                                                        </option>
-                                                    @else
-                                                        <option value="{{ $id }}">{{ $data }}</option>
-                                                    @endif
-                                                @endforeach
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-6 text-end">
-                                    <div class="d-flex flex-column align-items-end">
-                                        <label class="form-label mb-0" style=" color: #6b6c72;" for="Balance Due">BALANCE
-                                            DUE</label>
-                                        <p class="h3 mb-0 grand-total-display" style="font-size: 36px; font-weight: 900; "
-                                            id="">$0.00</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="row">
-                                <div class="col-md-3 size"
-                                    style="
-                        color: #6b6c72;
-                    ">
-                                    <div class="form-group" style="color: #6b6c72;">
-                                        {{ Form::label('billing_address', __('Mailing address'), ['class' => 'form-label']) }}
-                                        <textarea class="form-control" name="billing_address" rows="5"></textarea>
-                                    </div>
-                                </div>
-
-                                <div class="col-md-9">
-                                    <div class="row">
-                                        <div class="col-md-3 field">
-                                            <div class="form-group">
-                                                {{ Form::label('terms', __('Terms'), ['class' => 'form-label']) }}
-                                                {{ Form::select('terms', [], null, ['class' => 'form-control select', 'placeholder' => __('Select Terms')]) }}
-                                            </div>
-                                        </div>
-
-                                        <div class="col-md-3 field1">
-                                            <div class="form-group ">
-                                                {{ Form::label('bill_date', __('Bill date'), ['class' => 'form-label']) }}
-                                                {{ Form::date('bill_date', null, ['class' => 'form-control', 'required' => 'required']) }}
-                                                {{-- {{ \Auth::user()->dateFormat($bill->bill_date) }} --}}
-
-                                            </div>
-                                        </div>
-
-                                        <div class="col-md-3 field1">
-                                            <div class="form-group ">
-                                                {{ Form::label('due_date', __('Due date'), ['class' => 'form-label']) }}
-                                                {{ Form::date('due_date', null, ['class' => 'form-control', 'required' => 'required']) }}
-                                                {{-- {{ \Auth::user()->dateFormat($bill->due_date) }} --}}
-
-                                            </div>
-                                        </div>
-
-                                        <div class="col-md-3 field">
-                                            <div class="form-group">
-                                                {{ Form::label('bill_number', __('Bill no.'), ['class' => 'form-label']) }}
-                                                <input type="text" class="form-control" value="{{ $bill_number }}"
-                                                    readonly>
-                                            </div>
-                                        </div>
-
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                {{-- ===== QBO-style grid + accordion ===== --}}
-<style>
-    .custom-accordion {
-        /* background: #ffffff; */
-        margin-bottom: 12px;
     }
-
-    .custom-accordion .accordion-header {
-        padding: 8px 12px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        background: #f4f5f8;
-        cursor: pointer;
-        user-select: none;
-    }
-
-    .custom-accordion .accordion-header h5 {
-        font-size: 14px;
-        font-weight: 600;
-        margin: 0;
-        color: #393a3d;
-    }
-
-    .accordion-arrow svg {
-        transition: transform 0.2s ease;
-        transform: rotate(180deg); /* open by default (down arrow) */
-    }
-
-    .custom-accordion.collapsed .accordion-arrow svg {
-        transform: rotate(90deg); /* closed – right arrow */
-    }
-
-    .custom-accordion .accordion-content {
-        padding: 6px 8px 10px;
-        display: block;          /* open by default */
-    }
-
-    .custom-accordion.collapsed .accordion-content {
-        display: none;
-    }
-
-    .qbo-grid-card {
-        border: 0;
-        border-radius: 0;
-        box-shadow: none;
-        /* background: #ffffff; */
-        margin: 0;
-    }
-
-    .qbo-grid-card .table {
-        margin-bottom: 0;
-    }
-
-    #category-table,
-    #item-table {
-        background: #ffffff;
-        border-right: 1px solid #d4d7dc !important;
-        border-bottom: 1px solid #d4d7dc !important;
-        border-left: 0 !important;
-        border-top: 0 !important;
-        border-collapse: collapse;
-    }
-
-    #category-table thead tr,
-    #item-table thead tr {
-        border-bottom: 1px solid #cfd1d7 !important;
-    }
-
-    #category-table th,
-    #item-table th {
-        border-right: 1px solid #e3e5eb !important;
-        border-bottom: 1px solid #e3e5eb !important;
-        border-top: 0 !important;
-        border-left: 0 !important;
-        padding: 12px 8px;
-        font-size: 13px;
-        font-weight: 600;
-        color: #5a5b5f;
-    }
-
-    #category-table td,
-    #item-table td {
-        border-right: 1px solid #e3e5eb !important;
-        border-bottom: 1px solid #e3e5eb !important;
-        border-top: 0 !important;
-        border-left: 0 !important;
-        padding: 10px 8px;
-        font-size: 13px;
-        color: #2b2c30;
-        vertical-align: middle;
-    }
-
-    #category-table tbody tr:hover,
-    #item-table tbody tr:hover {
-        background: #fafafa;
-    }
-
-    .lineitem-toolbar {
-        display: flex;
-        justify-content: flex-end;
-        padding: 4px 4px 8px;
-    }
-
-    .toolbar-buttons {
-        display: flex;
-        gap: 6px;
-    }
-
-    .toolbar-btn {
-        border: 1px solid #dcdcdc;
-        padding: 4px;
-        border-radius: 6px;
-        cursor: pointer;
-        width: 30px;
-        height: 30px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: #ffffff;
-        transition: 0.2s;
-    }
-
-    .toolbar-btn:hover {
-        background: #f5f5f5;
-        border-color: #bcbcbc;
-    }
-
-    .bill-total-row {
-        display: flex;
-        justify-content: flex-end;
-        align-items: center;
-        padding: 10px 18px 4px;
-        font-size: 16px;
-        gap: 8px;
-    }
-
-    .bill-total-row .label {
-        font-weight: 600;
-        color: #393a3d;
-    }
-</style>
-
-<script>
-    // shared for Category + Item accordions
-    function toggleAccordion(header) {
-        const accordion = header.closest('.custom-accordion');
-        if (!accordion) return;
-        accordion.classList.toggle('collapsed');
-    }
+});
 </script>
 
-<div class="containerbox mb-3" style="background-color: #f4f5f8;">
-    {{-- ======================== CATEGORY TABLE ======================== --}}
-    <div class="col-12">
-        <div class="custom-accordion" id="category-accordion">
-            <div class="accordion-header d-flex" onclick="toggleAccordion(this)">
-                <div class="accordion-arrow">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none"
-                         viewBox="0 0 24 24" color="currentColor" width="24px" height="24px"
-                         focusable="false" aria-hidden="true">
-                        <path fill="currentColor"
-                              d="M9.009 19.013a1 1 0 0 1-.709-1.708l5.3-5.285-5.281-5.3a1 1 0 1 1 1.416-1.413l5.991 6.01a1 1 0 0 1 0 1.413l-6.011 5.991a1 1 0 0 1-.706.292">
-                        </path>
-                    </svg>
-                </div>
-                <h5 class="mb-0">{{ __('Category details') }}</h5>
-            </div>
-
-            <div class="accordion-content">
-                <div class="lineitem-toolbar">
-                    <div class="toolbar-buttons">
-                        {{-- Export --}}
-                        <button class="toolbar-btn" type="button" title="Export to Excel">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                                 color="#6B6C72" width="20px" height="20px" aria-hidden="true">
-                                <path fill="#6B6C72"
-                                      d="m18.016 2.01-12-.019a3 3 0 0 0-3 3l-.022 14a3 3 0 0 0 3 3l12 .018a3 3 0 0 0 3-3 1 1 0 1 0-2 0 1 1 0 0 1-1 1l-12-.018a1 1 0 0 1-1-1l.022-14a1 1 0 0 1 1-1l12 .018a1 1 0 0 1 1 1L19 8.961a1 1 0 0 0 2 0l.011-3.954a3 3 0 0 0-2.995-2.998">
-                                </path>
-                                <path fill="#6B6C72"
-                                      d="M16.3 17.7a1 1 0 0 0 1.414 0l2.995-3.005a1 1 0 0 0 0-1.414l-3-2.995a1.002 1.002 0 1 0-1.42 1.414l1.3 1.291h-2.647A4.946 4.946 0 0 0 10 17.971a1 1 0 0 0 1 .993h.006A1 1 0 0 0 12 17.958a2.946 2.946 0 0 1 2.941-2.965h2.646l-1.287 1.29a1 1 0 0 0 0 1.417">
-                                </path>
-                            </svg>
-                        </button>
-
-                        {{-- Paste --}}
-                        <button class="toolbar-btn" type="button" title="Paste line items">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                                 color="#6B6C72" width="20px" height="20px" aria-hidden="true">
-                                <path fill="#6B6C72" fill-rule="evenodd"
-                                      d="M10 4a1 1 0 0 0-1 1v1h4V5a1 1 0 0 0-1-1zm5 2v1a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V6H6a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h3.283A3.3 3.3 0 0 1 9 18.65v-6.3C9 10.5 10.5 9 12.35 9H17V7a1 1 0 0 0-1-1zm4 3.283a3.35 3.35 0 0 1 2 3.067v6.3C21 20.5 19.5 22 17.65 22H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1.172A3 3 0 0 1 10 2h2a3 3 0 0 1 2.828 2H16a3 3 0 0 1 3 3zM17.65 20A1.35 1.35 0 0 0 19 18.65v-6.3A1.35 1.35 0 0 0 17.65 11h-5.3A1.35 1.35 0 0 0 11 12.35v6.3c0 .746.604 1.35 1.35 1.35zM12 14a1 1 0 0 1 1-1h4a1 1 0 1 1 0 2h-4a1 1 0 0 1-1-1m0 3a1 1 0 0 1 1-1h2a1 1 0 1 1 0 2h-2a1 1 0 0 1-1-1"
-                                      clip-rule="evenodd"></path>
-                            </svg>
-                        </button>
-
-                        {{-- Column settings --}}
-                        <button class="toolbar-btn" type="button" title="Column settings">
-                            <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"
-                                 width="20px" height="20px" fill="#6B6C72">
-                                <path
-                                    d="M12.024 7.982h-.007a4 4 0 100 8 4 4 0 10.007-8zm-.006 6a2 2 0 01.002-4 2 2 0 110 4h-.002z">
-                                </path>
-                                <path
-                                    d="M20.444 13.4l-.51-.295a7.557 7.557 0 000-2.214l.512-.293a2.005 2.005 0 00.735-2.733l-1-1.733a2.005 2.005 0 00-2.731-.737l-.512.295a8.071 8.071 0 00-1.915-1.113v-.59a2 2 0 00-2-2h-2a2 2 0 00-2 2v.6a8.016 8.016 0 00-1.911 1.1l-.52-.3a2 2 0 00-2.725.713l-1 1.73a2 2 0 00.728 2.733l.509.295a7.75 7.75 0 00-.004 2.22l-.51.293a2 2 0 00-.738 2.73l1 1.732a2 2 0 002.73.737l.513-.295A8.07 8.07 0 009.01 19.39v.586a2 2 0 002 2h2a2 2 0 002-2V19.4a8.014 8.014 0 001.918-1.107l.51.3a2 2 0 002.734-.728l1-1.73a2 2 0 00-.728-2.735z">
-                                </path>
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="qbo-grid-card repeater" id="category-repeater">
-                    <div class="table-responsive">
-                        <table class="table align-middle" id="category-table">
-                            <thead class="table-light">
-                            <tr>
-                                <th width="1%"></th>
-                                <th width="1%">#</th>
-                                <th width="20%">{{ __('CATEGORY') }}</th>
-                                <th width="25%">{{ __('DESCRIPTION') }}</th>
-                                <th width="12%" class="text-end">{{ __('AMOUNT') }}</th>
-                                <th width="5%" class="text-center">{{ __('BILLABLE') }}</th>
-                                <th width="5%" class="text-center">{{ __('TAX') }}</th>
-                                <th width="13%">{{ __('CUSTOMER') }}</th>
-                                <th width="5%"></th>
-                            </tr>
-                            </thead>
-                            <tbody data-repeater-list="categories" id="category-tbody">
-                            @for ($i = 0; $i < 2; $i++)
-                                <tr data-repeater-item class="category-row">
-                                    <td>
-                                        <span class="text-muted me-2 drag-handle"
-                                              style="cursor: move; font-size: 18px;">
-                                            {{-- nine dots icon --}}
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none"
-                                                 viewBox="0 0 24 24" color="#babec5" width="16px" height="16px"
-                                                 aria-hidden="true">
-                                                <path fill="currentColor"
-                                                      d="m10.636 4.565-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0">
-                                                </path>
-                                                <path fill="currentColor"
-                                                      d="m10.636 4.565-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M4.636 4.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.071-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0M16.636 4.565l-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.071-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0M10.636 10.565l-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.729 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0">
-                                                </path>
-                                                <path fill="currentColor"
-                                                      d="m10.636 10.565-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.729 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0M4.636 10.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M16.636 10.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M10.636 16.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0">
-                                                </path>
-                                                <path fill="currentColor"
-                                                      d="m10.636 16.565-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M4.636 16.565l-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.729 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M16.636 16.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0">
-                                                </path>
-                                            </svg>
-                                        </span>
-                                    </td>
-                                    <td><span class="row-number">{{ $i + 1 }}</span></td>
-                                    <td>
-                                        <select name="category[{{ $i }}][account_id]"
-                                                class="form-control select2 category-select">
-                                            <option value="">{{ __('Select account') }}</option>
-                                            @foreach ($chartAccounts as $id => $account)
-                                                <option value="{{ $id }}">{{ $account }}</option>
-                                            @endforeach
-                                        </select>
-                                    </td>
-                                    <td>
-                                        {{ Form::textarea("category[{$i}][description]", null, ['class' => 'form-control', 'rows' => 1]) }}
-                                    </td>
-                                    <td>
-                                        {{ Form::number("category[{$i}][amount]", null, ['class' => 'form-control text-end category-amount', 'step' => '0.01']) }}
-                                    </td>
-                                    <td class="text-center">
-                                        {{ Form::checkbox("category[{$i}][billable]", 1, false, ['class' => 'form-check-input']) }}
-                                    </td>
-                                    <td class="text-center">
-                                        {{ Form::checkbox("category[{$i}][tax]", 1, false, ['class' => 'form-check-input']) }}
-                                    </td>
-                                    <td>
-                                        <select name="category[{{ $i }}][customer_id]"
-                                                class="form-control select2 customer-select">
-                                            <option value="">-</option>
-                                            @foreach ($customers as $id => $name)
-                                                <option value="{{ $id }}">{{ $name }}</option>
-                                            @endforeach
-                                        </select>
-                                    </td>
-                                    <td>
-                                        <a href="#" data-repeater-delete
-                                           class="text-danger ti ti-trash delete-row"></a>
-                                    </td>
-                                </tr>
-                            @endfor
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="d-flex gap-2 px-2 py-2"
-                         style="background-color: #ffffff;">
-                        <button type="button" id="add-category-line"
-                                class="qbo-add-line-btn idsTSButton idsF Button-button-6a785d2 Button-size-medium-6a785d2 Button-purpose-standard-6a785d2 Button-priority-primary-6a785d2">
-                            <span class="Button-label-6a785d2">{{ __('Add line') }}</span>
-                        </button>
-                        <button type="button" id="clear-category-lines"
-                                class="qbo-clear-btn idsTSButton idsF Button-button-6a785d2 Button-size-medium-6a785d2 Button-purpose-standard-6a785d2 Button-priority-primary-6a785d2">
-                            <span class="Button-label-6a785d2">{{ __('Clear all lines') }}</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        {{-- ======================== ITEM TABLE ======================== --}}
-        <div class="col-12 mt-3">
-            <div class="custom-accordion" id="item-accordion">
-                <div class="accordion-header d-flex" onclick="toggleAccordion(this)">
-                    <div class="accordion-arrow">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none"
-                             viewBox="0 0 24 24" color="currentColor" width="24px" height="24px"
-                             focusable="false" aria-hidden="true">
-                            <path fill="currentColor"
-                                  d="M9.009 19.013a1 1 0 0 1-.709-1.708l5.3-5.285-5.281-5.3a1 1 0 1 1 1.416-1.413l5.991 6.01a1 1 0 0 1 0 1.413l-6.011 5.991a1 1 0 0 1-.706.292">
-                            </path>
-                        </svg>
-                    </div>
-                    <h5 class="mb-0">{{ __('Item details') }}</h5>
-                </div>
-
-                <div class="accordion-content">
-                    <div class="lineitem-toolbar">
-                        <div class="toolbar-buttons">
-                            {{-- Export --}}
-                            <button class="toolbar-btn" type="button" title="Export to Excel">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                                     color="#6B6C72" width="20px" height="20px" aria-hidden="true">
-                                    <path fill="#6B6C72"
-                                          d="m18.016 2.01-12-.019a3 3 0 0 0-3 3l-.022 14a3 3 0 0 0 3 3l12 .018a3 3 0 0 0 3-3 1 1 0 1 0-2 0 1 1 0 0 1-1 1l-12-.018a1 1 0 0 1-1-1l.022-14a1 1 0 0 1 1-1l12 .018a1 1 0 0 1 1 1L19 8.961a1 1 0 0 0 2 0l.011-3.954a3 3 0 0 0-2.995-2.998">
-                                    </path>
-                                    <path fill="#6B6C72"
-                                          d="M16.3 17.7a1 1 0 0 0 1.414 0l2.995-3.005a1 1 0 0 0 0-1.414l-3-2.995a1.002 1.002 0 1 0-1.42 1.414l1.3 1.291h-2.647A4.946 4.946 0 0 0 10 17.971a1 1 0 0 0 1 .993h.006A1 1 0 0 0 12 17.958a2.946 2.946 0 0 1 2.941-2.965h2.646l-1.287 1.29a1 1 0 0 0 0 1.417">
-                                    </path>
-                                </svg>
-                            </button>
-
-                            {{-- Paste --}}
-                            <button class="toolbar-btn" type="button" title="Paste line items">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                                     color="#6B6C72" width="20px" height="20px" aria-hidden="true">
-                                    <path fill="#6B6C72" fill-rule="evenodd"
-                                          d="M10 4a1 1 0 0 0-1 1v1h4V5a1 1 0 0 0-1-1zm5 2v1a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V6H6a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h3.283A3.3 3.3 0 0 1 9 18.65v-6.3C9 10.5 10.5 9 12.35 9H17V7a1 1 0 0 0-1-1zm4 3.283a3.35 3.35 0 0 1 2 3.067v6.3C21 20.5 19.5 22 17.65 22H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1.172A3 3 0 0 1 10 2h2a3 3 0 0 1 2.828 2H16a3 3 0 0 1 3 3zM17.65 20A1.35 1.35 0 0 0 19 18.65v-6.3A1.35 1.35 0 0 0 17.65 11h-5.3A1.35 1.35 0 0 0 11 12.35v6.3c0 .746.604 1.35 1.35 1.35zM12 14a1 1 0 0 1 1-1h4a1 1 0 1 1 0 2h-4a1 1 0 0 1-1-1m0 3a1 1 0 0 1 1-1h2a1 1 0 1 1 0 2h-2a1 1 0 0 1-1-1"
-                                          clip-rule="evenodd"></path>
-                                </svg>
-                            </button>
-
-                            {{-- Column settings --}}
-                            <button class="toolbar-btn" type="button" title="Column settings">
-                                <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"
-                                     width="20px" height="20px" fill="#6B6C72">
-                                    <path
-                                        d="M12.024 7.982h-.007a4 4 0 100 8 4 4 0 10.007-8zm-.006 6a2 2 0 01.002-4 2 2 0 110 4h-.002z">
-                                    </path>
-                                    <path
-                                        d="M20.444 13.4l-.51-.295a7.557 7.557 0 000-2.214l.512-.293a2.005 2.005 0 00.735-2.733l-1-1.733a2.005 2.005 0 00-2.731-.737l-.512.295a8.071 8.071 0 00-1.915-1.113v-.59a2 2 0 00-2-2h-2a2 2 0 00-2 2v.6a8.016 8.016 0 00-1.911 1.1l-.52-.3a2 2 0 00-2.725.713l-1 1.73a2 2 0 00.728 2.733l.509.295a7.75 7.75 0 00-.004 2.22l-.51.293a2 2 0 00-.738 2.73l1 1.732a2 2 0 002.73.737l.513-.295A8.07 8.07 0 009.01 19.39v.586a2 2 0 002 2h2a2 2 0 002-2V19.4a8.014 8.014 0 001.918-1.107l.51.3a2 2 0 002.734-.728l1-1.73a2 2 0 00-.728-2.735z">
-                                    </path>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="qbo-grid-card repeater" id="item-repeater">
-                        <div class="table-responsive">
-                            <table class="table align-middle" id="item-table">
-                                <thead class="table-light">
-                                <tr>
-                                    <th width="1%"></th>
-                                    <th width="1%">#</th>
-                                    <th width="20%">{{ __('PRODUCT/SERVICE') }}</th>
-                                    <th width="20%">{{ __('DESCRIPTION') }}</th>
-                                    <th width="8%" class="text-end">{{ __('QTY') }}</th>
-                                    <th width="10%" class="text-end">{{ __('RATE') }}</th>
-                                    <th width="10%" class="text-end">{{ __('AMOUNT') }}</th>
-                                    <th width="5%" class="text-center">{{ __('BILLABLE') }}</th>
-                                    <th width="5%" class="text-center">{{ __('TAX') }}</th>
-                                    <th width="10%">{{ __('CUSTOMER') }}</th>
-                                    <th width="5%"></th>
-                                </tr>
-                                </thead>
-                                <tbody data-repeater-list="items" id="item-tbody">
-                                @for ($i = 0; $i < 2; $i++)
-                                    <tr data-repeater-item class="item-row">
-                                        <td>
-                                            <span class="text-muted me-2 drag-handle"
-                                                  style="cursor: move; font-size: 18px;">
-                                                {{-- nine dots icon again --}}
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none"
-                                                     viewBox="0 0 24 24" color="#babec5" width="16px" height="16px"
-                                                     aria-hidden="true">
-                                                    <path fill="currentColor"
-                                                          d="m10.636 4.565-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0">
-                                                    </path>
-                                                    <path fill="currentColor"
-                                                          d="m10.636 4.565-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M4.636 4.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.071-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0M16.636 4.565l-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.071-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0M10.636 10.565l-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.729 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0">
-                                                    </path>
-                                                    <path fill="currentColor"
-                                                          d="m10.636 10.565-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.729 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.729 0M4.636 10.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M16.636 10.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M10.636 16.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0">
-                                                    </path>
-                                                    <path fill="currentColor"
-                                                          d="m10.636 16.565-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M4.636 16.565l-.071.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.729 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0M16.636 16.565l-.07.071a1.93 1.93 0 0 0 0 2.728l.07.07a1.93 1.93 0 0 0 2.728 0l.07-.07a1.93 1.93 0 0 0 0-2.728l-.07-.07a1.93 1.93 0 0 0-2.728 0">
-                                                    </path>
-                                                </svg>
-                                            </span>
-                                        </td>
-                                        <td><span class="row-number">{{ $i + 1 }}</span></td>
-                                        <td>
-                                            {{ Form::select("items[{$i}][item_id]", $product_services ?? [], null, [
-                                                'class' => 'form-control select2 item-select',
-                                                'placeholder' => 'Select Product/Service',
-                                            ]) }}
-                                        </td>
-                                        <td>
-                                            {{ Form::textarea("items[{$i}][description]", null, ['class' => 'form-control','rows' => 1]) }}
-                                        </td>
-                                        <td>
-                                            {{ Form::number("items[{$i}][quantity]", 1, ['class' => 'form-control text-center item-qty','min' => 1]) }}
-                                        </td>
-                                        <td>
-                                            {{ Form::number("items[{$i}][rate]", null, ['class' => 'form-control text-end item-rate','step' => '0.01','placeholder' => '0.00']) }}
-                                        </td>
-                                        <td>
-                                            {{ Form::number("items[{$i}][amount]", null, ['class' => 'form-control text-end item-amount','step' => '0.01']) }}
-                                        </td>
-                                        <td class="text-center">
-                                            {{ Form::checkbox("items[{$i}][billable]", 1, false, ['class' => 'form-check-input']) }}
-                                        </td>
-                                        <td class="text-center">
-                                            {{ Form::checkbox("items[{$i}][tax_id]", 1, false, ['class' => 'form-check-input']) }}
-                                        </td>
-                                        <td>
-                                            <select name="items[{{ $i }}][customer_id]"
-                                                    class="form-control select2 customer-select">
-                                                <option value="">-</option>
-                                                @foreach ($customers as $id => $name)
-                                                    <option value="{{ $id }}">{{ $name }}</option>
-                                                @endforeach
-                                            </select>
-                                        </td>
-                                        <td>
-                                            <a href="#" data-repeater-delete
-                                               class="text-danger ti ti-trash delete-row"></a>
-                                        </td>
-                                    </tr>
-                                @endfor
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div class="d-flex gap-2 px-2 py-2"
-                             style="background-color:#ffffff;">
-                            <button type="button" id="add-item-line"
-                                    class="qbo-add-line-btn idsTSButton idsF Button-button-6a785d2 Button-size-medium-6a785d2 Button-purpose-standard-6a785d2 Button-priority-primary-6a785d2">
-                                <span class="Button-label-6a785d2">{{ __('Add line') }}</span>
-                            </button>
-                            <button type="button" id="clear-item-lines"
-                                    class="qbo-clear-btn idsTSButton idsF Button-button-6a785d2 Button-size-medium-6a785d2 Button-purpose-standard-6a785d2 Button-priority-primary-6a785d2">
-                                <span class="Button-label-6a785d2">{{ __('Clear all lines') }}</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        {{-- ===================== TOTAL ROW (under Item details) ===================== --}}
-        <div class="bill-total-row">
-            <span class="label">{{ __('Total') }}:</span>
-            <span class="h5 text-primary grand-total-display">$0.00</span>
-        </div>
-    </div>
-</div>
-
-        <!-- ======================== MEMO AND ATTACHMENT TABLE ======================== -->
-        <div class="row" style="padding:20px; margin-bottom: 80px;">
-
-            <div class="col-md-3">
-                <div class="form-group">
-                    <label for="bill_memo" class="form-label">{{ __('Memo') }}</label>
-                    {{-- Using Form::textarea for the Memo field --}}
-                    {{ Form::textarea('memo', null, [
-                        'class' => 'form-control',
-                        'rows' => '5',
-                        'id' => 'bill_memo',
-                        'maxlength' => '4000',
-                        'placeholder' => '' /* Placeholder is empty as per QBO design */,
-                    ]) }}
-                </div>
-            </div>
-
-            <div class="col-md-3">
-                                            <style>
-                                                    .attachment-zone {
-                                                        border: 2px dashed #c4c4c4;
-                                                        border-radius: 4px;
-                                                        padding: 32px;
-                                                        text-align: center;
-                                                        background: #fafafa;
-                                                        cursor: pointer;
-                                                        transition: all 0.2s;
-                                                    }
-
-                                                    .attachment-zone:hover {
-                                                        border-color: #2ca01c;
-                                                        background: #f7f8fa;
-                                                    }
-
-                                                    .attachment-link {
-                                                        color: #0077c5;
-                                                        font-size: 14px;
-                                                        text-decoration: none;
-                                                        font-weight: 500;
-                                                    }
-
-                                                    .attachment-limit {
-                                                        color: #6b6c72;
-                                                        font-size: 12px;
-                                                        margin-top: 8px;
-                                                    }
-                                                .attachments-header {
-                                                    display: flex;
-                                                    justify-content: flex-end;
-                                                    align-items: center;
-                                                    margin-bottom: 4px;
-                                                    font-size: 13px;
-                                                    color: #393a3d;
-                                                }
-
-                                                #attachments-list {
-                                                    margin-bottom: 8px;
-                                                }
-
-                                                .attachment-row {
-                                                    display: flex;
-                                                    align-items: center;
-                                                    gap: 8px;
-                                                    padding: 6px 8px;
-                                                    border: 1px solid #e4e4e7;
-                                                    border-radius: 4px;
-                                                    margin-bottom: 4px;
-                                                    font-size: 13px;
-                                                    background: #ffffff;
-                                                }
-
-                                                .attachment-row .form-check {
-                                                    margin-bottom: 0;
-                                                }
-
-                                                body.theme-6 .form-check-input:checked {
-                                                    background-color: #2ca01c;
-                                                    border-color: #2ca01c;
-                                                }
-
-                                                .form-check {
-                                                    padding-left: 2.75em !important;
-                                                }
-
-                                                .attachment-name {
-                                                    flex: 1;
-                                                    white-space: nowrap;
-                                                    overflow: hidden;
-                                                    text-overflow: ellipsis;
-                                                }
-
-                                                .attachment-size {
-                                                    font-size: 12px;
-                                                    color: #6b6c72;
-                                                }
-
-                                                .attachment-remove {
-                                                    border: none;
-                                                    background: none;
-                                                    cursor: pointer;
-                                                    padding: 0 4px;
-                                                    font-size: 16px;
-                                                    line-height: 1;
-                                                    color: #6b6c72;
-                                                }
-
-                                                .attachment-remove:hover {
-                                                    color: #e81500;
-                                                }
-                                            </style>
-
-                                            <script>
-                                                $(function() {
-                                                    var attachLabel = @json(__('Attach to email'));
-                                                    var maxFileSize = 20 * 1024 * 1024; // 20 MB
-
-                                                    var $zone = $('#attachment-zone');
-                                                    var $addLink = $('#attachment-add-link');
-                                                    var $header = $('#attachments-header');
-                                                    var $list = $('#attachments-list');
-                                                    var $inputsContainer = $('#attachment-file-inputs');
-                                                    var currentInput = null;
-
-                                                    function updateSelectAllState() {
-                                                        var $boxes = $list.find('.attachment-email');
-                                                        var $checked = $boxes.filter(':checked');
-                                                        $('#attachment_select_all').prop('checked',
-                                                            $boxes.length > 0 && $boxes.length === $checked.length
-                                                        );
-                                                    }
-
-                                                    function toggleHeader() {
-                                                        if ($list.find('.attachment-row').length) {
-                                                            $header.removeClass('d-none');
-                                                        } else {
-                                                            $header.addClass('d-none');
-                                                            $('#attachment_select_all').prop('checked', false);
-                                                        }
-                                                    }
-
-                                                    function createAttachmentInput() {
-                                                        var $input = $('<input type="file" class="single-attachment-input d-none">');
-                                                        $inputsContainer.append($input);
-                                                        currentInput = $input;
-
-                                                        $input.on('change', function() {
-                                                            if (!this.files || !this.files.length) return;
-
-                                                            var file = this.files[0];
-
-                                                            if (file.size > maxFileSize) {
-                                                                alert('Max file size is 20 MB');
-                                                                $input.val('');
-                                                                return;
-                                                            }
-
-                                                            var rowId = 'att_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-                                                            // bind the name now so Laravel gets an associative array: attachments[rowId]
-                                                            $input.attr('name', 'attachments[' + rowId + ']');
-
-                                                            var sizeKB = Math.round(file.size / 1024);
-
-                                                            var $row = $(
-                                                                '<div class="attachment-row" data-row-id="' + rowId + '">' +
-                                                                '<div class="form-check">' +
-                                                                '<input class="form-check-input attachment-email" ' +
-                                                                'type="checkbox" ' +
-                                                                'name="attachments_email[' + rowId + ']" checked>' +
-                                                                '<label class="form-check-label">' + attachLabel + '</label>' +
-                                                                '</div>' +
-                                                                '<span class="attachment-name">' + file.name + '</span>' +
-                                                                '<span class="attachment-size">' + sizeKB + ' KB</span>' +
-                                                                '<button type="button" class="attachment-remove" ' +
-                                                                'data-row-id="' + rowId + '">&times;</button>' +
-                                                                '</div>'
-                                                            );
-
-                                                            // move the actual file input into this row (so the file is submitted)
-                                                            $row.append($input);
-                                                            $list.append($row);
-
-                                                            toggleHeader();
-                                                            updateSelectAllState();
-
-                                                            // prepare a fresh empty input for the next "Add attachment"
-                                                            createAttachmentInput();
-                                                        });
-                                                    }
-
-                                                    // first empty input
-                                                    createAttachmentInput();
-
-                                                    // clicking the link or the zone opens current file input
-                                                    $addLink.on('click', function(e) {
-                                                        e.preventDefault();
-                                                        if (currentInput) currentInput.trigger('click');
-                                                    });
-                                                    $zone.on('click', function(e) {
-                                                        if ($(e.target).is('#attachment-add-link') ||
-                                                            $(e.target).closest('.attachment-row').length) {
-                                                            return;
-                                                        }
-                                                        if (currentInput) currentInput.trigger('click');
-                                                    });
-
-                                                    // "Select All" checkbox
-                                                    $('#attachment_select_all').on('change', function() {
-                                                        var checked = $(this).is(':checked');
-                                                        $list.find('.attachment-email').prop('checked', checked);
-                                                    });
-
-                                                    // single checkbox change updates select-all state
-                                                    $(document).on('change', '.attachment-email', function() {
-                                                        updateSelectAllState();
-                                                    });
-
-                                                    // remove one attachment (also removes its file input)
-                                                    $(document).on('click', '.attachment-remove', function() {
-                                                        var rowId = $(this).data('row-id');
-                                                        var $row = $list.find('.attachment-row[data-row-id="' + rowId + '"]');
-                                                        $row.remove();
-                                                        toggleHeader();
-                                                        updateSelectAllState();
-                                                    });
-                                                });
-                                            </script>
-
-                                            <div class="info-field">
-                                                <label>{{ __('Attachments') }}</label>
-
-                                                {{-- header with "Select all" - hidden until first file is added --}}
-                                                <div class="attachments-header d-none" id="attachments-header">
-                                                    <div class="form-check" style="padding-left: 2.75em !important;">
-                                                        <input class="form-check-input" type="checkbox"
-                                                            id="attachment_select_all">
-                                                        <label class="form-check-label" for="attachment_select_all">
-                                                            {{ __('Select All') }}
-                                                        </label>
-                                                    </div>
-                                                </div>
-
-                                                {{-- rows get injected here when files are added --}}
-                                                <div id="attachments-list"></div>
-
-                                                {{-- QBO-like drop zone --}}
-                                                <div class="attachment-zone" id="attachment-zone">
-                                                    <a href="#" class="attachment-link" id="attachment-add-link">
-                                                        {{ __('Add attachment') }}
-                                                    </a>
-                                                    <div class="attachment-limit">{{ __('Max file size: 20 MB') }}</div>
-                                                </div>
-
-                                                {{-- we keep our hidden file inputs here --}}
-                                                <div id="attachment-file-inputs" class="d-none"></div>
-                                            </div>
-            </div>
-
-
-        </div>
-
-    </div>
-
-
-    <!-- ======================== CATEGORY TABLE style and script ======================== -->
-    <style>
-        /* .custom-accordion {
-                                                    border: 1px solid #ddd;
-                                                    border-radius: 5px;
-                                                    overflow: hidden;
-                                                    margin-bottom: 1rem;
-                                                } */
-        #category-table {
-            background: white;
-            border-right: 1px solid #d4d7dc !important;
-            border-bottom: 1px solid #d4d7dc !important;
-            border-left: 0px !important;
-            /* Left side open */
-            border-top: 0px !important;
-            /* Top side open */
-            border-collapse: collapse;
-        }
-
-        .lineitem-toolbar {
-            display: flex;
-            justify-content: flex-end;
-            /* Pushes content to the right */
-            padding: 10px;
-            /* optional spacing */
-        }
-
-
-        .toolbar-buttons {
-            display: flex;
-            gap: 5px;
-        }
-
-        .toolbar-btn {
-
-            border: 1px solid #dcdcdc;
-            padding: 6px;
-            border-radius: 6px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 32px;
-            height: 32px;
-            transition: 0.2s;
-        }
-
-        .toolbar-btn:hover {
-            background: #f5f5f5;
-            border-color: #bcbcbc;
-        }
-
-        .toolbar-btn svg {
-            width: 20px;
-            height: 20px;
-            fill: #6B6C72;
-        }
-
-
-        #category-table thead tr {
-            border-bottom: 1px solid #cfd1d7 !important;
-        }
-
-        #category-table th {
-            border-right: 1px solid #e3e5eb !important;
-            border-bottom: 1px solid #e3e5eb !important;
-            border-top: 0px !important;
-            /* Header top open */
-            border-left: 0px !important;
-            /* Header left open */
-            padding: 12px 8px;
-            font-size: 13px;
-            font-weight: 600;
-            color: #5a5b5f;
-        }
-
-        #category-table td {
-            border-right: 1px solid #e3e5eb !important;
-            border-bottom: 1px solid #e3e5eb !important;
-            border-top: 0px !important;
-            /* Cells top open */
-            border-left: 0px !important;
-            /* Cells left open */
-            padding: 10px 8px;
-            font-size: 13px;
-            color: #2b2c30;
-            vertical-align: middle;
-        }
-
-        #category-table tbody tr {
-            background: white;
-        }
-
-        #category-table tbody tr:hover {
-            background: #fafafa;
-        }
-
-
-
-        .size {
-            width: 270px;
-        }
-
-        .field {
-            width: 185px;
-        }
-
-        .field1 {
-            width: 165px;
-        }
-
-        .TrowserHeader {
-            padding: 10px;
-        }
-
-        .accordion-header {
-            padding: 0.75rem 1rem;
-
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .accordion.open .accordion-content {
-            display: block;
-        }
-
-        .accordion-arrow svg {
-            transition: transform 0.3s;
-            transform: rotate(90deg);
-            /* Default > */
-        }
-
-        .accordion.open .accordion-arrow svg {
-            transform: rotate(180deg);
-            /* v */
-        }
-
-        .accordion-content {
-            padding: 0.5rem 1rem;
-            display: none;
-        }
-
-        .accordion-content.collapsed {
-            display: none;
-        }
-
-        .txp-capability-expenseLayout-N1jWN header[class*='TrowserHeader-header'] button svg {
-            width: 33px;
-            height: 33px;
-        }
-
-        /* Container targeting */
-        .txp-capability-gridWrapper-dVsAS .txp-capability-gridButtons-Uh9M\+ [class*='Button-priority-primary'] {
-            background-color: var(--color-container-background-primary);
-            color: var(--color-text-primary);
-            border-color: var(--color-container-border-primary);
-            border-radius: 4px;
-            /* optional for rounded corners */
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s ease-in-out;
-        }
-
-        /* Padding for label */
-        .Button-size-medium-6a785d2 .Button-label-6a785d2 {
-            padding-left: var(--padding-inline, 8px);
-            padding-right: var(--padding-inline, 8px);
-            display: inline-block;
-        }
-
-        /* Optional: Hover effect */
-        .Button-priority-primary-6a785d2:hover {
-            background-color: #6c6464c0;
-            /* QuickBooks blue hover */
-            color: #000000ff;
-
-        }
-    </style>
-
-    <script>
-        function toggleAccordion(header) {
-            const content = header.nextElementSibling;
-            const arrow = header.querySelector('.accordion-arrow svg');
-
-            if (content.style.display === "block") {
-                // Hide
-                content.style.display = "none";
-                arrow.style.transform = "rotate(0deg)"; // > arrow
-            } else {
-                // Show
-                content.style.display = "block";
-                arrow.style.transform = "rotate(360deg)"; // v arrow
-            }
-        }
-    </script>
-
-
-    <!-- ======================== ITEM TABLE style and script ======================== -->
-    <style>
-        /* .custom-accordion {
-                                                    border: 1px solid #ddd;
-                                                    border-radius: 5px;
-                                                    overflow: hidden;
-                                                    margin-bottom: 1rem;
-                                                } */
-
-        .accordion-header {
-            padding: 0.75rem 1rem;
-
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .accordion.open .accordion-content {
-            display: block;
-        }
-
-        .accordion-arrow svg {
-            transition: transform 0.3s;
-            transform: rotate(90deg);
-            /* Default > */
-        }
-
-        .accordion.open .accordion-arrow svg {
-            transform: rotate(180deg);
-            /* v */
-        }
-
-        .accordion-content {
-            padding: 0.5rem 1rem;
-            display: none;
-        }
-
-        .accordion-content.collapsed {
-            display: none;
-        }
-
-        #item-table {
-            background: white;
-            border-right: 1px solid #d4d7dc !important;
-            border-bottom: 1px solid #d4d7dc !important;
-            border-left: 0px !important;
-            /* Left side open */
-            border-top: 0px !important;
-            /* Top side open */
-            border-collapse: collapse;
-        }
-
-        #item-table thead tr {
-            border-bottom: 1px solid #cfd1d7 !important;
-        }
-
-        #item-table th {
-            border-right: 1px solid #e3e5eb !important;
-            border-bottom: 1px solid #e3e5eb !important;
-            border-top: 0px !important;
-            /* Header top open */
-            border-left: 0px !important;
-            /* Header left open */
-            padding: 12px 8px;
-            font-size: 13px;
-            font-weight: 600;
-            color: #5a5b5f;
-        }
-
-        #item-table td {
-            border-right: 1px solid #e3e5eb !important;
-            border-bottom: 1px solid #e3e5eb !important;
-            border-top: 0px !important;
-            /* cells top open */
-            border-left: 0px !important;
-            /* cells left open */
-            padding: 10px 8px;
-            font-size: 13px;
-            color: #2b2c30;
-            vertical-align: middle;
-        }
-
-        #item-table tbody tr {
-            background: white;
-        }
-
-        #item-table tbody tr:hover {
-            background: #fafafa;
-        }
-    </style>
-
-    <script>
-        function toggleAccordion(header) {
-            const content = header.nextElementSibling;
-            const arrow = header.querySelector('.accordion-arrow svg');
-
-            if (content.style.display === "block") {
-                // Hide
-                content.style.display = "none";
-                arrow.style.transform = "rotate(0deg)"; // > arrow
-            } else {
-                // Show
-                content.style.display = "block";
-                arrow.style.transform = "rotate(360deg)"; // v arrow
-            }
-        }
-    </script>
-
-    <div class="modal-footer-custom fixed-footer">
-        <!-- Left section: secondary actions -->
-        <div class="footer-left d-flex align-items-center gap-3">
-            <button type="button" class="btn btn-link text-success p-2 btn-cancel-custom"
-                data-bs-dismiss="modal" style="
-    color: #00892E;
-    border: 2px solid #00892E;
-    border-color: #00892E;
-    text-decoration: none;
-    font-size: 14px;
-">{{ __('Cancel') }}</button>
-        </div>
-
-        <!-- Center section -->
-        <div class="footer-center d-flex align-items-center">
-            <a href="#" class="small-text-link text-dark" style="
-    font-size: 16px;
-    color: #00892E !important;
-    text-decoration: none;
-    font-weight: 600;
-"> {{ __('Make recurring') }}</a>
-        </div>
-
-        <!-- Right section: primary actions -->
-        <div class="footer-right d-flex align-items-center gap-2">
-            <button type="submit" class="btn btn-light btn-sm-qbo" style="
-    color: #00892E;
-    border: 2px solid #00892E;
-    border-color: #00892E;
-"> {{ __('Save') }}</button>
-            <div class="btn-group">
-                <button type="submit"
-                    class="btn btn-success btn-sm-qbo">{{ __('Save and schedule payment') }}</button>
-                <button type="button" class="btn btn-success btn-sm-qbo dropdown-toggle dropdown-toggle-split"
-                    data-bs-toggle="dropdown" aria-expanded="false">
-                    <span class="visually-hidden">Toggle Dropdown</span>
-                </button>
-                <ul class="dropdown-menu">
-                    <li><a class="dropdown-item" href="#">{{ __('Save and close') }}</a></li>
-                    <li><a class="dropdown-item" href="#">{{ __('Save and print') }}</a></li>
-                </ul>
-            </div>
-        </div>
-    </div>
-
-    <style>
-        body.theme-6 .form-check-input:focus, body.theme-6 .form-select:focus, body.theme-6 .form-control:focus, body.theme-6 .custom-select:focus, body.theme-6 .dataTable-selector:focus, body.theme-6 .dataTable-input:focus {
-    border-color: #00892E;
-    box-shadow: 0 0 0 0 #00892E;
-}
-        /* Sticky footer at the bottom of the viewport */
-        .fixed-footer {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            background: #ffffff;
-            padding: 0.75rem 1.5rem;
-            border-top: 1px solid #dee2e6;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            z-index: 1050;
-            /* above other content */
-        }
-
-        /* Left section links/buttons */
-        .fixed-footer .footer-left {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        /* Center section */
-        .fixed-footer .footer-center {
-            display: flex;
-            align-items: center;
-        }
-
-        /* Right section action buttons */
-        .fixed-footer .footer-right {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        /* Cancel button custom style */
-        .btn-cancel-custom {
-            border: 1px solid #00892e;
-            color: #00892e;
-            padding: 0.25rem 0.75rem;
-            border-radius: 4px;
-            background-color: transparent;
-            font-weight: 500;
-            transition: background-color 0.2s, color 0.2s;
-        }
-
-        .btn-cancel-custom:hover {
-            background-color: rgba(0, 137, 46, 0.1);
-            color: #00892e;
-        }
-
-        /* Primary success button style */
-        .btn-success {
-            background-color: #2ca01c;
-            border-color: #2ca01c;
-            color: #fff;
-        }
-
-        .btn-success:hover {
-            background-color: #25861b;
-            border-color: #25861b;
-        }
-
-        /* Optional: adjust dropdown menu for split button */
-        .fixed-footer .btn-group .dropdown-menu {
-            min-width: auto;
-        }
-    </style>
-
-
-    <style>
-        .modal-footer-custom {
-            background: #ffffff;
-            padding: 0.75rem 1.5rem;
-            border-top: 1px solid #dee2e6;
-            display: flex;
-            justify-content: space-between;
-            /* Left / center / right */
-            align-items: center;
-        }
-
-        /* Left section links/buttons */
-        .modal-footer-custom .footer-left {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        /* Center section (optional) */
-        .modal-footer-custom .footer-center {
-            display: flex;
-            align-items: center;
-        }
-
-        /* Right section action buttons */
-        .modal-footer-custom .footer-right {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        /* Primary success button style */
-        .modal-footer-custom .btn-success {
-            background-color: #00892e;
-            border-color: #00892e;
-            color: #fff;
-        }
-
-        .modal-footer-custom .btn-success:hover {
-            background-color: #25861b;
-            border-color: #25861b;
-        }
-
-        /* Split button dropdown adjustments */
-        .modal-footer-custom .btn-group .dropdown-menu {
-            min-width: auto;
-        }
-
-        .btn-cancel-custom {
-            border: 1px solid #00892e;
-            /* green border */
-            color: #00892e;
-            /* text color green */
-            padding: 0.25rem 0.75rem;
-            /* some padding to look like a button */
-            border-radius: 4px;
-            /* slightly rounded corners */
-            background-color: transparent;
-            /* keep background white/transparent */
-            font-weight: 500;
-            transition: background-color 0.2s, color 0.2s;
-        }
-    </style>
-                {{ Form::close() }}
-
-
-            </div>
-        </div>
-    </div>
-@endsection

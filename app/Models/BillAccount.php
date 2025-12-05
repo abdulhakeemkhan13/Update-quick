@@ -15,6 +15,11 @@ class BillAccount extends Model
         'description',
         'type',
         'ref_id',
+        'order',
+        'billable',
+        'customer_id',
+        'tax',
+        'status',
     ];
 
 

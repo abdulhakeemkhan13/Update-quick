@@ -802,7 +802,7 @@ Route::group(['middleware' => ['verified']], function () {
             Route::resource('bill', BillController::class);
             Route::get('bill/create/{cid}', [BillController::class, 'create'])->name('bill.create');
         }
-    );
+    ); 
     Route::get('customer-contact-list', [CustomerController::class, 'contactList'])->name('customercontact.list');
     Route::get('customer-contact-list-phone-numbers', [CustomerController::class, 'customerContactListPhoneNumbers'])->name('customercontact.list.phone.numbers');
     Route::get('payment/index', [PaymentController::class, 'index'])->name('payment.index')->middleware(['auth', 'XSS', 'revalidate']);

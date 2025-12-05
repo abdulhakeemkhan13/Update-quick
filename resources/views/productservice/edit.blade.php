@@ -1,7 +1,7 @@
 {{ Form::model($productService, array('route' => array('productservice.update', $productService->id), 'method' => 'PUT','enctype' => "multipart/form-data")) }}
 <div class="modal-body">
     {{-- start for ai module--}}
-    @php
+    {{-- @php
         $plan= \App\Models\Utility::getChatGPTSettings();
     @endphp
     @if($plan->chatgpt == 1)
@@ -11,7 +11,7 @@
             <i class="fas fa-robot"></i> <span>{{__('Generate with AI')}}</span>
         </a>
     </div>
-    @endif
+    @endif --}}
     {{-- end for ai module--}}
     <div class="row">
         <div class="col-md-6">
@@ -33,6 +33,7 @@
                 {{ Form::number('sale_price', null, array('class' => 'form-control','required'=>'required','step'=>'0.01')) }}
             </div>
         </div>
+
         <div class="form-group col-md-6">
             {{ Form::label('sale_chartaccount_id', __('Income Account'),['class'=>'form-label']) }}
             {{-- {{ Form::select('sale_chartaccount_id',$incomeChartAccounts,null, array('class' => 'form-control select','required'=>'required')) }} --}}
@@ -41,12 +42,13 @@
                     <option value="{{ $key }}" class="subAccount" {{ ($productService->sale_chartaccount_id == $key) ? 'selected' : ''}}>{{ $chartAccount }}</option>
                     @foreach ($incomeSubAccounts as $subAccount)
                         @if ($key == $subAccount['account'])
-                            <option value="{{ $subAccount['id'] }}" class="ms-5" {{ ($productService->sale_chartaccount_id == $subAccount['id']) ? 'selected' : ''}}> &nbsp; &nbsp;&nbsp; {{ isset($subAccount['code_name']) ? $subAccount['code_name'] : '' }}</option>
+                            <option value="{{ $subAccount['id'] }}" class="ms-5" {{ ($productService->sale_chartaccount_id == $subAccount['id']) ? 'selected' : ''}}> &nbsp; &nbsp;&nbsp; {{ isset($subAccount['code']) ? $subAccount['code'] : '' }} - {{ isset($subAccount['name']) ? $subAccount['name'] : '' }}</option>
                         @endif
                     @endforeach
                 @endforeach
             </select>
         </div>
+
         <div class="col-md-6">
             <div class="form-group">
                 {{ Form::label('purchase_price', __('Purchase Price'),['class'=>'form-label']) }}<span class="text-danger">*</span>
@@ -61,7 +63,7 @@
                     <option value="{{ $key }}" class="subAccount" {{ ($productService->expense_chartaccount_id == $key) ? 'selected' : ''}}>{{ $chartAccount }}</option>
                     @foreach ($expenseSubAccounts as $subAccount)
                         @if ($key == $subAccount['account'])
-                            <option value="{{ $subAccount['id'] }}" class="ms-5" {{ ($productService->expense_chartaccount_id == $subAccount['id']) ? 'selected' : ''}}> &nbsp; &nbsp;&nbsp; {{ $subAccount['code_name'] }}</option>
+                            <option value="{{ $subAccount['id'] }}" class="ms-5" {{ ($productService->expense_chartaccount_id == $subAccount['id']) ? 'selected' : ''}}> &nbsp; &nbsp;&nbsp; {{ isset($subAccount['code']) ? $subAccount['code'] : '' }} - {{ isset($subAccount['name']) ? $subAccount['name'] : '' }}</option>
                         @endif
                     @endforeach
                 @endforeach

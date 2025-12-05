@@ -26,7 +26,13 @@
 @section('action-btn')
     <div class="float-end">
         @can('create bill')
-            <a href="{{ route('expense.create',0) }}" class="btn btn-sm btn-primary" data-bs-toggle="tooltip" title="{{__('Create')}}">
+            {{-- <a href="{{ route('expense.create',0) }}" class="btn btn-sm btn-primary" data-bs-toggle="tooltip" title="{{__('Create')}}">
+                {{__('Create Expense')}}
+                <i class="ti ti-plus"></i>
+            </a> --}}
+            <a href="#" data-url="{{ route('expense.create',0) }}"  class="btn btn-sm btn-primary"
+                data-ajax-popup="true" data-size="fullscreen"
+                data-bs-toggle="tooltip" title="Create Expense">
                 {{__('Create Expense')}}
                 <i class="ti ti-plus"></i>
             </a>
@@ -171,10 +177,17 @@
                                                 @endcan
                                                 @can('edit bill')
                                                     <div class="action-btn bg-primary ms-2">
-                                                        <a href="{{ route('expense.edit',\Crypt::encrypt($expense->id)) }}" class="mx-3 btn btn-sm align-items-center" data-bs-toggle="tooltip" title="Edit" data-original-title="{{__('Edit')}}">
+                                                        <a href="#" data-url="{{ route('expense.edit',\Crypt::encrypt($expense->id)) }}"  class="mx-3 btn btn-sm align-items-center"
+                                                            data-ajax-popup="true" data-size="fullscreen"
+                                                            data-bs-toggle="tooltip" title="Edit Expense">
                                                             <i class="ti ti-pencil text-white"></i>
                                                         </a>
                                                     </div>
+                                                    {{-- <div class="action-btn bg-primary ms-2">
+                                                        <a href="{{ route('expense.edit',\Crypt::encrypt($expense->id)) }}" class="mx-3 btn btn-sm align-items-center" data-bs-toggle="tooltip" title="Edit" data-original-title="{{__('Edit')}}">
+                                                            <i class="ti ti-pencil text-white"></i>
+                                                        </a>
+                                                    </div> --}}
                                                 @endcan
                                                 @can('delete bill')
                                                     <div class="action-btn bg-danger ms-2">
