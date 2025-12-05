@@ -925,6 +925,86 @@
         right: 0;
         bottom: 0;
     }
+    /* QBO SweetAlert Styling */
+    .qbo-popup {
+        border-radius: 8px !important;
+        padding: 32px 40px !important;
+        width: 480px !important;
+        font-family: inherit !important;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
+    }
+
+    .qbo-title {
+        font-size: 20px !important;
+        font-weight: 600 !important;
+        color: #393a3d !important;
+        margin-bottom: 0 !important;
+        text-align: center !important;
+        line-height: 1.4 !important;
+    }
+
+    .qbo-actions {
+        margin-top: 32px !important;
+        gap: 12px !important;
+        justify-content: center !important;
+        display: flex !important;
+    }
+
+    .qbo-cancel {
+        background-color: #fff !important;
+        color: #393a3d !important;
+        border: 1px solid #c4c4c4 !important;
+        border-radius: 4px !important;
+        padding: 8px 32px !important;
+        font-weight: 500 !important;
+        font-size: 14px !important;
+        box-shadow: none !important;
+        order: 1 !important;
+    }
+    .qbo-cancel:hover {
+        background-color: #f4f5f8 !important;
+        border-color: #8d9096 !important;
+    }
+
+    .qbo-confirm {
+        background-color: #00892E !important;
+        color: #fff !important;
+        border: none !important;
+        border-radius: 4px !important;
+        padding: 8px 32px !important;
+        font-weight: 500 !important;
+        font-size: 14px !important;
+        box-shadow: none !important;
+        order: 2 !important;
+    }
+    .qbo-confirm:hover {
+        background-color: #006d25 !important;
+    }
+    /* show horizontal scrollbar for the table area */
+.table-responsive,
+.dataTables_scrollBody {
+    overflow-x: auto !important;
+    scrollbar-width: thin;                 /* Firefox */
+    scrollbar-color: #c1c1c1 #f1f1f1;      /* thumb / track */
+}
+
+/* WebKit (Chrome, Edge, Safari) */
+.table-responsive::-webkit-scrollbar,
+.dataTables_scrollBody::-webkit-scrollbar {
+    height: 8px;                           /* scrollbar thickness */
+}
+
+.table-responsive::-webkit-scrollbar-track,
+.dataTables_scrollBody::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.table-responsive::-webkit-scrollbar-thumb,
+.dataTables_scrollBody::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
 </style>
 
 

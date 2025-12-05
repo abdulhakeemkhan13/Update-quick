@@ -163,7 +163,8 @@ public function store(Request $request)
         if ($total_vendor < $plan->max_venders || $plan->max_venders == -1) {
             $vender                   = new Vender();
             $vender->vender_id        = $this->venderNumber();
-            $vender->name             = $request->name;
+            $fullName = implode(' ', array_filter([$request->first_name, $request->middle_name, $request->last_name]));
+            $vender->name             = !empty($fullName) ? $fullName : $request->name;
             $vender->contact          = $request->contact;
             $vender->email            = $request->email;
             $vender->tax_number       = $request->tax_number;

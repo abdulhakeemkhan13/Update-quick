@@ -206,6 +206,14 @@ Route::get('/fix-autoload', function () {
     return 'Autoload fixed';
 });
 
+// for time activity
+Route::get('/timeActivity', [ExpenseController::class, 'timeActivityCreate'])->name('timeActivity.create');
+Route::post('/timeActivity/store', [ExpenseController::class, 'storeTimeActivity'])->name('timeActivity.store');
+Route::put('/timeActivity/update/{id}', [ExpenseController::class, 'updateTimeActivity'])->name('timeActivity.update');
+
+// for checks(cheque)
+Route::get('/check', [ExpenseController::class, 'checksCreate'])->name('checks.create');
+
 // page and api endpoints
 Route::get('/quickbooks/sync', [QuickBooksApiController::class, 'index'])->name('quickbooks.sync');
 Route::get('/quickbooks/connect', [QuickBooksApiController::class, 'connect'])->name('quickbooks.connect');
@@ -609,6 +617,7 @@ Route::group(['middleware' => ['verified']], function () {
         function () {
             Route::get('customer/{id}/show', [CustomerController::class, 'show'])->name('customer.show');
             Route::resource('customer', CustomerController::class);
+            Route::resource('payment-terms', \App\Http\Controllers\PaymentTermController::class);
         }
     );
 
@@ -2157,6 +2166,7 @@ Route::group(['middleware' => ['verified']], function () {
             Route::any('expense/customer', [ExpenseController::class, 'customer'])->name('expense.customer');
             Route::post('expense/vender', [ExpenseController::class, 'vender'])->name('expense.vender');
             Route::post('expense/employee', [ExpenseController::class, 'employee'])->name('expense.employee');
+            Route::post('expense/payee-address', [ExpenseController::class, 'getPayeeAddress'])->name('expense.payee.address');
 
             Route::post('expense/product/destroy', [ExpenseController::class, 'productDestroy'])->name('expense.product.destroy');
 
