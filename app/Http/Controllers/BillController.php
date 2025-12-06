@@ -19,7 +19,6 @@ use App\Models\JournalItem;
 use App\Models\Settings;
 use App\Models\ProductService;
 use App\Models\ProductServiceCategory;
-use App\Models\Customer;
 use App\Models\StockReport;
 use App\Models\Transaction;
 use App\Models\User;
@@ -38,6 +37,8 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use Auth;
+
+use App\Models\PaymentTerm;
 
 class BillController extends Controller
 {
@@ -219,7 +220,12 @@ public function index(Request $request)
             // Get customers for billable items
             $customers = Customer::where($column, $ownerId)->orderBy('name')->get();
 
-            return view('bill.create', compact('venders', 'bill_number', 'product_services', 'category', 'customFields', 'vendorId', 'chartAccounts', 'subAccounts', 'taxes', 'customers', 'vendorOptions'));
+            $accounts = BankAccount::select('*', \DB::raw("CONCAT(bank_name,' ',holder_name) AS name"))->where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
+
+            $paymentTerms = PaymentTerm::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
+            $termsData = PaymentTerm::where('created_by', \Auth::user()->creatorId())->get();
+
+            return view('bill.create', compact('venders', 'bill_number', 'product_services', 'category', 'customFields', 'vendorId', 'chartAccounts', 'subAccounts', 'taxes', 'customers', 'vendorOptions', 'accounts', 'paymentTerms', 'termsData'));
 
         } else {
             return response()->json(['error' => __('Permission denied.')], 401);
@@ -1128,6 +1134,29 @@ public function index(Request $request)
                 $bill_number = \Auth::user()->billNumberFormat($bill->bill_id);
                 $venders = Vender::where($column, $ownerId)->get()->pluck('name', 'id')->toArray();
                 $venders = ['__add__' => '➕ Add new vendor'] + ['' => 'Select Vendor'] + $venders;
+
+                // Compute vendor options with address for JS
+                $vendersQuery = Vender::where($column, $ownerId)->get();
+                $vendorOptions = [];
+                $vendorOptions[''] = 'Select Vendor';
+                $vendorOptions['add'] = 'Add new vendor';
+                foreach ($vendersQuery as $vender) {
+                    $address = "";
+                    if ($vender->billing_name) $address .= $vender->billing_name . "\n";
+                    if ($vender->billing_address) $address .= $vender->billing_address . "\n";
+                    if ($vender->billing_city || $vender->billing_state || $vender->billing_zip) {
+                        $address .= trim($vender->billing_city . " " . $vender->billing_state . " " . $vender->billing_zip) . "\n";
+                    }
+                    if ($vender->billing_country) $address .= $vender->billing_country . "\n";
+                    if ($vender->billing_phone) $address .= "Phone: " . $vender->billing_phone;
+    
+                    $vendorOptions[$vender->id] = [
+                        'name'    => $vender->name,
+                        'address' => trim($address),
+                        'terms'   => $vender->terms ?? '', 
+                    ];
+                }
+
                 $product_services = ProductService::where($column, $ownerId)->get()->pluck('name', 'id');
 
                 $bill->customField = CustomField::getData($bill, 'bill');
@@ -1154,6 +1183,9 @@ public function index(Request $request)
                 $categoryDetails = $bill->accounts; // BillAccount records
                 $items = $bill->items; // BillProduct records
 
+                $paymentTerms = PaymentTerm::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
+                $termsData = PaymentTerm::where('created_by', \Auth::user()->creatorId())->get();
+
                 return view('bill.edit', compact(
                     'venders',
                     'product_services',
@@ -1166,7 +1198,10 @@ public function index(Request $request)
                     'items',
                     'subAccounts',
                     'taxes',
-                    'customers'
+                    'customers',
+                    'vendorOptions',
+                    'paymentTerms',
+                    'termsData'
                 ));
             } else {
                 return redirect()->back()->with('error', __('Bill Not Found.'));

@@ -115,7 +115,7 @@
 
     /* strip behind the 4 summary cards */
     .vendor-summary-bar{
-        background:#ECEEF1;
+        background: transparent;
         padding:8px 0 0;
         border-radius:0;
     }
@@ -126,7 +126,7 @@
 
 /* slimmer grey strip above cards */
 .vendor-summary-bar{
-    background:#ECEEF1;
+    background: transparent;
     padding:2px 0 0;   /* was 8px */
     border-radius:0;
 }
