@@ -19,11 +19,15 @@ class Purchase extends Model
         'purchase_number',
         'discount_apply',
         'category_id',
+        'txn_id',
+        'txn_type',
+        'owned_by',
         'created_by',
         'voucher_id',
         'po_date',
         'ship_via',
         'ref_no',
+        'tax',
         'ship_to',
         'mailing_address',
         'terms',
@@ -37,9 +41,7 @@ class Purchase extends Model
     public static $statues = [
         'Draft',
         'Sent',
-        'Unpaid',
-        'Partialy Paid',
-        'Paid',
+        'Print',
     ];
     public function vender()
     {
