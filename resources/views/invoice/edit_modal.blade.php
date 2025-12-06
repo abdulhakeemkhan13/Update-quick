@@ -1832,15 +1832,25 @@
                 });
 
                 // sales tax rate select (value should be numeric percentage)
-                var taxRate = parseFloat($('select[name="sales_tax_rate"]').val()) || 0;
+                var taxRate = parseFloat($('select[name="tax_id"] option:selected').data('rate')) || 0;
                 var totalTax = taxableSubtotal * taxRate / 100;
+                var totalAmount = grandSubtotal - totalDiscount + totalTax;
 
                 // update bottom totals
                 $('.subTotal').text(grandSubtotal.toFixed(2));
                 $('.taxableSubtotal').text(taxableSubtotal.toFixed(2));
                 $('.totalDiscount').text(totalDiscount.toFixed(2));
                 $('.totalTax').text(totalTax.toFixed(2));
-                $('.totalAmount').text((grandSubtotal - totalDiscount + totalTax).toFixed(2));
+                $('.totalAmount').text(totalAmount.toFixed(2));
+
+                // Update hidden inputs
+                $('.subtotal_hidden').val(grandSubtotal.toFixed(2));
+                $('.taxable_subtotal_hidden').val(taxableSubtotal.toFixed(2));
+                $('.total_discount_hidden').val(totalDiscount.toFixed(2));
+                $('.total_tax_hidden').val(totalTax.toFixed(2));
+                $('.sales_tax_amount_hidden').val(totalTax.toFixed(2));
+                $('.total_amount_hidden').val(totalAmount.toFixed(2));
+                $('.tax_rate_hidden').val(taxRate);
 
                 // update all subtotal rows inside table
                 recalcSubtotals();
@@ -2081,7 +2091,7 @@
             });
 
             // sales tax rate dropdown changed
-            $(document).on('change', 'select[name="sales_tax_rate"]', function() {
+            $(document).on('change', 'select[name="tax_id"]', function() {
                 recalcTotals();
             });
 
@@ -3882,8 +3892,11 @@
                                     <div class="total-row select-tax-row">
                                         <span>{{ __('Select sales tax rate') }}</span>
                                         <span>
-                                            <select name="sales_tax_rate" class="form-select totals-tax-rate-select">
-                                                <option value="">{{ __('Select a tax rate') }}</option>
+                                            <select name="tax_id" class="form-select totals-tax-rate-select">
+                                                <option value="" data-rate="0">{{ __('Select a tax rate') }}</option>
+                                                @foreach($taxes as $tax)
+                                                    <option value="{{ $tax->id }}" data-rate="{{ $tax->rate }}" {{ isset($invoice) && $invoice->tax_id == $tax->id ? 'selected' : '' }}>{{ $tax->name }} ({{ $tax->rate }}%)</option>
+                                                @endforeach
                                             </select>
                                         </span>
                                     </div>
@@ -4016,12 +4029,14 @@
                         </div>
                     </div>
 
-                    {{-- totals[...] hidden inputs you already added --}}
-                    <input type="hidden" name="totals[sub_total]" id="totals_sub_total">
-                    <input type="hidden" name="totals[taxable_sub_total]" id="totals_taxable_sub_total">
-                    <input type="hidden" name="totals[discount_total]" id="totals_discount_total">
-                    <input type="hidden" name="totals[tax_total]" id="totals_tax_total">
-                    <input type="hidden" name="totals[grand_total]" id="totals_grand_total">
+                    {{-- Hidden inputs for totals --}}
+                    <input type="hidden" name="subtotal" class="subtotal_hidden" value="{{ $invoice->subtotal }}">
+                    <input type="hidden" name="taxable_subtotal" class="taxable_subtotal_hidden" value="{{ $invoice->taxable_subtotal }}">
+                    <input type="hidden" name="total_discount" class="total_discount_hidden" value="{{ $invoice->total_discount }}">
+                    <input type="hidden" name="total_tax" class="total_tax_hidden" value="{{ $invoice->total_tax }}">
+                    <input type="hidden" name="sales_tax_amount" class="sales_tax_amount_hidden" value="{{ $invoice->sales_tax_amount }}">
+                    <input type="hidden" name="total_amount" class="total_amount_hidden" value="{{ $invoice->total_amount }}">
+                    <input type="hidden" name="tax_rate" class="tax_rate_hidden" value="{{ $invoice->tax_rate }}">
 
                     {{-- unified array for all lines --}}
                     <input type="hidden" name="items_payload" id="items_payload">

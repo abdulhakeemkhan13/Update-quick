@@ -28,7 +28,7 @@
 
 @endphp
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" dir="{{ $SITE_RTL == 'on' ? 'rtl' : '' }}">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" dir="{{ $SITE_RTL == 'on' ? 'rtl' : '' }}" data-behaviour="pinned">
 
 <meta name="csrf-token" id="csrf-token" content="{{ csrf_token() }}">
 

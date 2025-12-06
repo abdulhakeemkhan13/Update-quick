@@ -349,15 +349,39 @@ public function store(Request $request)
     public function show($ids)
     {
         try {
-            $id       = Crypt::decrypt($ids);
+            $id = Crypt::decrypt($ids);
         } catch (\Throwable $th) {
             return redirect()->back()->with('error', __('Vendor Not Found.'));
         }
 
-        $id     = \Crypt::decrypt($ids);
+        $id = \Crypt::decrypt($ids);
         $vendor = Vender::find($id);
 
-        return view('vender.show', compact('vendor'));
+        if (!$vendor) {
+            return redirect()->back()->with('error', __('Vendor Not Found.'));
+        }
+
+        if(\Auth::user()->can('show vender'))
+        {
+            $dataTable = new \App\DataTables\VendorsSingleDetailsShowDataTable($id); // Pass vendor ID to DataTable
+            
+            // Fetch all vendors for the sidebar list, sorted by name
+            $vendors = Vender::where('created_by', '=', \Auth::user()->creatorId())
+                        ->orderBy('name')
+                        ->get();
+            
+            // Fetch categories for the filter dropdown
+            $categories = \App\Models\ProductServiceCategory::where('created_by', '=', \Auth::user()->creatorId())
+                        ->where('type', '=', 1) // Expense categories
+                        ->orderBy('name')
+                        ->get();
+
+            return $dataTable->render('vender.show', compact('vendor', 'vendors', 'categories'));
+        }
+        else
+        {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
     }
 
 
