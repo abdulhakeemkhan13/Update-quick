@@ -934,7 +934,7 @@ class VoucherController extends Controller
             return $dataTable->ajax();
         }
 
-        return $dataTable->render('sync.simpletable.index', [ // ✅ keep same view, or create vendorbalance.index
+        return $dataTable->render('sync.simpleview.index', [ // ✅ keep same view, or create vendorbalance.index
             'pageTitle' => $this->pageTitle,
         ]);
     }

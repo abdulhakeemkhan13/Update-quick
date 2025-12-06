@@ -19,7 +19,6 @@ use App\Models\JournalItem;
 use App\Models\Settings;
 use App\Models\ProductService;
 use App\Models\ProductServiceCategory;
-use App\Models\Customer;
 use App\Models\StockReport;
 use App\Models\Transaction;
 use App\Models\User;

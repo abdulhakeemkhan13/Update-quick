@@ -153,13 +153,32 @@
                                 <input type="date" class="form-control " name="end_date" id="filter-end-date"
                                     value="{{ Carbon\Carbon::now()->format('Y-m-d') }}">
                             </div>
-                            {{-- <div class="filter-item col-md-2 mt-4">
-                                <button class="btn btn-view-options" id="view-options-btn"
-                                    style="border: none !important; border-left: 1px solid #d1d5db !important; border-radius: 0px !important; width: 130px;">
-                                    <i class="fa fa-eye"></i>
-                                    <span>View options</span>
-                                </button>
-                            </div> --}}
+                            <div class="filter-item col-md-2 mt-4">
+                                <div class="view-options-wrapper">
+                                    <button class="btn btn-view-options" id="view-options-btn"
+                                        style="border: none !important;  border-left: 1px solid #d1d5db !important; border-radius: 0px !important; width: 130px;">
+                                        <i class="fa fa-eye"></i>
+                                        <span>View options</span>
+                                    </button>
+
+                                    <!-- Dropdown Menu -->
+                                
+                                <div class="view-dropdown" id="view-options-dropdown">
+                                    <div class="view-item" data-view="compact">Compact view</div>
+                                    <div class="view-item selected" data-view="normal">
+                                        <i class="fa fa-check text-success"></i> Normal view
+                                    </div>
+                                    <div class="view-item" data-view="cozy">Cozy view</div>
+                                    <div class="view-item" data-view="comfort">Comfort view</div>
+
+                                    <hr class="dropdown-divider ">
+
+                                    <div class="view-item disabled " id="expand-all">Expand all</div>
+                                    <div class="view-item disabled " id="collapse-all">Collapse all</div>
+                                </div>
+                                </div>
+                                </div>
+        
                         </div>
                     </div>
 
@@ -385,7 +404,7 @@
                             <input type="checkbox" id="time-prepared" checked> Time prepared
                         </label>
                         <label class="checkbox-label">
-                            <input type="checkbox" id="report-basis" checked> Report basis (cash vs. accrual)
+                            <input type="checkbox" id="report-basis" > Report basis (cash vs. accrual)
                         </label>
                     </div>
                     <div class="alignment-group">
@@ -480,6 +499,115 @@
         });
     </script>
     <script>
+        document.getElementById("view-options-btn").addEventListener("click", function() {
+            document.getElementById("view-options-dropdown").style.display =
+                document.getElementById("view-options-dropdown").style.display === "block" ?
+                "none" :
+                "block";
+        });
+
+
+        // Close dropdown on click outside
+        document.addEventListener("click", function(e) {
+            const dropdown = document.getElementById("view-options-dropdown");
+            const button = document.getElementById("view-options-btn");
+
+            if (!button.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.style.display = "none";
+            }
+        });
+
+        // Select view and show checkmark
+        document.querySelectorAll(".view-item").forEach(item => {
+            item.addEventListener("click", function() {
+
+                if (this.classList.contains("db_disabled")) return;
+
+                // REMOVE old selected
+                document.querySelectorAll(".view-item").forEach(i => {
+                    i.classList.remove("selected");
+                    if (i.querySelector(".fa-check")) i.querySelector(".fa-check").remove();
+                });
+
+                // ADD selected + checkmark
+                this.classList.add("selected");
+                this.insertAdjacentHTML("afterbegin", '<i class="fa fa-check text-success"></i>');
+
+                let viewType = this.getAttribute("data-view");
+
+                let table = document.getElementById("customer-balance-table");
+
+                // Remove previous view class
+                table.classList.remove("table-normal", "table-compact", "table-cozy", "table-comfort");
+
+                // Add new class
+                table.classList.add("table-" + viewType);
+                
+            });
+        });
+
+        // EXPAND ALL
+        $('#expand-all').on('click', function () {
+            // Expand every section
+            $('.toggle-section').each(function () {
+                const $this = $(this);
+                const group = $this.data('group');
+                const $chevron = $this.find('.toggle-chevron');
+                const $childRows = $('.group-' + group);
+                const $sectionTotal = $('.section-total-display[data-group="' + group + '"], .section-total-amount[data-group="' + group + '"]');
+
+                // Only expand if currently collapsed
+                if ($chevron.text() === "▶") {
+                    $childRows.show();
+                    $chevron.text("▼");
+                    $sectionTotal.hide();
+                }
+            });
+            $('.toggle-bucket').each(function () {
+
+                let $parent = $(this);
+                let bucket = $parent.attr('class').match(/bucket-([^\s]+)/)[1];
+                let $icon = $parent.find('.icon');
+
+                // show children + subtotal
+                $('.' + 'bucket-' + bucket).not($parent).show();
+
+                // set icon to expanded
+                $icon.text('▼');
+            });
+        });
+
+        // COLLAPSE ALL
+        $('#collapse-all').on('click', function () {
+            // Collapse every section
+            $('.toggle-section').each(function () {
+                const $this = $(this);
+                const group = $this.data('group');
+                const $chevron = $this.find('.toggle-chevron');
+                const $childRows = $('.group-' + group);
+                const $sectionTotal = $('.section-total-display[data-group="' + group + '"], .section-total-amount[data-group="' + group + '"]');
+
+                // Only collapse if currently expanded
+                if ($chevron.text() === "▼") {
+                    $childRows.hide();
+                    $chevron.text("▶");
+                    $sectionTotal.show();
+                }
+            });
+            $('.toggle-bucket').each(function () {
+
+                let $parent = $(this);
+                let bucket = $parent.attr('class').match(/bucket-([^\s]+)/)[1];
+                let $icon = $parent.find('.icon');
+
+                // hide children + subtotal
+                $('.' + 'bucket-' + bucket).not($parent).hide();
+
+                // set icon to collapsed
+                $icon.text('▶');
+            });
+        });
+
         function buildColumnsFromTable() {
             const headers = document.querySelectorAll('#customer-balance-table thead th');
             const container = document.querySelector('#sortable-columns');
@@ -540,8 +668,6 @@
                             'checked', false);
                     });
 
-
-                    { { --buildColumnsFromTable(); --} }
                 } else {
                     setTimeout(hideDefaultColumns, 500); // retry until ready
                     console.warn("DataTable instance not ready yet...");
@@ -626,6 +752,87 @@
 
 
     <style>
+
+                /* NORMAL VIEW (default) */
+        .table-normal tbody tr td {
+            padding: 12px 10px;
+            font-size: 14px;
+        }
+
+        /* COMPACT VIEW */
+        .table-compact tbody tr td {
+            padding: 4px 6px !important;
+            font-size: 12px !important;
+        }
+
+        /* COZY VIEW */
+        .table-cozy tbody tr td {
+            padding: 16px 12px !important;
+            font-size: 15px !important;
+        }
+
+        /* COMFORT VIEW */
+        .table-comfort tbody tr td {
+            padding: 20px 14px !important;
+            font-size: 16px !important;
+        }
+
+
+        .view-options-wrapper {
+            position: relative;
+        }
+
+        .db_disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+            color: darkgray;
+            pointer-events: none;
+        }
+
+        .view-dropdown {
+            position: absolute;
+            top: 40px;
+            left: 0;
+            width: 160px;
+            background: white;
+            border: 1px solid #dcdcdc;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+            border-radius: 4px;
+            padding: 6px 0;
+            display: none;
+            z-index: 999;
+        }
+
+        
+        .view-item {
+            padding: 8px 14px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .view-item:hover {
+            background: #f2f2f2;
+        }
+
+        .view-item.selected {
+            color: #007b00;
+            font-weight: 500;
+        }
+
+        .dropdown-divider {
+            margin: 5px 0;
+        }
+
+        .db_disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+            color: darkgray;
+            pointer-events: none;
+        }
+
         /* Base styling */
         * {
             box-sizing: border-box;
@@ -1345,8 +1552,8 @@
 
                 switch (period) {
                     case 'all_dates':
-                        startDate = null;
-                        endDate = null;
+                        startDate = today.clone().subtract(10, 'year');
+                        endDate = today.clone();
                         break;
 
                     case 'custom_date':
@@ -1546,6 +1753,8 @@
                 // Update hidden date fields
                 $('#filter-start-date').val(startDate.format('YYYY-MM-DD'));
                 $('#filter-end-date').val(endDate.format('YYYY-MM-DD'));
+                $('#sidebar-filter-start-date').val(startDate.format('YYYY-MM-DD'));
+                $('#sidebar-filter-end-date').val(endDate.format('YYYY-MM-DD'));
 
                 // Update DateRangePicker to reflect the new dates
                 // $('#daterange').data('daterangepicker').setStartDate(startDate);
@@ -1921,10 +2130,10 @@
                 }
             }); */
 
-            // View options functionality
-            $('#view-options-btn').on('click', function () {
-                alert('View options panel would open here with additional display settings');
-            });
+            // // View options functionality
+            // $('#view-options-btn').on('click', function () {
+            //     alert('View options panel would open here with additional display settings');
+            // });
 
             // Filter button functionality
             $('#filter-btn').on('click', function () {

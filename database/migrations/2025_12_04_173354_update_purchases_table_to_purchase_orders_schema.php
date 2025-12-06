@@ -30,6 +30,8 @@ class UpdatePurchasesTableToPurchaseOrdersSchema extends Migration
             $table->decimal('tax_total', 16, 2)->default(0)->after('subtotal');
             $table->decimal('shipping', 16, 2)->default(0)->after('tax_total');
             $table->decimal('total', 16, 2)->default(0)->after('shipping');
+            $table->integer('txn_id')->nullable()->after('total');
+            $table->integer('txn_type')->nullable()->after('txn_id');
 
             $table->integer('category_id')->nullable()->change();
             $table->integer('warehouse_id')->nullable()->change();
@@ -58,6 +60,7 @@ class UpdatePurchasesTableToPurchaseOrdersSchema extends Migration
                 'tax_total',
                 'shipping',
                 'total',
+                'bill_id',
                 'owned_by',
             ]);
         });
