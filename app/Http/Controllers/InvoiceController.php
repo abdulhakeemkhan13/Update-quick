@@ -512,7 +512,7 @@ class InvoiceController extends Controller
 
     public function store(Request $request)
     {
-        // dd($request->all());
+        dd($request->all());
         \DB::beginTransaction();
         try {
             if (\Auth::user()->can('create invoice')) {
@@ -582,6 +582,8 @@ class InvoiceController extends Controller
                 $invoice->total_tax = $request->total_tax ?? 0;
                 $invoice->sales_tax_amount = $request->sales_tax_amount ?? 0;
                 $invoice->total_amount = $request->total_amount ?? 0;
+                $invoice->tax_id = $request->tax_id;
+                $invoice->tax_rate = $request->tax_rate;
                 $invoice->memo = $request->memo;
                 $invoice->note = $request->note;
 
@@ -1550,6 +1552,16 @@ class InvoiceController extends Controller
                     // $invoice->ship_to = $request->ship_to;
                     $invoice->terms = $request->terms;
 
+                    // Store calculated totals (Added for Update)
+                    $invoice->subtotal = $request->subtotal ?? 0;
+                    $invoice->taxable_subtotal = $request->taxable_subtotal ?? 0;
+                    $invoice->total_discount = $request->total_discount ?? 0;
+                    $invoice->total_tax = $request->total_tax ?? 0;
+                    $invoice->sales_tax_amount = $request->sales_tax_amount ?? 0;
+                    $invoice->total_amount = $request->total_amount ?? 0;
+                    $invoice->tax_id = $request->tax_id;
+                    $invoice->tax_rate = $request->tax_rate;
+
                     // Handle logo upload
                     if ($request->hasFile('company_logo')) {
                         // Delete old logo if exists
@@ -1647,7 +1659,6 @@ class InvoiceController extends Controller
                 } else {
                     return redirect()->back()->with('error', __('Permission denied.'));
                 }
-            } else {
                 return redirect()->back()->with('error', __('Permission denied.'));
             }
         } catch (\Exception $th) {

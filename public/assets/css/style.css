@@ -103,7 +103,8 @@ body {
     line-height: var(--bs-body-line-height);
     color: var(--bs-body-color);
     text-align: var(--bs-body-text-align);
-    background-color: var(--bs-body-bg) !important;
+    /* background-color: var(--bs-body-bg) !important; */
+    background-color: #ffffff !important;
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
@@ -16907,7 +16908,7 @@ body.theme-5 .card .card-header h5:after, body.theme-5 .card .card-header .h5:af
 }
 
 body.theme-6 {
-    background: linear-gradient(141.55deg, rgba(240, 244, 243, 0) 3.46%, #f0f4f3 99.86%);
+    /* background: linear-gradient(141.55deg, rgba(240, 244, 243, 0) 3.46%, #f0f4f3 99.86%); */
 }
 
 body.theme-6 .bg-primary {
