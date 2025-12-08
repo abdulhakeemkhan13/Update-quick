@@ -443,7 +443,7 @@
                     </div>
                     <div class="col-auto mt-4">
                         @can('create invoice')
-                            <a href="#" class="btn btn-sm btn-primary" data-bs-toggle="modal"
+                            <a href="{{ route('invoice.create', 0) }}" class="btn btn-sm btn-primary" data-bs-toggle="modal"
                                 data-bs-target="#createInvoiceModal" data-bs-toggle="tooltip" title="{{ __('Create') }}">
                                 {{ __('Create Invoice') }}
                                 <i class="ti ti-plus"></i>

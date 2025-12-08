@@ -39,6 +39,7 @@ use App\Models\Trainer;
 use App\Models\Training;
 use App\Models\User;
 use App\Models\Utility;
+use App\Models\DashboardWidget;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -163,7 +164,22 @@ class DashboardController extends Controller
                         $data['storage_limit'] = 0;
                     }
 
-                    return view('dashboard.account-dashboard', $data);
+                    // Load dashboard widgets for current user
+                    $userId = \Auth::id();
+                    $widgets = DashboardWidget::where('user_id', $userId)
+                        ->where('enabled', true)
+                        ->orderBy('y')
+                        ->orderBy('x')
+                        ->get();
+                    
+                    if ($widgets->isEmpty()) {
+                        $widgets = DashboardWidget::createDefaultForUser($userId);
+                    }
+                    
+                    $data['widgets'] = $widgets;
+                    $data['widgetDefs'] = config('dashboard.widgets');
+
+                    return view('dashboard.qbo-dashboard', $data);
                 } else {
 
                     return $this->hrm_dashboard_index();
@@ -189,6 +205,93 @@ class DashboardController extends Controller
         }
     }
     
+    /**
+     * Save dashboard widget layout for the authenticated user
+     */
+    public function saveAccountLayout(Request $request)
+    {
+        $request->validate([
+            'widgets' => 'required|array',
+            'widgets.*.id' => 'required|integer',
+            'widgets.*.x' => 'required|integer|min:0',
+            'widgets.*.y' => 'required|integer|min:0',
+            'widgets.*.w' => 'required|integer|min:1',
+            'widgets.*.h' => 'required|integer|min:1',
+        ]);
+
+        $userId = \Auth::id();
+
+        foreach ($request->widgets as $widget) {
+            DashboardWidget::where('id', $widget['id'])
+                ->where('user_id', $userId)
+                ->update([
+                    'x' => $widget['x'],
+                    'y' => $widget['y'],
+                    'w' => $widget['w'],
+                    'h' => $widget['h'],
+                ]);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Layout saved successfully']);
+    }
+
+    /**
+     * Toggle a single widget on/off
+     */
+    public function toggleWidget(Request $request)
+    {
+        $request->validate([
+            'widget_id' => 'required|integer',
+            'enabled' => 'required|boolean',
+        ]);
+
+        $userId = \Auth::id();
+        
+        DashboardWidget::where('id', $request->widget_id)
+            ->where('user_id', $userId)
+            ->update(['enabled' => $request->enabled]);
+
+        return response()->json(['success' => true]);
+    }
+
+    /**
+     * Update multiple widget enabled states (from modal)
+     */
+    public function updateWidgets(Request $request)
+    {
+        $request->validate([
+            'widgets' => 'required|array',
+            'widgets.*.key' => 'required|string',
+            'widgets.*.enabled' => 'required|boolean',
+        ]);
+
+        $userId = \Auth::id();
+        $widgetDefs = config('dashboard.widgets');
+
+        foreach ($request->widgets as $widget) {
+            $existing = DashboardWidget::where('user_id', $userId)
+                ->where('key', $widget['key'])
+                ->first();
+
+            if ($existing) {
+                $existing->update(['enabled' => $widget['enabled']]);
+            } elseif ($widget['enabled'] && isset($widgetDefs[$widget['key']])) {
+                // Create new widget at bottom of grid
+                $maxY = DashboardWidget::where('user_id', $userId)->max('y') ?? 0;
+                DashboardWidget::create([
+                    'user_id' => $userId,
+                    'key' => $widget['key'],
+                    'x' => 0,
+                    'y' => $maxY + 1,
+                    'w' => 6,  // 6 columns = 50% width in 12-column grid
+                    'h' => 1,
+                    'enabled' => true,
+                ]);
+            }
+        }
+
+        return response()->json(['success' => true]);
+    }
 
     public function project_dashboard_index()
     {

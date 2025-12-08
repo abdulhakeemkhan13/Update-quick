@@ -7,7 +7,7 @@
 <!-- [ Main Content ] end -->
 <footer class="dash-footer">
     <div class="footer-wrapper">
-        <div class="py-1">
+        <!-- <div class="py-1">
             <p class="mb-0 text-muted"> &copy;
                 {{ date('Y') }} {{ $setting['footer_text'] ? $setting['footer_text'] : config('app.name', 'CSuite') }}
             </p>
@@ -17,7 +17,7 @@
                 <a href="{{ route('license') }}">License Agreement</a> |
                 <a href="{{ route('privacy.policy') }}">Privacy Policy</a>
             </p>
-        </div>
+        </div> -->
     </div>
 </footer>
 
