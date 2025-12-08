@@ -27,13 +27,13 @@
     <div class="float-end">
         @can('create bill')
 
-            <button class="btn btn-sm btn-primary openExpenseModal" data-url="{{ route('expense.create', 0) }}" data-bs-toggle="tooltip" title="{{__('Create Expense')}}">
+            <button class="btn btn-sm btn-primary openChecksModal" data-url="{{ route('expense.create', 0) }}" data-bs-toggle="tooltip" title="{{__('Create Expense')}}">
                 {{ __('Create Expense') }}
 
            {{-- <a href="#" data-url="{{ route('expense.create',0) }}"  class="btn btn-sm btn-primary"
                 data-ajax-popup="true" data-size="fullscreen"
                 data-bs-toggle="tooltip" title="Create Expense">
-                {{__('Create Expense')}}--}}
+                {{__('Create Expense')}} --}}
 
                 <i class="ti ti-plus"></i>
             </button>

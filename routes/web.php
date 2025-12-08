@@ -995,6 +995,16 @@ Route::group(['middleware' => ['verified']], function () {
             Route::resource('cash-payment-voucher', CashPaymentVoucherController::class);
         }
     );
+
+    Route::group(
+        [
+            'middleware' => [
+                'auth',
+                'XSS',
+                'revalidate',
+            ],
+        ],
+        function () {
     //syncsuite data
     Route::get('/ledger', [VoucherController::class, 'ledger'])->name('ledger.index');
     Route::get('/trial-balance', [TrialBalanceController::class, 'index'])->name('trial-balance.index');
@@ -1078,6 +1088,9 @@ Route::group(['middleware' => ['verified']], function () {
     Route::get("/expensesandvendors/expensesbyvendorsummary", [VoucherController::class, 'expensesbyvendorsummary'])
         ->name("expenses.expenses_by_vendor_summary");
 
+    Route::get("/expensesandvendors/purchasesbyproductservicedetail", [VoucherController::class, 'purchasesbyproductservicedetail'])
+        ->name("expenses.purchases_by_product_service_detail");
+
 
     // Abdullah For My Accountant
     Route::get("/formyaccountant/account-list", [VoucherController::class, 'AccountList'])
@@ -1085,7 +1098,8 @@ Route::group(['middleware' => ['verified']], function () {
 
     // Abdullah Excel Export Route
     Route::post('/export-datatable', [VoucherController::class, 'ExportReport'])->name('export.datatable');
-
+    }
+    );
 
     // cya routes
     Route::post('/ai/ask-assistant', [ciaController::class, 'performaction'])->name('askassistant');

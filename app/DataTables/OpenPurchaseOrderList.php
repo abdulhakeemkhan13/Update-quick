@@ -132,131 +132,102 @@ class OpenPurchaseOrderList extends DataTable
         ?? request()->get('endDate')
         ?? Carbon::now()->endOfDay()->format('Y-m-d');
 
-    return DB::table('purchases')
-        ->select(
-            'purchases.id',
-            'purchases.purchase_id',
-            'purchases.purchase_number',
-            'purchases.notes as memo',
-            'purchases.ship_via',
-            'purchases.purchase_date as transaction_date',
-            'venders.name as vendor_name',
+   return DB::table('purchases')
+    ->select(
+        'purchases.id',
+        'purchases.purchase_id',
+        'purchases.purchase_number',
+        'purchases.notes as memo',
+        'purchases.ship_via',
+        'purchases.purchase_date as transaction_date',
+        'venders.name as vendor_name',
 
-            // PRODUCT TOTAL
-            DB::raw('(
-                SELECT IFNULL(SUM(
-                    (pp.price * pp.quantity)
-                    - IFNULL(pp.discount, 0)
-                    +
-                    (
-                        SELECT IFNULL(SUM(
-                            (pp2.price * pp2.quantity - IFNULL(pp2.discount,0)) 
-                            * (t.rate / 100)
-                        ), 0)
-                        FROM purchase_products pp2
-                        LEFT JOIN taxes t ON FIND_IN_SET(t.id, pp2.tax) > 0
-                        WHERE pp2.purchase_id = purchases.id
-                    )
-                ), 0)
+        // PRODUCT TOTAL
+        DB::raw('(
+            SELECT IFNULL(SUM(
+                (pp.price * pp.quantity)
+                - IFNULL(pp.discount, 0)
+                + (
+                    SELECT IFNULL(SUM(
+                        (pp2.price * pp2.quantity - IFNULL(pp2.discount,0)) 
+                        * (t.rate / 100)
+                    ), 0)
+                    FROM purchase_products pp2
+                    LEFT JOIN taxes t ON FIND_IN_SET(t.id, pp2.tax) > 0
+                    WHERE pp2.purchase_id = purchases.id
+                )
+            ), 0)
+            FROM purchase_products pp
+            WHERE pp.purchase_id = purchases.id
+        ) AS product_total'),
+
+        // ACCOUNT TOTAL
+        DB::raw('(
+            SELECT IFNULL(SUM(
+                poa.price
+            ), 0)
+            FROM purchase_order_accounts poa
+            WHERE poa.ref_id = purchases.id
+        ) AS account_total'),
+
+        // AMOUNT = PRODUCTS + ACCOUNTS
+        DB::raw('(
+            (
+                SELECT IFNULL(SUM(pp.price - IFNULL(pp.discount, 0)), 0)
                 FROM purchase_products pp
                 WHERE pp.purchase_id = purchases.id
-            ) AS product_total'),
-
-            // ACCOUNT TOTAL
-            DB::raw('(
-                SELECT IFNULL(SUM(
-                    poa.price * poa.quantity_ordered
-                ), 0)
+            )
+            +
+            (
+                SELECT IFNULL(SUM(poa.price), 0)
                 FROM purchase_order_accounts poa
                 WHERE poa.ref_id = purchases.id
-                AND poa.type = "Purchase Order"
-            ) AS account_total'),
+            )
+        ) AS amount'),
 
-            // AMOUNT = PRODUCTS + CATEGORIES
-            DB::raw('(
+        // PAYMENT TOTAL (not for PO)
+        DB::raw('(
+            CASE WHEN purchases.type = "Purchase Order" THEN 0
+            ELSE (
+                SELECT IFNULL(SUM(amount), 0)
+                FROM purchase_payments
+                WHERE purchase_id = purchases.id
+            )
+            END
+        ) AS payments_total'),
+
+        // OPEN BALANCE
+        DB::raw('(
+            (
                 (
-                    SELECT IFNULL(SUM(
-                        (pp.price * pp.quantity)
-                        - IFNULL(pp.discount, 0)
-                        +
-                        (
-                            SELECT IFNULL(SUM(
-                                (pp2.price * pp2.quantity - IFNULL(pp2.discount,0))
-                                * (t.rate / 100)
-                            ), 0)
-                            FROM purchase_products pp2
-                            LEFT JOIN taxes t ON FIND_IN_SET(t.id, pp2.tax) > 0
-                            WHERE pp2.purchase_id = purchases.id
-                        )
-                    ), 0)
+                    SELECT IFNULL(SUM(pp.price - IFNULL(pp.discount, 0)), 0)
                     FROM purchase_products pp
                     WHERE pp.purchase_id = purchases.id
                 )
                 +
                 (
-                    SELECT IFNULL(SUM(poa.price * poa.quantity_ordered), 0)
+                    SELECT IFNULL(SUM(poa.price), 0)
                     FROM purchase_order_accounts poa
                     WHERE poa.ref_id = purchases.id
-                    AND poa.type = "Purchase Order"
                 )
-            ) AS amount'),
-
-            // PAYMENT TOTAL (not for PO)
-            DB::raw('(
-                CASE WHEN purchases.type = "Purchase Order" THEN 0
+            )
+            -
+            CASE 
+                WHEN purchases.type = "Purchase Order" THEN 0
                 ELSE (
                     SELECT IFNULL(SUM(amount), 0)
                     FROM purchase_payments
                     WHERE purchase_id = purchases.id
                 )
-                END
-            ) AS payments_total'),
+            END
+        ) AS open_balance')
+    )
+    ->join('venders', 'venders.id', '=', 'purchases.vender_id')
+    ->where('purchases.created_by', \Auth::user()->creatorId())
+    ->whereBetween('purchases.purchase_date', [$start, $end])
+    ->where('purchases.status', '!=', '2')
+    ->orderBy('purchases.purchase_date', 'asc');
 
-            // OPEN BALANCE
-            DB::raw('(
-                (
-                    (
-                        SELECT IFNULL(SUM(
-                            (pp.price * pp.quantity)
-                            - IFNULL(pp.discount, 0)
-                            +
-                            (
-                                SELECT IFNULL(SUM(
-                                    (pp2.price * pp2.quantity - IFNULL(pp2.discount,0))
-                                    * (t.rate / 100)
-                                ), 0)
-                                FROM purchase_products pp2
-                                LEFT JOIN taxes t ON FIND_IN_SET(t.id, pp2.tax) > 0
-                                WHERE pp2.purchase_id = purchases.id
-                            )
-                        ), 0)
-                        FROM purchase_products pp
-                        WHERE pp.purchase_id = purchases.id
-                    )
-                    +
-                    (
-                        SELECT IFNULL(SUM(poa.price * poa.quantity_ordered), 0)
-                        FROM purchase_order_accounts poa
-                        WHERE poa.ref_id = purchases.id
-                        AND poa.type = "Purchase Order"
-                    )
-                )
-                -
-                CASE 
-                    WHEN purchases.type = "Purchase Order" THEN 0
-                    ELSE (
-                        SELECT IFNULL(SUM(amount), 0)
-                        FROM purchase_payments
-                        WHERE purchase_id = purchases.id
-                    )
-                END
-            ) AS open_balance')
-        )
-        ->join('venders', 'venders.id', '=', 'purchases.vender_id')
-        ->where('purchases.created_by', \Auth::user()->creatorId())
-        ->whereBetween('purchases.purchase_date', [$start, $end])
-        ->where('purchases.status', '!=', '2')
-        ->orderBy('purchases.purchase_date', 'asc');
 }
 
 

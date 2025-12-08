@@ -10,6 +10,7 @@ use App\Models\Transaction;
 use App\Models\VendorCredit;
 use App\Models\Vender;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Yajra\DataTables\Html\Button;
 use Yajra\DataTables\Html\Column;
 use Yajra\DataTables\Html\Editor\Editor;
@@ -93,239 +94,251 @@ class VendorsSingleDetailsShowDataTable extends DataTable
     }
 
     public function query()
-    {
-        $transactions = collect();
-        $vendorId = $this->vendor_id;
-        $creatorId = \Auth::user()->creatorId();
-        $transactionType = request()->get('transaction_type', '');
-        
-        $vendor = Vender::find($vendorId);
-        $vendorName = $vendor->name ?? '-';
-        
-        // Get date filters
-        $dateFrom = request()->get('date_from');
-        $dateTo = request()->get('date_to');
-        $status = request()->get('status');
-        $categoryId = request()->get('category');
-        
-        // Bills (type = 'Bill')
-        if (empty($transactionType) || $transactionType == 'bill') {
-            $billsQuery = Bill::with('category')
-                ->where('vender_id', $vendorId)
-                ->where('created_by', $creatorId)
-                ->where('type', 'Bill');
-            
-            if ($dateFrom) $billsQuery->whereDate('bill_date', '>=', $dateFrom);
-            if ($dateTo) $billsQuery->whereDate('bill_date', '<=', $dateTo);
-            if ($status !== null && $status !== '') $billsQuery->where('status', $status);
-            if ($categoryId) $billsQuery->where('category_id', $categoryId);
-            
-            $bills = $billsQuery->get();
-            
-            foreach ($bills as $bill) {
-                $categoryName = '-';
-                if ($bill->category) {
-                    $categoryName = $bill->category->name;
-                }
-                
-                $transactions->push([
-                    'id' => 'bill_' . $bill->id,
-                    'date' => $bill->bill_date,
-                    'type' => 'Bill',
-                    'number' => '#' . \Auth::user()->billNumberFormat($bill->bill_id),
-                    'payee' => $vendorName,
-                    'category' => $categoryName,
-                    'total' => $bill->getTotal(),
-                    'status' => Bill::$statues[$bill->status] ?? '-',
-                    'url' => route('bill.show', \Crypt::encrypt($bill->id)),
-                    'edit_url' => route('bill.edit', \Crypt::encrypt($bill->id)),
-                ]);
-            }
+{
+    $transactions = collect();
+    $vendorId = $this->vendor_id;
+    $creatorId = \Auth::user()->creatorId();
+    $transactionType = request()->get('transaction_type', '');
+
+    $vendor = Vender::find($vendorId);
+    $vendorName = $vendor->name ?? '-';
+
+    // Get date filters
+    $dateFrom = request()->get('date_from');
+    $dateTo = request()->get('date_to');
+    $status = request()->get('status');
+    $categoryId = request()->get('category');
+
+    // --------------------------------------------------------
+    // 1. BILLS (Standard Bills)
+    // --------------------------------------------------------
+    if (empty($transactionType) || $transactionType == 'bill') {
+        $billsQuery = Bill::with('category')
+            ->where('vender_id', $vendorId)
+            ->where('created_by', $creatorId)
+            ->where('type', 'Bill');
+
+        if ($dateFrom) $billsQuery->whereDate('bill_date', '>=', $dateFrom);
+        if ($dateTo) $billsQuery->whereDate('bill_date', '<=', $dateTo);
+        if ($status !== null && $status !== '') $billsQuery->where('status', $status);
+        if ($categoryId) $billsQuery->where('category_id', $categoryId);
+
+        $bills = $billsQuery->get();
+
+        foreach ($bills as $bill) {
+            $categoryName = $bill->category ? $bill->category->name : '-';
+
+            $transactions->push([
+                'id' => 'bill_' . $bill->id,
+                'date' => $bill->bill_date,
+                'type' => 'Bill',
+                'number' => '#' . \Auth::user()->billNumberFormat($bill->bill_id),
+                'payee' => $vendorName,
+                'category' => $categoryName,
+                'total' => $bill->getTotal(),
+                'status' => Bill::$statues[$bill->status] ?? '-',
+                'url' => route('bill.show', \Crypt::encrypt($bill->id)),
+                'edit_url' => route('bill.edit', \Crypt::encrypt($bill->id)),
+            ]);
         }
-        
-        // Expenses (stored in bills table with type = 'Expense')
-        if (empty($transactionType) || $transactionType == 'expense') {
-            $expensesQuery = Bill::with('category')
-                ->where('vender_id', $vendorId)
-                ->where('created_by', $creatorId)
-                ->where('type', 'Expense');
-            
-            if ($dateFrom) $expensesQuery->whereDate('bill_date', '>=', $dateFrom);
-            if ($dateTo) $expensesQuery->whereDate('bill_date', '<=', $dateTo);
-            if ($status !== null && $status !== '') $expensesQuery->where('status', $status);
-            if ($categoryId) $expensesQuery->where('category_id', $categoryId);
-            
-            $expenses = $expensesQuery->get();
-            
-            foreach ($expenses as $expense) {
-                $categoryName = '-';
-                if ($expense->category) {
-                    $categoryName = $expense->category->name;
-                }
-                
-                $transactions->push([
-                    'id' => 'expense_' . $expense->id,
-                    'date' => $expense->bill_date,
-                    'type' => 'Expense',
-                    'number' => '#' . \Auth::user()->billNumberFormat($expense->bill_id),
-                    'payee' => $vendorName,
-                    'category' => $categoryName,
-                    'total' => $expense->getTotal(),
-                    'status' => Bill::$statues[$expense->status] ?? '-',
-                    'url' => route('bill.show', \Crypt::encrypt($expense->id)),
-                    'edit_url' => route('bill.edit', \Crypt::encrypt($expense->id)),
-                ]);
-            }
-        }
-        
-        // Bill Payments
-        if (empty($transactionType) || $transactionType == 'bill_payment') {
-            $paymentsQuery = BillPayment::whereHas('bill', function($q) use ($vendorId) {
-                $q->where('vender_id', $vendorId);
+    }
+
+    // --------------------------------------------------------
+    // 2. EXPENSES & CREDIT CARDS (The Fix)
+    // --------------------------------------------------------
+    if (empty($transactionType) || $transactionType == 'expense') {
+        $expensesQuery = Bill::with('category')
+            ->where('vender_id', $vendorId)
+            ->where('created_by', $creatorId)
+            // FIX: Grouped the OR condition so it respects the vendor_id
+            ->where(function ($query) {
+                $query->where('type', 'Expense')
+                      ->orWhere('type', 'Credit Card');
             });
-            
-            if ($dateFrom) $paymentsQuery->whereDate('date', '>=', $dateFrom);
-            if ($dateTo) $paymentsQuery->whereDate('date', '<=', $dateTo);
-            
-            $payments = $paymentsQuery->get();
-            
-            foreach ($payments as $payment) {
-                $bill = $payment->bill;
+
+        if ($dateFrom) $expensesQuery->whereDate('bill_date', '>=', $dateFrom);
+        if ($dateTo) $expensesQuery->whereDate('bill_date', '<=', $dateTo);
+        if ($status !== null && $status !== '') $expensesQuery->where('status', $status);
+        if ($categoryId) $expensesQuery->where('category_id', $categoryId);
+
+        $expenses = $expensesQuery->get();
+
+        foreach ($expenses as $expense) {
+            $categoryName = $expense->category ? $expense->category->name : '-';
+
+            $transactions->push([
+                'id' => 'expense_' . $expense->id,
+                'date' => $expense->bill_date,
+                'type' => $expense->type, // This will show 'Credit Card' or 'Expense'
+                'number' => \Auth::user()->billNumberFormat($expense->bill_id),
+                'payee' => $vendorName,
+                'category' => $categoryName,
+                'total' => $expense->getTotal(),
+                'status' => Bill::$statues[$expense->status] ?? '-',
+                'url' => route('bill.show', \Crypt::encrypt($expense->id)),
+                'edit_url' => route('bill.edit', \Crypt::encrypt($expense->id)),
+            ]);
+        }
+    }
+
+    // --------------------------------------------------------
+    // 3. BILL PAYMENTS
+    // --------------------------------------------------------
+    if (empty($transactionType) || $transactionType == 'bill_payment') {
+        $paymentsQuery = BillPayment::whereHas('bill', function ($q) use ($vendorId) {
+            $q->where('vender_id', $vendorId);
+        });
+
+        if ($dateFrom) $paymentsQuery->whereDate('date', '>=', $dateFrom);
+        if ($dateTo) $paymentsQuery->whereDate('date', '<=', $dateTo);
+
+        $payments = $paymentsQuery->get();
+
+        foreach ($payments as $payment) {
+            $bill = $payment->bill;
+            $transactions->push([
+                'id' => 'payment_' . $payment->id,
+                'date' => $payment->date,
+                'type' => 'Bill Payment',
+                'number' => Auth::user()->paymentNumberFormat($payment->id),
+                'payee' => $vendorName,
+                'category' => '-',
+                'total' => $payment->amount,
+                'status' => 'Paid',
+                'url' => $bill ? route('bill.show', \Crypt::encrypt($bill->id)) : '#',
+                'edit_url' => null,
+            ]);
+        }
+    }
+
+    // --------------------------------------------------------
+    // 4. PURCHASE ORDERS
+    // --------------------------------------------------------
+    if (empty($transactionType) || $transactionType == 'purchase_order') {
+        $purchasesQuery = Purchase::where('vender_id', $vendorId)
+            ->where('created_by', $creatorId);
+
+        if ($dateFrom) $purchasesQuery->whereDate('purchase_date', '>=', $dateFrom);
+        if ($dateTo) $purchasesQuery->whereDate('purchase_date', '<=', $dateTo);
+        if ($categoryId) $purchasesQuery->where('category_id', $categoryId);
+
+        $purchases = $purchasesQuery->get();
+
+        foreach ($purchases as $purchase) {
+            $transactions->push([
+                'id' => 'purchase_' . $purchase->id,
+                'date' => $purchase->purchase_date,
+                'type' => 'Purchase Order',
+                'number' => '#' . ($purchase->purchase_number ?? $purchase->id),
+                'payee' => $vendorName,
+                'category' => $purchase->category->name ?? '-',
+                'total' => $purchase->getTotal(),
+                'status' => Purchase::$statues[$purchase->status ?? 0] ?? 'Open',
+                'url' => route('purchase.show', \Crypt::encrypt($purchase->id)),
+                'edit_url' => route('purchase.edit', \Crypt::encrypt($purchase->id)),
+            ]);
+        }
+    }
+
+    // --------------------------------------------------------
+    // 5. VENDOR CREDITS
+    // --------------------------------------------------------
+    if (empty($transactionType) || $transactionType == 'vendor_credit') {
+        try {
+            $creditsQuery = VendorCredit::where('vendor_id', $vendorId)
+                ->where('created_by', $creatorId);
+
+            if ($dateFrom) $creditsQuery->whereDate('credit_date', '>=', $dateFrom);
+            if ($dateTo) $creditsQuery->whereDate('credit_date', '<=', $dateTo);
+
+            $credits = $creditsQuery->get();
+
+            foreach ($credits as $credit) {
                 $transactions->push([
-                    'id' => 'payment_' . $payment->id,
-                    'date' => $payment->date,
-                    'type' => 'Bill Payment',
-                    'number' => '#' . $payment->id,
+                    'id' => 'credit_' . $credit->id,
+                    'date' => $credit->credit_date,
+                    'type' => 'Vendor Credit',
+                    'number' => '#' . ($credit->credit_number ?? $credit->id),
                     'payee' => $vendorName,
                     'category' => '-',
-                    'total' => $payment->amount,
-                    'status' => 'Paid',
-                    'url' => $bill ? route('bill.show', \Crypt::encrypt($bill->id)) : '#',
-                    'edit_url' => null,
-                ]);
-            }
-        }
-        // Purchase Orders
-        if (empty($transactionType) || $transactionType == 'purchase_order') {
-            $purchasesQuery = Purchase::where('vender_id', $vendorId)
-                ->where('created_by', $creatorId);
-            
-            if ($dateFrom) $purchasesQuery->whereDate('purchase_date', '>=', $dateFrom);
-            if ($dateTo) $purchasesQuery->whereDate('purchase_date', '<=', $dateTo);
-            if ($categoryId) $purchasesQuery->where('category_id', $categoryId);
-            
-            $purchases = $purchasesQuery->get();
-            
-            foreach ($purchases as $purchase) {
-                $transactions->push([
-                    'id' => 'purchase_' . $purchase->id,
-                    'date' => $purchase->purchase_date,
-                    'type' => 'Purchase Order',
-                    'number' => '#' . ($purchase->purchase_number ?? $purchase->id),
-                    'payee' => $vendorName,
-                    'category' => $purchase->category->name ?? '-',
-                    'total' => $purchase->getTotal(),
-                    'status' => Purchase::$statues[$purchase->status ?? 0] ?? 'Open',
-                    'url' => route('purchase.show', \Crypt::encrypt($purchase->id)),
-                    'edit_url' => route('purchase.edit', \Crypt::encrypt($purchase->id)),
-                ]);
-            }
-        }
-        
-        // Vendor Credits
-        if (empty($transactionType) || $transactionType == 'vendor_credit') {
-            try {
-                $creditsQuery = VendorCredit::where('vendor_id', $vendorId)
-                    ->where('created_by', $creatorId);
-                
-                if ($dateFrom) $creditsQuery->whereDate('credit_date', '>=', $dateFrom);
-                if ($dateTo) $creditsQuery->whereDate('credit_date', '<=', $dateTo);
-                
-                $credits = $creditsQuery->get();
-                
-                foreach ($credits as $credit) {
-                    $transactions->push([
-                        'id' => 'credit_' . $credit->id,
-                        'date' => $credit->credit_date,
-                        'type' => 'Vendor Credit',
-                        'number' => '#' . ($credit->credit_number ?? $credit->id),
-                        'payee' => $vendorName,
-                        'category' => '-',
-                        'total' => $credit->amount ?? 0,
-                        'status' => ucfirst($credit->status ?? 'Open'),
-                        'url' => '#',
-                        'edit_url' => null,
-                    ]);
-                }
-            } catch (\Exception $e) {
-                // VendorCredit table may not exist, skip silently
-            }
-        }
-        
-        // Transaction table records (for expenses, checks etc)
-        if (empty($transactionType) || $transactionType == 'expense' || $transactionType == 'check') {
-            $transQuery = Transaction::where('user_id', $vendorId)
-                ->where('user_type', 'Vender')
-                ->where('created_by', $creatorId);
-            
-            if ($transactionType == 'expense') {
-                $transQuery->where('category', 'Bill');
-            } elseif ($transactionType == 'check') {
-                $transQuery->where('type', 'check');
-            }
-            
-            if ($dateFrom) $transQuery->whereDate('date', '>=', $dateFrom);
-            if ($dateTo) $transQuery->whereDate('date', '<=', $dateTo);
-            
-            $trans = $transQuery->get();
-            
-            foreach ($trans as $t) {
-                $type = ucfirst($t->type ?? 'Expense');
-                if ($t->category == 'Bill') $type = 'Expense';
-                
-                $transactions->push([
-                    'id' => 'trans_' . $t->id,
-                    'date' => $t->date,
-                    'type' => $type,
-                    'number' => '#' . ($t->payment_no ?? $t->id),
-                    'payee' => $vendorName,
-                    'category' => $t->category ?? '-',
-                    'total' => $t->amount,
-                    'status' => '-',
+                    'total' => $credit->amount ?? 0,
+                    'status' => ucfirst($credit->status ?? 'Open'),
                     'url' => '#',
                     'edit_url' => null,
                 ]);
             }
+        } catch (\Exception $e) {
+            // VendorCredit table may not exist, skip silently
         }
-        
-        // Recently paid filter
-        if ($transactionType == 'recently_paid') {
-            // Get bills that were paid in last 30 days
-            $recentBills = Bill::where('vender_id', $vendorId)
-                ->where('created_by', $creatorId)
-                ->where('status', 4) // Paid
-                ->where('updated_at', '>=', now()->subDays(30))
-                ->get();
-                
-            foreach ($recentBills as $bill) {
-                $transactions->push([
-                    'id' => 'bill_' . $bill->id,
-                    'date' => $bill->bill_date,
-                    'type' => 'Bill',
-                    'number' => '#' . \Auth::user()->billNumberFormat($bill->bill_id),
-                    'payee' => $vendorName,
-                    'category' => $bill->category->name ?? '-',
-                    'total' => $bill->getTotal(),
-                    'status' => 'Paid',
-                    'url' => route('bill.show', \Crypt::encrypt($bill->id)),
-                    'edit_url' => route('bill.edit', \Crypt::encrypt($bill->id)),
-                ]);
-            }
-        }
-        
-        // Sort by date descending
-        return $transactions->sortByDesc('date')->values();
     }
+
+    // --------------------------------------------------------
+    // 6. GENERAL TRANSACTIONS (Checks/Others)
+    // --------------------------------------------------------
+    if (empty($transactionType) || $transactionType == 'expense' || $transactionType == 'check') {
+        $transQuery = Transaction::where('user_id', $vendorId)
+            ->where('user_type', 'Vender')
+            ->where('created_by', $creatorId);
+
+        if ($transactionType == 'expense') {
+            $transQuery->where('category', 'Bill');
+        } elseif ($transactionType == 'check') {
+            $transQuery->where('type', 'check');
+        }
+
+        if ($dateFrom) $transQuery->whereDate('date', '>=', $dateFrom);
+        if ($dateTo) $transQuery->whereDate('date', '<=', $dateTo);
+
+        $trans = $transQuery->get();
+
+        foreach ($trans as $t) {
+            $type = ucfirst($t->type ?? 'Expense');
+            if ($t->category == 'Bill') $type = 'Expense';
+
+            $transactions->push([
+                'id' => 'trans_' . $t->id,
+                'date' => $t->date,
+                'type' => $type,
+                'number' => '#' . ($t->payment_no ?? $t->id),
+                'payee' => $vendorName,
+                'category' => $t->category ?? '-',
+                'total' => $t->amount,
+                'status' => '-',
+                'url' => '#',
+                'edit_url' => null,
+            ]);
+        }
+    }
+
+    // --------------------------------------------------------
+    // 7. RECENTLY PAID
+    // --------------------------------------------------------
+    if ($transactionType == 'recently_paid') {
+        $recentBills = Bill::where('vender_id', $vendorId)
+            ->where('created_by', $creatorId)
+            ->where('status', 4) // Paid
+            ->where('updated_at', '>=', now()->subDays(30))
+            ->get();
+
+        foreach ($recentBills as $bill) {
+            $transactions->push([
+                'id' => 'bill_' . $bill->id,
+                'date' => $bill->bill_date,
+                'type' => 'Bill',
+                'number' => '#' . \Auth::user()->billNumberFormat($bill->bill_id),
+                'payee' => $vendorName,
+                'category' => $bill->category->name ?? '-',
+                'total' => $bill->getTotal(),
+                'status' => 'Paid',
+                'url' => route('bill.show', \Crypt::encrypt($bill->id)),
+                'edit_url' => route('bill.edit', \Crypt::encrypt($bill->id)),
+            ]);
+        }
+    }
+
+    // Sort by date descending
+    return $transactions->sortByDesc('date')->values();
+}
 
     public function html()
     {

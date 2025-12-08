@@ -2,9 +2,6 @@
 
 namespace App\DataTables;
 
-use App\Models\BillPayment;
-use App\Models\Purchase;
-use App\Models\PurchaseProduct;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Yajra\DataTables\Html\Column;
@@ -27,12 +24,13 @@ class TransactionListByVendor extends DataTable
 
             // Vendor header
             $finalData->push((object) [
-                'transaction_date' => '',
-                'transaction_type' => '<span class="" data-bucket="' . \Str::slug($vendor) . '"> <span class="icon">▼</span> <strong>' . e($vendor) . '</strong></span>',
+                'transaction_date' => '<span class="toggle-bucket" data-bucket="' . \Str::slug($vendor) . '"><span class="icon">▼</span> <strong>' . e($vendor) . '</strong></span>',
+                'transaction_type' => '',
                 'transaction' => '',
                 'posting_status' => '',
                 'memo' => '',
-                'account_full_name' => '',
+                'account' => '',
+                'open_balance' => '',
                 'amount' => 0,
                 'vendor_name' => $vendor,
                 'isVendorHeader' => true,
@@ -45,15 +43,11 @@ class TransactionListByVendor extends DataTable
                 $finalData->push((object) [
                     'transaction_date' => $row->transaction_date,
                     'transaction_type' => $row->transaction_type,
-                    'transaction' => match ($row->transaction_type) {
-                        'Bill' => \Auth::user()->billNumberFormat($row->bill),
-                        'Bill Payment' => \Auth::user()->paymentNumberFormat($row->transaction_id),
-                        'Purchase' => \Auth::user()->purchaseNumberFormat($row->transaction_id),
-                        default => $row->transaction_id,
-                    },
+                    'transaction' => $this->formatTransaction($row),
                     'posting_status' => 'Y',
-                    'memo' => $row->description,
-                    'account_full_name' => $row->account_full_name,
+                    'memo' => $row->memo ?? '',
+                    'account' => $row->account_name ?? '',
+                    'open_balance' => number_format((float)($row->open_balance ?? 0), 2),
                     'amount' => $amount,
                     'vendor_name' => $vendor,
                     'isDetail' => true,
@@ -62,12 +56,13 @@ class TransactionListByVendor extends DataTable
 
             // Subtotal
             $finalData->push((object) [
-                'transaction_date' => '',
-                'transaction_type' => "<strong>Subtotal for {$vendor}</strong>",
+                'transaction_date' => "<strong>Subtotal for {$vendor}</strong>",
+                'transaction_type' => '',
                 'transaction' => '',
                 'posting_status' => '',
                 'memo' => '',
-                'account_full_name' => '',
+                'account' => '',
+                'open_balance' => '',
                 'amount' => $vendorSubtotal,
                 'vendor_name' => $vendor,
                 'isSubtotal' => true,
@@ -80,7 +75,8 @@ class TransactionListByVendor extends DataTable
                 'transaction' => '',
                 'posting_status' => '',
                 'memo' => '',
-                'account_full_name' => '',
+                'account' => '',
+                'open_balance' => '',
                 'amount' => 0,
                 'vendor_name' => $vendor,
                 'isPlaceholder' => true,
@@ -91,12 +87,13 @@ class TransactionListByVendor extends DataTable
 
         // Grand total
         $finalData->push((object) [
-            'transaction_date' => '',
-            'transaction_type' => 'Grand Total',
+            'transaction_date' => '<strong>Grand Total</strong>',
+            'transaction_type' => '',
             'transaction' => '',
             'posting_status' => '',
             'memo' => '',
-            'account_full_name' => '',
+            'account' => '',
+            'open_balance' => '',
             'amount' => $grandTotal,
             'vendor_name' => '',
             'isGrandTotal' => true,
@@ -104,15 +101,21 @@ class TransactionListByVendor extends DataTable
 
         return datatables()
             ->collection($finalData)
-            ->editColumn('transaction_date', fn($row) => isset($row->isDetail) ? $row->transaction_date : '')
+            ->editColumn('transaction_date', function ($row) {
+                if (isset($row->isDetail)) {
+                    return $row->transaction_date ? Carbon::parse($row->transaction_date)->format('M d, Y') : '';
+                }
+                return $row->transaction_date;
+            })
             ->editColumn('transaction', fn($row) => $row->transaction ?? '')
             ->editColumn('memo', fn($row) => isset($row->isDetail) ? $row->memo : '')
-            ->editColumn('account_full_name', fn($row) => isset($row->isDetail) ? $row->account_full_name : '')
+            ->editColumn('account', fn($row) => isset($row->isDetail) ? $row->account : '')
             ->editColumn('amount', function ($row) {
                 if (isset($row->isVendorHeader) || isset($row->isPlaceholder))
                     return '';
                 return number_format((float) $row->amount, 2);
             })
+            ->editColumn('open_balance', fn($row) => isset($row->isDetail) ? $row->open_balance : '')
             ->setRowClass(function ($row) {
                 $vendorSlug = $row->vendor_name ? \Str::slug($row->vendor_name) : 'no-vendor';
 
@@ -120,13 +123,23 @@ class TransactionListByVendor extends DataTable
                     return 'parent-row toggle-bucket bucket-' . $vendorSlug;
                 if (isset($row->isSubtotal) && !isset($row->isGrandTotal))
                     return 'subtotal-row bucket-' . $vendorSlug;
-                if (!isset($row->isVendorHeader) && !isset($row->isSubtotal) && !isset($row->isGrandTotal) && !isset($row->isPlaceholder))
-                    return 'child-row bucket-' . $vendorSlug;
                 if (isset($row->isGrandTotal))
                     return 'grandtotal-row';
-                return '';
+                if (isset($row->isPlaceholder))
+                    return 'placeholder-row bucket-' . $vendorSlug;
+                return 'child-row bucket-' . $vendorSlug;
             })
-            ->rawColumns(['transaction', 'transaction_type']);
+            ->rawColumns(['transaction', 'transaction_date', 'transaction_type']);
+    }
+
+    protected function formatTransaction($row)
+    {
+        return match ($row->transaction_type) {
+            'Bill' => \Auth::user()->billNumberFormat($row->transaction_number),
+            'Bill Payment', 'Bill Payment (Check)' => \Auth::user()->paymentNumberFormat($row->transaction_number),
+            'Purchase Order' => \Auth::user()->purchaseNumberFormat($row->transaction_number),
+            default => \Auth::user()->billNumberFormat($row->transaction_number), // Use bill format for Expense, Check, etc.
+        };
     }
 
     public function query()
@@ -136,78 +149,150 @@ class TransactionListByVendor extends DataTable
         $start = request()->get('start_date') ?? request()->get('startDate') ?? Carbon::now()->startOfYear()->format('Y-m-d');
         $end = request()->get('end_date') ?? request()->get('endDate') ?? Carbon::now()->endOfDay()->format('Y-m-d');
 
-        // 1️⃣ Bills (Purchase Products)
-        $bills = PurchaseProduct::query()
+        // 1️⃣ Bills - showing actual bill type
+        $bills = DB::table('bills')
             ->select(
-                'purchase_products.id',
-                'purchases.purchase_id as bill',
-                'purchases.purchase_id as transaction_id',
-                'purchases.purchase_date as transaction_date',
+                'bills.id',
+                'bills.bill_date as transaction_date',
                 'venders.name as vendor_name',
-                'purchase_products.description',
-                'bank_accounts.bank_name as account_full_name',
-                'purchase_products.price',
-                'purchase_products.quantity',
-                'purchase_products.discount',
-                DB::raw('0 as tax_amount'),
-                DB::raw('((purchase_products.price * purchase_products.quantity) - IFNULL(purchase_products.discount,0)) as amount'),
-                DB::raw('"Bill" as transaction_type')
+                'bills.bill_id as transaction_number',
+                'bills.notes as memo',
+                'bills.type as transaction_type', // Show actual type from bills table
+                DB::raw('CASE 
+                    WHEN bills.type = "Bill" 
+                        THEN "Accounts Payable (A/P)"
+                    ELSE (
+                        SELECT coa.name
+                        FROM bill_payments bp
+                        JOIN bank_accounts ban ON ban.id = bp.account_id
+                        JOIN chart_of_accounts coa ON coa.id = ban.chart_account_id
+                        WHERE bp.bill_id = bills.id
+                        LIMIT 1
+                    )
+                END as account_name'),
+                // Bills type = "Bill" → POSITIVE (money owed)
+                // Other types (Expense, Check, etc.) → NEGATIVE (money paid out)
+                DB::raw('CASE 
+                    WHEN bills.type = "Bill" THEN (
+                        SELECT IFNULL(SUM(bp.price * bp.quantity - IFNULL(bp.discount, 0)), 0)
+                        FROM bill_products bp
+                        WHERE bp.bill_id = bills.id
+                    ) + (
+                        SELECT IFNULL(SUM(ba.price), 0)
+                        FROM bill_accounts ba
+                        WHERE ba.ref_id = bills.id
+                    )
+                    ELSE 
+        (
+            -- Subquery 1 & 2 repeated (calculating the total bill amount)
+            (
+                SELECT IFNULL(SUM(bp.price * bp.quantity - IFNULL(bp.discount, 0)), 0)
+                FROM bill_products bp
+                WHERE bp.bill_id = bills.id
+            ) + 
+            (
+                SELECT IFNULL(SUM(ba.price), 0)
+                FROM bill_accounts ba
+                WHERE ba.ref_id = bills.id
             )
-            ->join('purchases', 'purchases.id', '=', 'purchase_products.purchase_id')
-            ->join('venders', 'venders.id', '=', 'purchases.vender_id')
-            ->leftJoin('purchase_payments', 'purchase_payments.purchase_id', '=', 'purchases.id')
-            ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'purchase_payments.account_id')
-            ->where('purchases.created_by', $userId)
-            ->whereBetween('purchases.purchase_date', [$start, $end]);
+        ) 
+        * CASE 
+            -- Subquery 3: Check payment account type
+            WHEN (
+                SELECT ba2.account_subtype
+                FROM bill_payments bp2
+                JOIN bank_accounts ba2 ON ba2.id = bp2.account_id
+                WHERE bp2.bill_id = bills.id
+                LIMIT 1 -- ⚠️ This can be non-deterministic!
+            ) = "credit_card"
+            THEN 1   -- If Credit Card, it is an increase in Liability (Positive sign)
+            ELSE -1  -- Otherwise (e.g., Bank/Cash), it is a decrease in Asset (Negative sign)
+        END
+END AS amount'),
+                DB::raw('CASE 
+                    WHEN bills.type = "Bill" THEN (
+                        (
+                            SELECT IFNULL(SUM(bp.price * bp.quantity - IFNULL(bp.discount, 0)), 0)
+                            FROM bill_products bp
+                            WHERE bp.bill_id = bills.id
+                        ) + (
+                            SELECT IFNULL(SUM(ba.price), 0)
+                            FROM bill_accounts ba
+                            WHERE ba.ref_id = bills.id
+                        ) - (
+                            SELECT IFNULL(SUM(bill_payments.amount), 0)
+                            FROM bill_payments
+                            WHERE bill_payments.bill_id = bills.id
+                        )
+                    )
+                    ELSE 0
+                END as open_balance')
+            )
+            ->join('venders', 'venders.id', '=', 'bills.vender_id')
+            ->where('bills.created_by', $userId)
+            ->whereBetween('bills.bill_date', [$start, $end]);
 
-        // 2️⃣ Purchases (header-level)
-        $purchases = Purchase::query()
+        // 2️⃣ Purchase Orders that have bills (txn_id) - POSITIVE
+        $purchaseOrders = DB::table('purchases')
             ->select(
                 'purchases.id',
-                DB::raw('NULL as bill'),
-                'purchases.id as transaction_id',
                 'purchases.purchase_date as transaction_date',
                 'venders.name as vendor_name',
-                DB::raw('purchases.status as description'),
-                DB::raw('NULL as account_full_name'),
-                DB::raw('0 as price'),
-                DB::raw('0 as quantity'),
-                DB::raw('0 as discount'),
-                DB::raw('0 as tax_amount'),
-                DB::raw('0 as amount'),
-                DB::raw('"Purchase" as transaction_type')
+                'purchases.purchase_id as transaction_number',
+                'purchases.notes as memo',
+                DB::raw('"Purchase Order" as transaction_type'),
+                DB::raw('"Accounts Payable (A/P)" as account_name'),
+                // Purchase Orders are POSITIVE (amount owed)
+                DB::raw('(
+                    SELECT IFNULL(SUM(pp.price * pp.quantity - IFNULL(pp.discount, 0)), 0)
+                    FROM purchase_products pp
+                    WHERE pp.purchase_id = purchases.id
+                ) + (
+                    SELECT IFNULL(SUM(poa.price), 0)
+                    FROM purchase_order_accounts poa
+                    WHERE poa.ref_id = purchases.id
+                ) as amount'),
+                DB::raw('0 as open_balance')
             )
             ->join('venders', 'venders.id', '=', 'purchases.vender_id')
             ->where('purchases.created_by', $userId)
+            ->whereNotNull('purchases.txn_id') // Only POs that have been converted to bills
             ->whereBetween('purchases.purchase_date', [$start, $end]);
 
-        // 3️⃣ Bill Payments
-        $billPayments = BillPayment::query()
+        // 3️⃣ Bill Payments - credit card = positive, bank/cash = negative
+        $billPayments = DB::table('bill_payments')
             ->select(
                 'bill_payments.id',
-                DB::raw('bills.bill_id as bill'),
-                'bill_payments.id as transaction_id',
                 'bill_payments.date as transaction_date',
                 'venders.name as vendor_name',
-                'bill_payments.description',
-                'bank_accounts.bank_name as account_full_name',
-                DB::raw('0 as price'),
-                DB::raw('0 as quantity'),
-                DB::raw('0 as discount'),
-                DB::raw('0 as tax_amount'),
-                'bill_payments.amount',
-                DB::raw('"Bill Payment" as transaction_type')
+                'bill_payments.id as transaction_number',
+                'bill_payments.description as memo',
+                DB::raw('CASE 
+                    WHEN bill_payments.payment_type = "Check" THEN "Bill Payment (Check)"
+                    ELSE "Bill Payment"
+                END as transaction_type'),
+                'bank_accounts.bank_name as account_name',
+                // Credit card payments = POSITIVE (increasing credit card liability)
+                // Bank/Cash payments = NEGATIVE (cash out)
+                DB::raw('CASE 
+                    WHEN bank_accounts.account_subtype = "credit_card" THEN bill_payments.amount
+                    ELSE -1 * bill_payments.amount
+                END as amount'),
+                DB::raw('0 as open_balance')
             )
             ->join('bills', 'bills.id', '=', 'bill_payments.bill_id')
             ->join('venders', 'venders.id', '=', 'bills.vender_id')
             ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'bill_payments.account_id')
             ->where('bills.created_by', $userId)
+            ->where('bills.type', 'Bill') // ONLY show payments for actual Bills
             ->whereBetween('bill_payments.date', [$start, $end]);
 
-        // ✅ Union all (all 13 columns identical)
-        $combined = $bills->unionAll($purchases)->unionAll($billPayments);
+        // ✅ Union all
+        $combined = $bills->unionAll($purchaseOrders)->unionAll($billPayments);
 
-        return DB::query()->fromSub($combined, 'transactions');
+        return DB::query()->fromSub($combined, 'transactions')
+            ->orderBy('vendor_name', 'asc')
+            ->orderBy('transaction_date', 'asc');
     }
 
     public function html()
@@ -229,11 +314,12 @@ class TransactionListByVendor extends DataTable
     {
         return [
             Column::make('transaction_date')->title('Date'),
-            Column::make('transaction_type')->title('Transaction Type'),
-            Column::make('transaction')->title('Transaction'),
-            Column::make('posting_status')->title('Posting Y/N')->addClass('default-hidden'),
-            Column::make('memo')->title('Memo / Description'),
-            Column::make('account_full_name')->title('Account Full Name')->addClass('default-hidden'),
+            Column::make('transaction_type')->title('Type'),
+            Column::make('transaction')->title('Num'),
+            Column::make('posting_status')->title('Posting')->addClass('default-hidden'),
+            Column::make('memo')->title('Memo/Description'),
+            Column::make('account')->title('Account'),
+            Column::make('open_balance')->title('Open Balance')->addClass('default-hidden'),
             Column::make('amount')->title('Amount'),
         ];
     }

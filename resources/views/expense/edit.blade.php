@@ -1457,7 +1457,7 @@
                                                 <tr data-repeater-item class="category-row">
                                                     <td>
                                                         <input type="hidden" name="categories[${i}][id]"
-                                                            value="{{ $category->id }}">
+                                                            value="{{ $category['id'] }}">
                                                         <span class="text-muted me-2 drag-handle"
                                                             style="cursor: move; font-size: 18px;"><svg
                                                                 xmlns="http://www.w3.org/2000/svg" fill="none"
