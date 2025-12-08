@@ -819,6 +819,7 @@
             $expenseReports = [
               ['route' => 'expenses.transaction_list_by_vendor', 'label' => 'Transaction List by Vendor'],
               ['route' => 'expenses.purchase_by_vendor', 'label' => 'Purchase by Vendor Detail'],
+              ['route' => 'expenses.purchases_by_product_service_detail', 'label' => 'Purchases by Product Service Detail'],
               ['route' => 'expenses.vendors_contact_list', 'label' => 'Vendors Contact List'],
               ['route' => 'expenses.open_purchase_order_detail', 'label' => 'Open Purchase Order Detail'],
               ['route' => 'expenses.expenses_by_vendor_summary', 'label' => 'Expenses by Vendor Summary'],

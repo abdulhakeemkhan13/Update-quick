@@ -10,6 +10,12 @@ use Illuminate\Support\Facades\DB;
 
 class VendorBalanceDetail extends DataTable
 {
+    /**
+     * Build DataTable class.
+     *
+     * @param mixed $query Results from query() method.
+     * @return \Yajra\DataTables\DataTableAbstract
+     */
     public function dataTable($query)
     {
         $data = collect($query->get());
@@ -30,7 +36,6 @@ class VendorBalanceDetail extends DataTable
             $subtotalOpen = 0;
             $runningBalance = 0; // 👈 reset here for each vendor
 
-
             // Vendor header row
             $finalData->push((object) [
                 'vendor' => $vendor,
@@ -49,10 +54,10 @@ class VendorBalanceDetail extends DataTable
             ]);
 
             foreach ($rows as $row) {
-                $subtotalAmount += ($row->subtotal ?? 0) + ($row->total_tax ?? 0);
-                $subtotalOpen += $row->open_balance;
+                $subtotalAmount += (float) ($row->subtotal ?? 0) + (float) ($row->total_tax ?? 0);
+                $subtotalOpen += (float) $row->open_balance;
                 // 👈 running balance logic
-                $runningBalance += $row->open_balance;
+                $runningBalance += (float) $row->open_balance;
                 $row->balance = $runningBalance;
                 $row->vendor = $vendor;
                 $finalData->push($row);
@@ -119,29 +124,32 @@ class VendorBalanceDetail extends DataTable
                 }
                 return 'Bill';
             })
+            // 👇 FIX: Use number_format(value, 2) to prevent rounding and show decimals
             ->editColumn('total_amount', function ($row) {
                 if (isset($row->isPlaceholder)) {
                     return '';
                 }
                 if (isset($row->isSubtotal) || isset($row->isGrandTotal)) {
-                    return number_format($row->total_amount ?? 0);
+                    return number_format($row->total_amount ?? 0, 2); // FIXED
                 }
-                return number_format(($row->subtotal ?? 0) + ($row->total_tax ?? 0));
+                return number_format(($row->subtotal ?? 0) + ($row->total_tax ?? 0), 2); // FIXED
             })
+            // 👇 FIX: Use number_format(value, 2) to prevent rounding and show decimals
             ->editColumn('open_balance', function ($row) {
                 if (isset($row->isPlaceholder)) {
                     return '';
                 }
                 if (isset($row->isSubtotal) || isset($row->isGrandTotal)) {
-                    return number_format($row->open_balance ?? 0);
+                    return number_format($row->open_balance ?? 0, 2); // FIXED
                 }
-                return number_format($row->open_balance ?? 0);
+                return number_format($row->open_balance ?? 0, 2); // FIXED
             })
+            // 👇 FIX: Use number_format(value, 2) to prevent rounding and show decimals
             ->editColumn('balance', function ($row) { // 👈 show running balance
                 if (isset($row->isPlaceholder) || isset($row->isSubtotal) || isset($row->isGrandTotal)) {
                     return '';
                 }
-                return number_format($row->balance ?? 0);
+                return number_format($row->balance ?? 0, 2); // FIXED
             })
             ->setRowClass(function ($row) {
                 if (property_exists($row, 'isParent') && $row->isParent) {
@@ -170,45 +178,137 @@ class VendorBalanceDetail extends DataTable
             ->rawColumns(['transaction']);
     }
 
+    /**
+     * Get query source of dataTable.
+     *
+     * @param \App\Models\Bill $model
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
     public function query(Bill $model)
     {
         $start = request()->get('start_date') ?? request()->get('startDate') ?? Carbon::now()->startOfYear()->format('Y-m-d');
         $end = request()->get('end_date') ?? request()->get('endDate') ?? Carbon::now()->endOfDay()->format('Y-m-d');
 
-        return $model->newQuery()
-            ->select(
-                'bills.id',
-                'bills.bill_id as bill',
-                'bills.bill_date',
-                'bills.due_date', // 👈 add due date to query
-                'bills.status',
-                'venders.name',
-                DB::raw('SUM((bill_products.price * bill_products.quantity) - bill_products.discount) as subtotal'),
-                DB::raw('IFNULL(SUM(bill_payments.amount), 0) as pay_price'),
-                DB::raw('(SELECT IFNULL(SUM((price * quantity - discount) * (taxes.rate / 100)),0) 
-                    FROM bill_products 
-                    LEFT JOIN taxes ON FIND_IN_SET(taxes.id, bill_products.tax) > 0
-                    WHERE bill_products.bill_id = bills.id) as total_tax'),
-                DB::raw('(SELECT IFNULL(SUM(debit_notes.amount),0) 
-                    FROM debit_notes 
-                    WHERE debit_notes.bill = bills.id) as debit_price'),
-                DB::raw('(SUM((bill_products.price * bill_products.quantity) - bill_products.discount) 
-                    + (SELECT IFNULL(SUM((price * quantity - discount) * (taxes.rate / 100)),0) 
-                        FROM bill_products 
-                        LEFT JOIN taxes ON FIND_IN_SET(taxes.id, bill_products.tax) > 0
-                        WHERE bill_products.bill_id = bills.id)
-                    - (IFNULL(SUM(bill_payments.amount),0) 
-                    + (SELECT IFNULL(SUM(debit_notes.amount),0) FROM debit_notes WHERE debit_notes.bill = bills.id))
-                ) as open_balance')
-            )
-            ->leftJoin('venders', 'venders.id', '=', 'bills.vender_id')
-            ->leftJoin('bill_products', 'bill_products.bill_id', '=', 'bills.id')
-            ->leftJoin('bill_payments', 'bill_payments.bill_id', '=', 'bills.id')
-            ->where('bills.created_by', \Auth::user()->creatorId())
-            ->whereBetween('bills.bill_date', [$start, $end])
-            ->groupBy('bills.id');
+
+    return $model->newQuery()
+        ->select(
+            'bills.id',
+            'bills.bill_id as bill',
+            'bills.bill_date',
+            'bills.due_date',
+            'bills.status',
+            'venders.name',
+
+            // --- 1. PRODUCT SUBTOTAL (Subquery) ---
+            DB::raw('(
+                SELECT COALESCE(SUM(
+                    (price * quantity) - COALESCE(discount, 0)
+                ), 0)
+                FROM bill_products 
+                WHERE bill_products.bill_id = bills.id
+            ) as product_subtotal'),
+            
+            // --- 2. ACCOUNTS/EXPENSE TOTAL (Subquery - Already correct) ---
+            DB::raw('(
+                SELECT COALESCE(SUM(ba.price), 0)
+                FROM bill_accounts ba
+                WHERE ba.ref_id = bills.id
+            ) as account_total'),
+
+            // --- 3. TOTAL TAX CALCULATION (Subquery - Already correct) ---
+            DB::raw('(
+                SELECT COALESCE(SUM(
+                    (price * quantity - COALESCE(discount, 0)) * (taxes.rate / 100)
+                ), 0) 
+                FROM bill_products 
+                LEFT JOIN taxes ON FIND_IN_SET(taxes.id, bill_products.tax) > 0
+                WHERE bill_products.bill_id = bills.id
+            ) as total_tax'),
+
+            // --- 4. TOTAL BILL AMOUNT (Combined Calculation) ---
+            // Sum of (Product Subtotal) + (Account Total) + (Total Tax)
+            DB::raw('(
+                (
+                    SELECT COALESCE(SUM(
+                        (bp.price * bp.quantity) - COALESCE(bp.discount, 0)
+                    ), 0)
+                    FROM bill_products bp
+                    WHERE bp.bill_id = bills.id
+                )
+                + (
+                    SELECT COALESCE(SUM(ba.price), 0)
+                    FROM bill_accounts ba
+                    WHERE ba.ref_id = bills.id
+                )
+                + (
+                    SELECT COALESCE(SUM(
+                        (bp2.price * bp2.quantity - COALESCE(bp2.discount, 0)) * (t.rate / 100)
+                    ), 0) 
+                    FROM bill_products bp2
+                    LEFT JOIN taxes t ON FIND_IN_SET(t.id, bp2.tax) > 0
+                    WHERE bp2.bill_id = bills.id
+                )
+            ) as total_amount'),
+
+            // --- 5. PAYMENTS TOTAL (Subquery - Changed from SUM/JOIN to Subquery) ---
+            DB::raw('(
+                SELECT COALESCE(SUM(amount), 0)
+                FROM bill_payments
+                WHERE bill_payments.bill_id = bills.id
+            ) as pay_price'),
+            
+            // --- 6. DEBIT NOTES/CREDIT TOTAL (Subquery - Already correct) ---
+            DB::raw('(
+                SELECT COALESCE(SUM(debit_notes.amount), 0) 
+                FROM debit_notes 
+                WHERE debit_notes.bill = bills.id
+            ) as debit_price'),
+
+            // --- 7. OPEN BALANCE (Total Amount - Payments - Debit Notes) ---
+            // This calculation now uses the 'total_amount', 'pay_price', and 'debit_price' fields from above
+            // which are calculated correctly via subqueries.
+            DB::raw('(
+                (
+                    (
+                        SELECT COALESCE(SUM((bp.price * bp.quantity) - COALESCE(bp.discount, 0)), 0)
+                        FROM bill_products bp WHERE bp.bill_id = bills.id
+                    )
+                    + (
+                        SELECT COALESCE(SUM(ba.price), 0)
+                        FROM bill_accounts ba WHERE ba.ref_id = bills.id
+                    )
+                    + (
+                        SELECT COALESCE(SUM((bp2.price * bp2.quantity - COALESCE(bp2.discount, 0)) * (t.rate / 100)), 0) 
+                        FROM bill_products bp2 LEFT JOIN taxes t ON FIND_IN_SET(t.id, bp2.tax) > 0 WHERE bp2.bill_id = bills.id
+                    )
+                ) - (
+                    (
+                        SELECT COALESCE(SUM(amount), 0)
+                        FROM bill_payments WHERE bill_payments.bill_id = bills.id
+                    )
+                    + (
+                        SELECT COALESCE(SUM(debit_notes.amount), 0) 
+                        FROM debit_notes WHERE debit_notes.bill = bills.id
+                    )
+                )
+            ) as open_balance')
+        )
+        // ❌ REMOVE unnecessary joins that caused aggregation issues: bill_products, bill_payments
+        ->leftJoin('venders', 'venders.id', '=', 'bills.vender_id') 
+
+        ->where('bills.created_by', \Auth::user()->creatorId())
+        ->where('bills.type', 'bill')->where('bills.status', '!=','4')
+        ->whereBetween('bills.bill_date', [$start, $end])
+        // Since we removed the problematic joins, the GROUP BY only needs the main columns.
+        ->groupBy('bills.id', 'bills.bill_id', 'bills.bill_date', 'bills.due_date', 'bills.status', 'venders.name') 
+        ->orderBy('bills.bill_date', 'desc');
     }
 
+    /**
+     * Optional method if you want to use the html builder.
+     *
+     * @return \Yajra\DataTables\Html\Builder
+     */
     public function html()
     {
         return $this->builder()
@@ -221,9 +321,11 @@ class VendorBalanceDetail extends DataTable
                 'searching' => false,
                 'info' => false,
                 'ordering' => false,
+                // The JS logic already correctly uses toLocaleString for 2 decimals
                 'footerCallback' => <<<JS
 function (row, data, start, end, display) {
     var api = this.api();
+
     var parseVal = function (i) {
         return typeof i === 'string'
             ? parseFloat(i.replace(/[^0-9.-]+/g, '')) || 0
@@ -238,13 +340,31 @@ function (row, data, start, end, display) {
     var totalOpen = api.column(5, { page: 'all' }).data()
         .reduce((a, b) => parseVal(a) + parseVal(b), 0);
 
-    $(api.column(4).footer()).html(totalAmount.toLocaleString());
-    $(api.column(5).footer()).html(totalOpen.toLocaleString());
+    // ✅ Show as decimal (2 digits)
+    $(api.column(4).footer()).html(
+        totalAmount.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        })
+    );
+
+    $(api.column(5).footer()).html(
+        totalOpen.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        })
+    );
 }
 JS
             ]);
     }
 
+
+    /**
+     * Get columns.
+     *
+     * @return array
+     */
     protected function getColumns()
     {
         return [
