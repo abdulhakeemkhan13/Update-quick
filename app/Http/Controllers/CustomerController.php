@@ -507,7 +507,8 @@ class CustomerController extends Controller
 
             $customFields = CustomField::where('created_by', '=', \Auth::user()->creatorId())->where('module', '=', 'customer')->get();
 
-            return view('customer.edit', compact('customer', 'customFields'));
+            // return view('customer.edit', compact('customer', 'customFields'));
+            return view('customer.edit-right', compact('customer', 'customFields'));
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
@@ -551,6 +552,7 @@ class CustomerController extends Controller
             $customer->shipping_phone = $request->shipping_phone;
             $customer->shipping_zip = $request->shipping_zip;
             $customer->shipping_address = $request->shipping_address;
+            $customer->lang = $request->lang;
             $customer->save();
             //log
             CustomField::saveData($customer, $request->customField);

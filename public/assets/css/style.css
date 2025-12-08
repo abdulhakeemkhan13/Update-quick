@@ -18981,9 +18981,10 @@ body:not(.minimenu) .dash-sidebar .dash-submenu .dash-submenu .dash-submenu > .d
 }
 
 .dash-container .dash-content {
-    padding-left: 30px;
+    /* padding-left: 30px; */
     padding-right: 30px;
-    padding-top: 30px;
+    /* padding-top: 30px; */
+    padding-top: 10px;
 }
 
 .dash-container .page-header + .row {

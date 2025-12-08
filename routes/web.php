@@ -456,10 +456,22 @@ Route::group(['middleware' => ['verified']], function () {
     // Route::get('/home', [DashboardController::class, 'account_dashboard_index'])->name('home')->middleware(['XSS', 'revalidate']);
 
     Route::get('/account-dashboard', [DashboardController::class, 'account_dashboard_index'])->name('dashboard')->middleware(['auth', 'XSS', 'revalidate']);
+    Route::post('/dashboard/account/layout', [DashboardController::class, 'saveAccountLayout'])->name('dashboard.account.layout')->middleware(['auth', 'XSS']);
+    Route::post('/dashboard/widget/toggle', [DashboardController::class, 'toggleWidget'])->name('dashboard.widget.toggle')->middleware(['auth', 'XSS']);
+    Route::post('/dashboard/widgets/update', [DashboardController::class, 'updateWidgets'])->name('dashboard.widgets.update')->middleware(['auth', 'XSS']);
     Route::get('/project-dashboard', [DashboardController::class, 'project_dashboard_index'])->name('project.dashboard')->middleware(['auth', 'XSS', 'revalidate']);
     Route::get('/hrm-dashboard', [DashboardController::class, 'hrm_dashboard_index'])->name('hrm.dashboard')->middleware(['auth', 'XSS', 'revalidate']);
     Route::get('/crm-dashboard', [DashboardController::class, 'crm_dashboard_index'])->name('crm.dashboard')->middleware(['auth', 'XSS', 'revalidate']);
     Route::get('/pos-dashboard', [DashboardController::class, 'pos_dashboard_index'])->name('pos.dashboard')->middleware(['auth', 'XSS', 'revalidate']);
+
+    // QBO Menu Routes
+    Route::get('/qbo-menu/config', [\App\Http\Controllers\QboMenuController::class, 'getMenuConfig'])->name('qbo.menu.config')->middleware(['auth']);
+    Route::post('/qbo-menu/config', [\App\Http\Controllers\QboMenuController::class, 'saveMenuConfig'])->name('qbo.menu.config.save')->middleware(['auth']);
+    Route::get('/qbo-menu/bookmarks', [\App\Http\Controllers\QboMenuController::class, 'getBookmarks'])->name('qbo.menu.bookmarks')->middleware(['auth']);
+    Route::post('/qbo-menu/bookmarks', [\App\Http\Controllers\QboMenuController::class, 'saveBookmarks'])->name('qbo.menu.bookmarks.save')->middleware(['auth']);
+    Route::get('/qbo-menu/pinned', [\App\Http\Controllers\QboMenuController::class, 'getPinnedItems'])->name('qbo.menu.pinned')->middleware(['auth']);
+    Route::post('/qbo-menu/toggle-pin', [\App\Http\Controllers\QboMenuController::class, 'togglePin'])->name('qbo.menu.toggle.pin')->middleware(['auth']);
+    Route::post('/qbo-menu/reset', [\App\Http\Controllers\QboMenuController::class, 'resetToDefault'])->name('qbo.menu.reset')->middleware(['auth']);
 
     Route::get('profile', [UserController::class, 'profile'])->name('profile')->middleware(['auth', 'XSS', 'revalidate']);
 

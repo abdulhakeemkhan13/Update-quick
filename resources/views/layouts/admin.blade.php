@@ -107,6 +107,8 @@
 
     <link rel="stylesheet" href="{{ asset('assets/css/customizer.css') }}">
     <link rel="stylesheet" href="{{ asset('css/custom.css') }}">
+    <!-- QBO Menu Styles -->
+    <link rel="stylesheet" href="{{ asset('css/qbo-menu.css') }}">
 
     @if ($setting['cust_darklayout'] == 'on')
         <link rel="stylesheet" href="{{ asset('css/custom-dark.css') }}">
@@ -192,10 +194,16 @@
         </div>
     </div>
 
+    {{-- OLD MENU AND HEADER - COMMENTED OUT FOR QBO REDESIGN 
     @include('partials.admin.menu')
+    @include('partials.admin.header')
+    --}}
+    
+    {{-- NEW QBO-STYLE MENU AND HEADER --}}
+    @include('partials.admin.qbo-menu')
+    @include('partials.admin.qbo-header')
     <!-- [ navigation menu ] end -->
     <!-- [ Header ] start -->
-    @include('partials.admin.header')
 
     <!-- Modal -->
     <div class="modal notification-modal fade" id="notification-modal" tabindex="-1" role="dialog" aria-hidden="true">
@@ -259,9 +267,9 @@
     <!-- [ Header ] end -->
 
     <!-- [ Main Content ] start -->
-    <div class="dash-container">
+    <div class="dash-container qbo-main-content">
         <div class="dash-content">
-            <div class="page-header">
+            <!-- <div class="page-header">
                 <div class="page-block">
                     <div class="row align-items-center">
                         <div class="col-auto">
@@ -277,7 +285,7 @@
                         </div>
                     </div>
                 </div>
-            </div>
+            </div> -->
             @yield('content')
             <!-- [ Main Content ] end -->
         </div>

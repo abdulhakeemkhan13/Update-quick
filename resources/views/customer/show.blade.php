@@ -46,12 +46,12 @@
             </ul>
         </div>
 
-        <!-- Replace your existing edit button with this -->
-        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="offcanvas"
-            data-bs-target="#customerEditSidebar" aria-controls="customerEditSidebar" title="{{ __('Edit Customer') }}"
-            data-bs-tooltip="true"> <!-- custom marker, not duplicate data-bs-toggle -->
+        <!-- Edit button - opens customer edit modal -->
+        <a href="#" data-size="lg" data-url="{{ route('customer.edit', $customer->id) }}" data-ajax-popup="true"
+            data-bs-toggle="tooltip" title="{{ __('Edit Customer') }}" data-title="{{ __('Edit Customer') }}"
+            class="btn btn-sm btn-primary">
             <i class="ti ti-pencil"></i>
-        </button>
+        </a>
 
 
         @can('delete customer')
@@ -219,8 +219,9 @@
                         <div class="flex-grow-1 text-center">
                             <h4 class="mb-1 fw-bold">
                                 {{ $customer['name'] ?: __('(No name)') }}
-                                <a href="#" id="editNameField" class="text-primary small ms-2"
-                                    title="{{ __('Edit name') }}">
+                                <a href="#" data-size="lg" data-url="{{ route('customer.edit', $customer->id) }}" 
+                                    data-ajax-popup="true" data-title="{{ __('Edit Customer') }}" 
+                                    class="text-primary small ms-2" title="{{ __('Edit name') }}">
                                     <i class="ti ti-pencil"></i>
                                 </a>
                             </h4>
@@ -256,8 +257,9 @@
                     <p class="text-muted small fw-semibold mb-2">{{ __('Email') }}</p>
                     <p class="mb-3">
                         {{ $customer['email'] }}
-                        <a href="#" id="editEmailField" class="text-primary small ms-2"
-                            title="{{ __('Edit email') }}">
+                        <a href="#" data-size="lg" data-url="{{ route('customer.edit', $customer->id) }}" 
+                            data-ajax-popup="true" data-title="{{ __('Edit Customer') }}" 
+                            class="text-primary small ms-2" title="{{ __('Edit email') }}">
                             <i class="ti ti-pencil"></i>
                         </a>
                     </p>
@@ -266,15 +268,16 @@
                     <p class="small mb-0">
                         {{ $customer['billing_address'] }}<br>
                         {{ $customer['billing_city'] }}, {{ $customer['billing_state'] }} {{ $customer['billing_zip'] }}
-                        <a href="#" id="editBillingAddress" class="text-primary small ms-2"
-                            title="{{ __('Edit billing address') }}">
+                        <a href="#" data-size="lg" data-url="{{ route('customer.edit', $customer->id) }}" 
+                            data-ajax-popup="true" data-title="{{ __('Edit Customer') }}" 
+                            class="text-primary small ms-2" title="{{ __('Edit billing address') }}">
                             <i class="ti ti-pencil"></i>
                         </a>
                     </p>
 
                     <p class="text-muted small fw-semibold mb-2 mt-3">{{ __('Notes') }}</p>
-                    <a href="#" class="text-primary small" id="openNotesSection" data-bs-toggle="offcanvas"
-                        data-bs-target="#customerEditSidebar">
+                    <a href="#" data-size="lg" data-url="{{ route('customer.edit', $customer->id) }}" 
+                        data-ajax-popup="true" data-title="{{ __('Edit Customer') }}" class="text-primary small">
                         {{ __('Add notes') }}
                     </a>
                 </div>
@@ -286,8 +289,9 @@
                     <p class="text-muted small fw-semibold mb-2">{{ __('Phone') }}</p>
                     <p class="mb-3">
                         {{ $customer['contact'] }}
-                        <a href="#" id="editPhoneField" class="text-primary small ms-2"
-                            title="{{ __('Edit phone') }}">
+                        <a href="#" data-size="lg" data-url="{{ route('customer.edit', $customer->id) }}" 
+                            data-ajax-popup="true" data-title="{{ __('Edit Customer') }}" 
+                            class="text-primary small ms-2" title="{{ __('Edit phone') }}">
                             <i class="ti ti-pencil"></i>
                         </a>
                     </p>
@@ -298,14 +302,16 @@
                         {{ $customer['shipping_address'] }}<br>
                         {{ $customer['shipping_city'] }}, {{ $customer['shipping_state'] }}
                         {{ $customer['shipping_zip'] }}
-                        <a href="#" id="editShippingAddress" class="text-primary small ms-2"
-                            title="{{ __('Edit shipping address') }}">
+                        <a href="#" data-size="lg" data-url="{{ route('customer.edit', $customer->id) }}" 
+                            data-ajax-popup="true" data-title="{{ __('Edit Customer') }}" 
+                            class="text-primary small ms-2" title="{{ __('Edit shipping address') }}">
                             <i class="ti ti-pencil"></i>
                         </a>
                     </p>
 
                     <p class="text-muted small fw-semibold mb-2 mt-3">{{ __('Custom Fields') }}</p>
-                    <a href="#" class="text-primary small" id="openCustomFields">
+                    <a href="#" data-size="lg" data-url="{{ route('customer.edit', $customer->id) }}" 
+                        data-ajax-popup="true" data-title="{{ __('Edit Customer') }}" class="text-primary small">
                         <i class="ti ti-pencil"></i>
                     </a>
                 </div>
@@ -453,7 +459,7 @@
                                     3 => 'bg-info',
                                     4 => 'bg-success',
                                 },
-                                'link' => route('invoice.show', Crypt::encrypt($invoice->id)),
+                                'link' => route('invoice.edit', Crypt::encrypt($invoice->id)),
                                 'action_type' => 'invoice',
                                 'show_payment' => $invoice->status != 4 && $invoice->getDue() > 0,
                                 'credit_amount' => null,
@@ -480,7 +486,7 @@
                                     3 => 'bg-info',
                                     4 => 'bg-success',
                                 },
-                                'link' => route('proposal.show', Crypt::encrypt($proposal->id)),
+                                'link' => route('proposal.edit', Crypt::encrypt($proposal->id)),
                                 'action_type' => 'proposal',
                                 'credit_amount' => null,
                             ];
