@@ -1351,7 +1351,6 @@
     <script>
         let csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 
-        { { --console.log([window.Header, window.footerAlignment]) --} }
 
         function exportDataTable(tableId, pageTitle, format = 'excel') {
             let table = $('#' + tableId).DataTable();

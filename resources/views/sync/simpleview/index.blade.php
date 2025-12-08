@@ -586,7 +586,7 @@
         }
 
         table {
-            width: 80% !important;
+            width: 90% !important;
             border: 1px solid darkgray !important;
         }
 

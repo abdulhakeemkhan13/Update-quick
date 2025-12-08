@@ -174,7 +174,7 @@ class OpenPurchaseOrderDetail extends DataTable
             $finalData->push((object) [
                 'transaction_date' => '',
                 'transaction' => '',
-                'vendor_name' => $vendor,
+                'vendor_name' => '',
                 'product_name' => '',
                 'full_name' => '',
                 'memo' => '',
@@ -260,8 +260,8 @@ class OpenPurchaseOrderDetail extends DataTable
                 'purchase_order_accounts.ref_id as purchase_id',
                 'purchase_order_accounts.description',
                 'purchase_order_accounts.price',
-                'purchase_order_accounts.quantity_ordered as quantity',
-                'purchase_order_accounts.quantity_received as received_quantity',
+                DB::raw('1 as quantity'), // Accounts don't have quantity
+                DB::raw('0 as received_quantity'), // Not tracked at line level
                 'purchase_order_accounts.order',
                 'purchases.purchase_id as purchase',
                 'purchases.purchase_date as transaction_date',
@@ -272,24 +272,15 @@ class OpenPurchaseOrderDetail extends DataTable
                 'chart_of_accounts.name as full_name', // Account name in full_name
                 DB::raw("'Account' as item_type"), // Mark as account
                 DB::raw('0 as discount'),
-                
-                // Total paid
-                DB::raw('(SELECT IFNULL(SUM(ppay.amount),0)
-                      FROM purchase_payments ppay
-                      WHERE ppay.purchase_id = purchases.id) as paid_amount'),
-                
-                // Tax amount for account items
-                DB::raw('CASE 
-                    WHEN purchase_order_accounts.tax = 1 AND purchase_order_accounts.tax_rate_id IS NOT NULL
-                    THEN (purchase_order_accounts.price * purchase_order_accounts.quantity_ordered * 
-                          (SELECT IFNULL(rate, 0) FROM taxes WHERE id = purchase_order_accounts.tax_rate_id) / 100)
-                    ELSE 0
-                END as tax_amount')
+                DB::raw('0 as tax_amount'), // Tax already in price
+                DB::raw('0 as paid_amount'), // Payments at PO level, not line level
+                DB::raw('purchase_order_accounts.price as total_amount'), // Price = total
+                DB::raw('0 as received_amount'), // Not tracked at line level
+                DB::raw('purchase_order_accounts.price as open_balance') // Full amount is open
             )
             ->join('purchases', 'purchases.id', '=', 'purchase_order_accounts.ref_id')
             ->join('venders', 'venders.id', '=', 'purchases.vender_id')
             ->join('chart_of_accounts', 'chart_of_accounts.id', '=', 'purchase_order_accounts.chart_account_id')
-            ->where('purchase_order_accounts.type', 'Purchase Order')
             ->where('purchases.created_by', \Auth::user()->creatorId())
             ->whereBetween('purchases.purchase_date', [$start, $end])
             ->where('purchases.status', '!=', '2')
@@ -322,6 +313,7 @@ class OpenPurchaseOrderDetail extends DataTable
                 'product_services.name as full_name', // Product full name
                 'product_service_categories.name as category_name',
                 DB::raw("'Product' as item_type"), // Mark as product
+                DB::raw('0 as received_quantity'), // Not tracked at product line level
 
                 // ✅ Total paid (same as before)
                 DB::raw('(SELECT IFNULL(SUM(ppay.amount),0)
@@ -394,9 +386,9 @@ class OpenPurchaseOrderDetail extends DataTable
             Column::make('product_name')->title('Product/Service'),
             Column::make('full_name')->title('Full Name'),
             Column::make('memo')->title('Memo / Description'),
-            Column::make('ship_via')->title('Ship Via')->addClass('default-hidden'),
+            Column::make('ship_via')->title('Ship Via'),
             Column::make('quantity')->title('Qty'),
-            Column::make('backordered_quantity')->title('Backordered'),
+            Column::make('backordered_quantity')->title('Backordered')->addClass('default-hidden'),
             Column::make('total_amount')->title('Amount'),
             Column::make('received_amount')->title('Received'),
             Column::make('open_balance')->title('PO Open Balance'),

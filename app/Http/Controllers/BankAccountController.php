@@ -69,9 +69,10 @@ public function create()
         //     ->pluck('account_subtype', 'account_subtype')
         //     ->toArray();
             $account_subtypes = [
-                'saving'   => 'Saving Account',
-                'current'  => 'Current Account',
-                'fixed'    => 'Fixed Deposit',
+                'saving_account'   => 'Saving Account',
+                'current_account'  => 'Current Account',
+                'fixed_deposit'    => 'Fixed Deposit',
+                'credit_card'      => 'Credit Card',
             ];
         $account_subtypes = ['' => __('Select Type')] + $account_subtypes;
 
@@ -226,13 +227,19 @@ public function edit(BankAccount $bankAccount)
                 ->toArray();
 
             // Dynamic subtypes list
-            $account_subtypes = BankAccount::where('created_by', \Auth::user()->creatorId())
-                ->whereNotNull('account_subtype')
-                ->select('account_subtype')
-                ->distinct()
-                ->orderBy('account_subtype')
-                ->pluck('account_subtype', 'account_subtype')
-                ->toArray();
+            // $account_subtypes = BankAccount::where('created_by', \Auth::user()->creatorId())
+            //     ->whereNotNull('account_subtype')
+            //     ->select('account_subtype')
+            //     ->distinct()
+            //     ->orderBy('account_subtype')
+            //     ->pluck('account_subtype', 'account_subtype')
+            //     ->toArray();
+              $account_subtypes = [
+                'saving_account'   => 'Saving Account',
+                'current_account'  => 'Current Account',
+                'fixed_deposit'    => 'Fixed Deposit',
+                'credit_card'      => 'Credit Card',
+            ];
             $account_subtypes = ['' => __('Select Type')] + $account_subtypes;
 
             $bankAccount->customField = CustomField::getData($bankAccount, 'account');
