@@ -23,7 +23,16 @@ class ExpensesByVendorSummary extends DataTable
         
         // Group by vendor
         $vendors = $data->groupBy('vendor_name');
+        $vendors = $vendors->sortKeys();
 
+        // -------------------------------------------------------
+        // 2. (Optional) Sort items INSIDE each Vendor group by Date
+        // -------------------------------------------------------
+        // This ensures the bills and accounts listed under each 
+        // vendor appear in chronological order.
+        $vendors = $vendors->map(function ($items) {
+            return $items->sortBy('transaction_date')->values();
+        });
 
         foreach ($vendors as $vendor => $rows) {
             $vendorTotal = 0;

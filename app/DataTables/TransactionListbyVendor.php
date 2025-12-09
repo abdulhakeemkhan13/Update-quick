@@ -208,7 +208,7 @@ class TransactionListByVendor extends DataTable
             THEN 1   -- If Credit Card, it is an increase in Liability (Positive sign)
             ELSE -1  -- Otherwise (e.g., Bank/Cash), it is a decrease in Asset (Negative sign)
         END
-END AS amount'),
+            END AS amount'),
                 DB::raw('CASE 
                     WHEN bills.type = "Bill" THEN (
                         (
@@ -261,33 +261,50 @@ END AS amount'),
 
         // 3️⃣ Bill Payments - credit card = positive, bank/cash = negative
         $billPayments = DB::table('bill_payments')
-            ->select(
-                'bill_payments.id',
-                'bill_payments.date as transaction_date',
-                'venders.name as vendor_name',
-                'bill_payments.id as transaction_number',
-                'bill_payments.description as memo',
-                DB::raw('CASE 
-                    WHEN bill_payments.payment_type = "Check" THEN "Bill Payment (Check)"
-                    ELSE "Bill Payment"
-                END as transaction_type'),
-                'bank_accounts.bank_name as account_name',
-                // Credit card payments = POSITIVE (increasing credit card liability)
-                // Bank/Cash payments = NEGATIVE (cash out)
-                DB::raw('CASE 
-                    WHEN bank_accounts.account_subtype = "credit_card" THEN bill_payments.amount
+        ->select(
+            DB::raw('NULL as id'), // bills.id compatible
+            DB::raw('MIN(bill_payments.date) as transaction_date'),
+            'venders.name as vendor_name',
+            
+            // Important: transaction_number should match data type of others
+            DB::raw('GROUP_CONCAT(bill_payments.id) as transaction_number'),
+            
+            DB::raw('bill_payments.reference as memo'),
+
+            DB::raw('CASE 
+                WHEN bank_accounts.account_subtype = "credit_card" 
+                    THEN "Bill Payment (Credit Card)"
+                ELSE "Bill Payment"
+            END as transaction_type'),
+
+            'bank_accounts.bank_name as account_name',
+
+            // Amount (matching column name of other queries)
+            DB::raw('SUM(
+                CASE 
+                    WHEN bank_accounts.account_subtype = "credit_card" 
+                        THEN bill_payments.amount
                     ELSE -1 * bill_payments.amount
-                END as amount'),
-                DB::raw('0 as open_balance')
-            )
-            ->join('bills', 'bills.id', '=', 'bill_payments.bill_id')
-            ->join('venders', 'venders.id', '=', 'bills.vender_id')
-            ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'bill_payments.account_id')
-            ->where('bills.created_by', $userId)
-            ->where('bills.type', 'Bill') // ONLY show payments for actual Bills
-            ->whereBetween('bill_payments.date', [$start, $end]);
+                END
+            ) as amount'),
+
+            DB::raw('0 as open_balance')
+        )
+        ->join('bills', 'bills.id', '=', 'bill_payments.bill_id')
+        ->join('venders', 'venders.id', '=', 'bills.vender_id')
+        ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'bill_payments.account_id')
+        ->where('bills.created_by', $userId)
+        ->where('bills.type', 'Bill')
+        ->whereBetween('bill_payments.date', [$start, $end])
+        ->groupBy(
+            'venders.id',
+            'bill_payments.reference',
+            'transaction_type',
+            'bank_accounts.bank_name'
+        );
 
         // ✅ Union all
+        
         $combined = $bills->unionAll($purchaseOrders)->unionAll($billPayments);
 
         return DB::query()->fromSub($combined, 'transactions')
@@ -300,7 +317,13 @@ END AS amount'),
         return $this->builder()
             ->setTableId('vendor-transaction-table')
             ->columns($this->getColumns())
-            ->minifiedAjax()
+              ->ajax([    
+                'url' => route('expenses.transaction_list_by_vendor'),
+                'type' => 'GET',
+                'headers' => [
+                    'X-CSRF-TOKEN' => csrf_token(),
+                ],
+            ])
             ->orderBy(0, 'asc')
             ->parameters([
                 'paging' => false,

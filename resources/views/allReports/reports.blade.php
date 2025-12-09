@@ -817,7 +817,6 @@
           {{-- ================== Expenses & Vendors ================== --}}
           @php
             $expenseReports = [
-              ['route' => 'expenses.transaction_list_by_vendor', 'label' => 'Transaction List by Vendor'],
               ['route' => 'expenses.purchase_by_vendor', 'label' => 'Purchase by Vendor Detail'],
               ['route' => 'expenses.purchases_by_product_service_detail', 'label' => 'Purchases by Product Service Detail'],
               ['route' => 'expenses.vendors_contact_list', 'label' => 'Vendors Contact List'],
@@ -826,6 +825,7 @@
               ['route' => 'expenses.open_purchase_order_list', 'label' => 'Open Purchase Order List'],
               ['route' => 'expenses.vendors_phone_list', 'label' => 'Vendors Phone List'],
               ['route' => 'expenses.purchase_list', 'label' => 'Purchase List'],
+              ['route' => 'expenses.transaction_list_by_vendor', 'label' => 'Transaction List by Vendor'],
             ];
           @endphp
           <div class="accordion pb-2" id="reportsAccordion">
