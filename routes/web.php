@@ -1079,7 +1079,7 @@ Route::group(['middleware' => ['verified']], function () {
         ->name("expenses.purchase_list");
 
     Route::get("/expensesandvendors/transactionlistbyvendor", [VoucherController::class, 'transactionlistbyvendor'])
-        ->name("expenses.transaction_list_by_vendor");
+        ->name("expenses.transaction_list_by_vendor")->middleware('auth');
 
     Route::get("/expensesandvendors/purchasebyvendor", [VoucherController::class, 'purchasebyvendor'])
         ->name("expenses.purchase_by_vendor");

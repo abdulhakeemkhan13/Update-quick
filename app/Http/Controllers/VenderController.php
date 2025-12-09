@@ -34,7 +34,7 @@ class VenderController extends Controller
         return view('vender.dashboard', $data);
     }
 
-    public function index(\App\DataTables\VendorsListDataTable $dataTable)
+  public function index(\App\DataTables\VendorsListDataTable $dataTable)
     {
         if(\Auth::user()->can('manage vender'))
         {
@@ -122,7 +122,6 @@ class VenderController extends Controller
             return redirect()->back()->with('error', __('Permission denied.'));
         }
     }
-
 
     public function create()
     {

@@ -153,7 +153,8 @@ class VendorsSingleDetailsShowDataTable extends DataTable
             // FIX: Grouped the OR condition so it respects the vendor_id
             ->where(function ($query) {
                 $query->where('type', 'Expense')
-                      ->orWhere('type', 'Credit Card');
+                      ->orWhere('type', 'Credit Card')
+                      ->orWhere('type', 'Check');
             });
 
         if ($dateFrom) $expensesQuery->whereDate('bill_date', '>=', $dateFrom);
@@ -196,18 +197,20 @@ class VendorsSingleDetailsShowDataTable extends DataTable
 
         foreach ($payments as $payment) {
             $bill = $payment->bill;
-            $transactions->push([
-                'id' => 'payment_' . $payment->id,
-                'date' => $payment->date,
-                'type' => 'Bill Payment',
-                'number' => Auth::user()->paymentNumberFormat($payment->id),
-                'payee' => $vendorName,
-                'category' => '-',
-                'total' => $payment->amount,
-                'status' => 'Paid',
-                'url' => $bill ? route('bill.show', \Crypt::encrypt($bill->id)) : '#',
-                'edit_url' => null,
-            ]);
+            if($bill->type == 'Bill'){
+                $transactions->push([
+                    'id' => 'payment_' . $payment->id,
+                    'date' => $payment->date,
+                    'type' => 'Bill Payment',
+                    'number' => Auth::user()->paymentNumberFormat($payment->id),
+                    'payee' => $vendorName,
+                    'category' => '-',
+                    'total' => $payment->amount,
+                    'status' => 'Paid',
+                    'url' => $bill ? route('bill.show', \Crypt::encrypt($bill->id)) : '#',
+                    'edit_url' => null,
+                ]);
+            }
         }
     }
 
