@@ -63,6 +63,37 @@ class Bill extends Model
         return $this->hasOne('App\\Models\\Vender', 'id', 'vender_id');
     }
 
+    /**
+     * Get the selected payee value for dropdown selection (format: type_id)
+     * This method handles cases where user_type might not be set
+     */
+    public function getSelectedPayee()
+    {
+        // If user_type and vender_id are set, use them directly
+        if (!empty($this->user_type) && !empty($this->vender_id)) {
+            // Normalize user_type to lowercase for consistent comparison
+            return strtolower($this->user_type) . '_' . $this->vender_id;
+        }
+        
+        // If user_type is not set but vender_id exists, try to detect the type
+        if (!empty($this->vender_id)) {
+            // Check if it's a vendor
+            if (\App\Models\Vender::find($this->vender_id)) {
+                return 'vendor_' . $this->vender_id;
+            }
+            // Check if it's a customer
+            if (\App\Models\Customer::find($this->vender_id)) {
+                return 'customer_' . $this->vender_id;
+            }
+            // Check if it's an employee
+            if (\App\Models\Employee::find($this->vender_id)) {
+                return 'employee_' . $this->vender_id;
+            }
+        }
+        
+        return '';
+    }
+
     public function tax()
     {
         return $this->hasOne('App\\Models\\Tax', 'id', 'tax_id');

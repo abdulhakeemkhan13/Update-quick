@@ -234,10 +234,10 @@
     box-shadow: rgba(0, 0, 0, 0.2) 0px 4px 16px 0px !important;
 }
 
-.qbo-feed-card-highlight {
+/* .qbo-feed-card-highlight {
     background: linear-gradient(135deg, #e3f2fd, #bbdefb);
     border-color: #90caf9;
-}
+} */
 
 .qbo-feed-card-header {
     display: flex;

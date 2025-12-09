@@ -20,41 +20,57 @@
             {{-- Navigation Chips Row --}}
             <div class="qbo-nav-row">
                 <div class="qbo-nav-container">
-                    <a href="#" class="qbo-nav-chip">
-                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #1E88E5, #1565C0);"><i class="ti ti-calculator"></i></span>
+                    <a href="{{ route('transaction.bankTransactions') }}" class="qbo-nav-chip">
+                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #1E88E5, #1565C0);"><img src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/accounting/1/0/0/accounting.svg" class="chip-icon" alt="" style="width: 28px;"></span>
                         <span>{{ __('Accounting') }}</span>
                     </a>
                     <a href="#" class="qbo-nav-chip">
-                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #43A047, #2E7D32);"><i class="ti ti-receipt-2"></i></span>
+                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #43A047, #2E7D32);"><img style="width: 28px;" src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/expenses/1/0/0/expenses.svg" class="chip-icon" alt=""></span>
                         <span>{{ __('Expenses & Pay Bills') }}</span>
                     </a>
                     <a href="#" class="qbo-nav-chip">
-                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #00897B, #00695C);"><i class="ti ti-currency-dollar"></i></span>
+                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #00897B, #00695C);"><img style="width: 28px;" src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/sales-payments/1/0/0/sales-payments.svg" class="chip-icon" alt=""></span>
                         <span>{{ __('Sales & Get Paid') }}</span>
                     </a>
                     <a href="#" class="qbo-nav-chip">
-                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #00ACC1, #00838F);"><i class="ti ti-users"></i></span>
+                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #00ACC1, #00838F);"><img style="width: 28px;" src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/customers/1/0/0/customers.svg" class="chip-icon" alt=""></span>
                         <span>{{ __('Customers') }}</span>
                     </a>
                     <a href="#" class="qbo-nav-chip">
-                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #5E35B1, #4527A0);"><i class="ti ti-briefcase"></i></span>
+                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #5E35B1, #4527A0);"><img style="width: 28px;" src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/team/1/0/0/team.svg" class="chip-icon" alt=""></span>
                         <span>{{ __('Team') }}</span>
                     </a>
                     <a href="#" class="qbo-nav-chip">
-                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #3949AB, #283593);"><i class="ti ti-clock"></i></span>
+                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #3949AB, #283593);"><img style="width: 28px;" src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/time/1/0/0/time.svg" class="chip-icon" alt=""></span>
                         <span>{{ __('Time') }}</span>
                     </a>
                     <a href="#" class="qbo-nav-chip">
-                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #039BE5, #0277BD);"><i class="ti ti-archive"></i></span>
+                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #039BE5, #0277BD);"><img style="width: 28px;" src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/inventory/1/0/0/inventory.svg" class="chip-icon" alt=""></span>
                         <span>{{ __('Inventory') }}</span>
                     </a>
                     <a href="#" class="qbo-nav-chip">
-                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #E53935, #C62828);"><i class="ti ti-receipt-tax"></i></span>
+                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #E53935, #C62828);"><img style="width: 28px;" src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/sales-tax/1/0/0/sales-tax.svg" class="chip-icon" alt=""></span>
                         <span>{{ __('Sales Tax') }}</span>
                     </a>
                     <a href="#" class="qbo-nav-chip">
-                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #8E24AA, #6A1B9A);"><i class="ti ti-building"></i></span>
-                        <span>{{ __('Business') }}</span>
+                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #8E24AA, #6A1B9A);"><img style="width: 28px;" src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/business-tax/1/0/0/business-tax.svg" class="chip-icon" alt=""></span>
+                        <span>{{ __('Business Tax') }}</span>
+                    </a>
+                    <a href="#" class="qbo-nav-chip">
+                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #8E24AA, #6A1B9A);"><img style="width: 28px;" src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/lending/1/0/0/lending.svg" class="chip-icon" alt=""></span>
+                        <span>{{ __('Lending') }}</span>
+                    </a>
+                    <a href="#" class="qbo-nav-chip">
+                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #8E24AA, #6A1B9A);"><img style="width: 28px;" src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/payroll/1/0/0/payroll.svg" class="chip-icon" alt=""></span>
+                        <span>{{ __('Payroll') }}</span>
+                        <!-- premium svg -->
+                        <span class="qbo-nav-premium"><svg width="20px" height="20px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true"><path d="m21.782 9.375-4-5A1 1 0 0 0 17 4H7a1 1 0 0 0-.781.375l-4 5a1 1 0 0 0 .074 1.332l9 9a1 1 0 0 0 1.414 0l9-9a1 1 0 0 0 .075-1.332ZM18.92 9h-3.2l-1-3h1.8l2.4 3ZM8.28 11l1.433 4.3L5.414 11H8.28Zm5.333 0L12 15.839 10.387 11h3.226Zm-3.225-2 1-3h1.22l1 3h-3.22Zm5.333 2h2.865l-4.3 4.3 1.435-4.3Zm-8.24-5h1.8l-1 3h-3.2l2.4-3Z" fill="currentColor"></path></svg></span>
+                    </a>
+                    <a href="#" class="qbo-nav-chip">
+                        <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #8E24AA, #6A1B9A);"><img style="width: 28px;" src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/marketing/1/0/0/marketing.svg" class="chip-icon" alt=""></span>
+                        <span>{{ __('Marketing') }}</span>
+                        <!-- premium svg -->
+                        <span class="qbo-nav-premium"><svg width="20px" height="20px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true"><path d="m21.782 9.375-4-5A1 1 0 0 0 17 4H7a1 1 0 0 0-.781.375l-4 5a1 1 0 0 0 .074 1.332l9 9a1 1 0 0 0 1.414 0l9-9a1 1 0 0 0 .075-1.332ZM18.92 9h-3.2l-1-3h1.8l2.4 3ZM8.28 11l1.433 4.3L5.414 11H8.28Zm5.333 0L12 15.839 10.387 11h3.226Zm-3.225-2 1-3h1.22l1 3h-3.22Zm5.333 2h2.865l-4.3 4.3 1.435-4.3Zm-8.24-5h1.8l-1 3h-3.2l2.4-3Z" fill="currentColor"></path></svg></span>
                     </a>
                 </div>
                 <button class="qbo-nav-scroll-btn">
@@ -84,7 +100,7 @@
                 <div class="qbo-feed-cards">
                     <div class="qbo-feed-card">
                         <div class="qbo-feed-card-header">
-                            <i class="ti ti-file-invoice"></i>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" color="currentColor" width="24px" height="24px" focusable="false" aria-hidden="true" class="IglFFVfJjdri6o0yYcmONA=="><path fill="currentColor" d="M18.007 21.99H18l-12-.017a3 3 0 0 1-2.995-3l.022-14a3 3 0 0 1 3-3l12 .018a3 3 0 0 1 3 3l-.022 14a3 3 0 0 1-3 3zm0-2a1 1 0 0 0 1-1l.022-14a1 1 0 0 0-1-1l-12-.017a1 1 0 0 0-1 1l-.022 14a1 1 0 0 0 1 1z"></path><path fill="currentColor" d="M10.027 6.979h-3a1 1 0 0 1 0-2h3a1 1 0 0 1 0 2M17.009 18.99h-3a1 1 0 1 1 0-2h3a1 1 0 1 1 0 2M16.025 7.988l-8-.012a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2l5 .007h3a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-1.995m-8 1.988 4 .006v3l-4-.006zm8 3.012h-2v-3h2z"></path></svg>
                             <span>{{ __('Overdue invoices') }}</span>
                             <button class="qbo-card-menu"><i class="ti ti-dots-vertical"></i></button>
                         </div>
@@ -93,7 +109,7 @@
                     </div>
                     <div class="qbo-feed-card">
                         <div class="qbo-feed-card-header">
-                            <i class="ti ti-chart-bar"></i>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" color="currentColor" width="24px" height="24px" focusable="false" aria-hidden="true" class="IglFFVfJjdri6o0yYcmONA=="><path fill="currentColor" d="M20.988 8.939a1 1 0 0 0-.054-.265.973.973 0 0 0-.224-.374v-.005l-6-6a1 1 0 0 0-.283-.191c-.031-.014-.064-.022-.1-.034a1 1 0 0 0-.259-.052C14.042 2.011 14.023 2 14 2H6a3 3 0 0 0-3 3v14a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3V9c0-.022-.011-.04-.012-.061M15 5.414 17.586 8H16a1 1 0 0 1-1-1zM18 20H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7v3a3 3 0 0 0 3 3h3v9a1 1 0 0 1-1 1"></path><path fill="currentColor" d="M7 10h3a1 1 0 1 0 0-2H7a1 1 0 0 0 0 2M14 13H7a1 1 0 0 0 0 2h7a1 1 0 0 0 0-2M14 16H7a1 1 0 0 0 0 2h7a1 1 0 0 0 0-2"></path></svg>
                             <span>{{ __('Profit and loss') }}</span>
                             <button class="qbo-card-menu"><i class="ti ti-dots-vertical"></i></button>
                         </div>

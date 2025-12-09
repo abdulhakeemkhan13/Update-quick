@@ -580,9 +580,9 @@
                                                     @endcan
                                                     @can('show bill')
                                                         <div class="action-btn bg-info ms-2">
-                                                            <a href="{{ route('bill.show', \Crypt::encrypt($bill->id)) }}"
+                                                            <a href="{{ $bill->vender_id ? route('vender.show', \Crypt::encrypt($bill->vender_id)) : '#' }}"
                                                                 class="mx-3 btn btn-sm align-items-center"
-                                                                data-bs-toggle="tooltip" title="{{ __('Show') }}"
+                                                                data-bs-toggle="tooltip" title="{{ __('Show Vendor') }}"
                                                                 data-original-title="{{ __('Detail') }}">
                                                                 <i class="ti ti-eye text-white"></i>
                                                             </a>

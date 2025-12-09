@@ -280,7 +280,9 @@
     <!-- [ Main Content ] start -->
     <div class="dash-container qbo-main-content">
         <div class="dash-content">
-             <div class="page-header">
+
+            <div class="page-header">
+
                 <div class="page-block">
                     <div class="row align-items-center">
                         <div class="col-auto">
@@ -296,7 +298,9 @@
                         </div>
                     </div>
                 </div>
+
             </div> 
+
             @yield('content')
             <!-- [ Main Content ] end -->
         </div>

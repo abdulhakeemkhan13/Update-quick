@@ -327,6 +327,7 @@ Route::get('/vender/bill/{id}/', [BillController::class, 'invoiceLink'])->name('
 Route::get('/vendor/purchase/{id}/', [PurchaseController::class, 'purchaseLink'])->name('purchase.link.copy');
 Route::get('/customer/proposal/{id}/', [ProposalController::class, 'invoiceLink'])->name('proposal.link.copy');
 Route::get('/invoice/customer-proposals', [ProposalController::class, 'customerProposalsForInvoice'])->name('invoice.customer.proposals');
+Route::get('/invoice/customer-suggestions', [InvoiceController::class, 'customerSuggestionsForInvoice'])->name('invoice.customer.suggestions');
 Route::get('proposal/pdf/{id}', [ProposalController::class, 'proposal'])->name('proposal.pdf')->middleware(['XSS', 'revalidate']);
 
 //================================= Invoice Payment Gateways  ====================================//
@@ -469,6 +470,10 @@ Route::group(['middleware' => ['verified']], function () {
     Route::post('/qbo-menu/config', [\App\Http\Controllers\QboMenuController::class, 'saveMenuConfig'])->name('qbo.menu.config.save')->middleware(['auth']);
     Route::get('/qbo-menu/bookmarks', [\App\Http\Controllers\QboMenuController::class, 'getBookmarks'])->name('qbo.menu.bookmarks')->middleware(['auth']);
     Route::post('/qbo-menu/bookmarks', [\App\Http\Controllers\QboMenuController::class, 'saveBookmarks'])->name('qbo.menu.bookmarks.save')->middleware(['auth']);
+    Route::get('/qbo-menu/available-pages', [\App\Http\Controllers\QboMenuController::class, 'getAvailablePages'])->name('qbo.menu.available.pages')->middleware(['auth']);
+    Route::put('/qbo-menu/bookmarks/{id}', [\App\Http\Controllers\QboMenuController::class, 'updateBookmark'])->name('qbo.menu.bookmarks.update')->middleware(['auth']);
+    Route::delete('/qbo-menu/bookmarks/{id}', [\App\Http\Controllers\QboMenuController::class, 'deleteBookmark'])->name('qbo.menu.bookmarks.delete')->middleware(['auth']);
+    Route::post('/qbo-menu/bookmarks/reset', [\App\Http\Controllers\QboMenuController::class, 'resetBookmarks'])->name('qbo.menu.bookmarks.reset')->middleware(['auth']);
     Route::get('/qbo-menu/pinned', [\App\Http\Controllers\QboMenuController::class, 'getPinnedItems'])->name('qbo.menu.pinned')->middleware(['auth']);
     Route::post('/qbo-menu/toggle-pin', [\App\Http\Controllers\QboMenuController::class, 'togglePin'])->name('qbo.menu.toggle.pin')->middleware(['auth']);
     Route::post('/qbo-menu/reset', [\App\Http\Controllers\QboMenuController::class, 'resetToDefault'])->name('qbo.menu.reset')->middleware(['auth']);
