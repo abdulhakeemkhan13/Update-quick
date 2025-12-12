@@ -769,8 +769,8 @@
               ['route' => 'payables.aging_details', 'label' => 'Accounts payable aging details'],
               ['route' => 'payables.vendor_balance_summary', 'label' => 'Vendor balance summary'],
               ['route' => 'payables.bills_payments', 'label' => 'Bills and Applied payments'],
-              ['route' => 'payables.vendor_balance_detail', 'label' => 'Vendor balance detail'],
               ['route' => 'payables.bill_payment_list', 'label' => 'Bill Payment List'],
+              ['route' => 'payables.vendor_balance_detail', 'label' => 'Vendor balance detail'],
              
             ];
           @endphp
@@ -817,9 +817,10 @@
           {{-- ================== Expenses & Vendors ================== --}}
           @php
             $expenseReports = [
+              ['route' => 'expenses.check_detail', 'label' => 'Check Detail'],
               ['route' => 'expenses.purchase_by_vendor', 'label' => 'Purchase by Vendor Detail'],
-              ['route' => 'expenses.purchases_by_product_service_detail', 'label' => 'Purchases by Product Service Detail'],
               ['route' => 'expenses.vendors_contact_list', 'label' => 'Vendors Contact List'],
+              ['route' => 'expenses.purchases_by_product_service_detail', 'label' => 'Purchases by Product Service Detail'],
               ['route' => 'expenses.open_purchase_order_detail', 'label' => 'Open Purchase Order Detail'],
               ['route' => 'expenses.expenses_by_vendor_summary', 'label' => 'Expenses by Vendor Summary'],
               ['route' => 'expenses.open_purchase_order_list', 'label' => 'Open Purchase Order List'],

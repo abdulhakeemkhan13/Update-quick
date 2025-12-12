@@ -14,10 +14,10 @@ class PurchasesByVendorDetail extends DataTable
     {
         // $query is already a collection from query() method
         $products = collect($query);
-        $accounts = $this->getBillAccounts();
+        // $accounts = $this->getBillAccounts();    
         
         // Merge products and accounts
-        $data = $products->concat($accounts)->sortBy([
+        $data = $products->sortBy([
             ['vendor_name', 'asc'],
             ['transaction_date', 'asc'],
         ]);
@@ -176,45 +176,45 @@ class PurchasesByVendorDetail extends DataTable
             ?? Carbon::now()->endOfDay()->format('Y-m-d');
 
         // Query bill_products through purchases that have bill relationship
-return DB::table('bill_products')
-    ->select(
-        'bill_products.id',
-        'bill_products.price',
-        'bill_products.quantity',
-        'bill_products.discount',
-        'bill_products.description',
-        'bills.bill_id',
-        'bills.bill_date as transaction_date',
-        'bills.type as bill_type',
-        'venders.name as vendor_name',
-        'product_services.name as product_service_name',
-        DB::raw("NULL as account_name"), // Mark as product
-        
-        // FIXED TAX CALCULATION
-        DB::raw('(
-            SELECT IFNULL(
-                SUM(
-                    (
-                        (bill_products.price * bill_products.quantity) 
-                        - IFNULL(bill_products.discount, 0)
-                    ) * (taxes.rate / 100)
-                ), 
-                0
-            )
-            FROM taxes
-            WHERE FIND_IN_SET(taxes.id, bill_products.tax) > 0
-        ) AS tax_amount')
-    )
+    return DB::table('bill_products')
+        ->select(
+            'bill_products.id',
+            'bill_products.price',
+            'bill_products.quantity',
+            'bill_products.discount',
+            'bill_products.description',
+            'bills.bill_id',
+            'bills.bill_date as transaction_date',
+            'bills.type as bill_type',
+            'venders.name as vendor_name',
+            'product_services.name as product_service_name',
+            DB::raw("NULL as account_name"), // Mark as product
+            
+            // FIXED TAX CALCULATION
+            DB::raw('(
+                SELECT IFNULL(
+                    SUM(
+                        (
+                            (bill_products.price * bill_products.quantity) 
+                            - IFNULL(bill_products.discount, 0)
+                        ) * (taxes.rate / 100)
+                    ), 
+                    0
+                )
+                FROM taxes
+                WHERE FIND_IN_SET(taxes.id, bill_products.tax) > 0
+            ) AS tax_amount')
+        )
     ->join('bills', 'bills.id', '=', 'bill_products.bill_id')
-    ->join('purchases', function($join) {
-        $join->on('purchases.txn_id', '=', 'bills.id')
-             ->whereNotNull('purchases.txn_type');
-    })
-    ->join('venders', 'venders.id', '=', 'purchases.vender_id')
+    // ->join('purchases', function($join) {
+    //     $join->on('purchases.txn_id', '=', 'bills.id')
+    //          ->whereNotNull('purchases.txn_type');
+    // })
+    ->join('venders', 'venders.id', '=', 'bills.vender_id')
     ->join('product_services', 'product_services.id', '=', 'bill_products.product_id')
-    ->where('purchases.created_by', \Auth::user()->creatorId())
+    ->where('bills.created_by', \Auth::user()->creatorId())
     ->whereBetween('bills.bill_date', [$start, $end])
-    ->whereNotNull('purchases.txn_id')
+    // ->whereNotNull('purchases.txn_id')
     ->get();
 
     }
@@ -222,42 +222,42 @@ return DB::table('bill_products')
     /**
      * Get bill accounts through purchases that have bill relationship
      */
-    protected function getBillAccounts()
-    {
-        $start = request()->get('start_date')
-            ?? request()->get('startDate')
-            ?? Carbon::now()->startOfYear()->format('Y-m-d');
+    // protected function getBillAccounts()
+    // {
+    //     $start = request()->get('start_date')
+    //         ?? request()->get('startDate')
+    //         ?? Carbon::now()->startOfYear()->format('Y-m-d');
 
-        $end = request()->get('end_date')
-            ?? request()->get('endDate')
-            ?? Carbon::now()->endOfDay()->format('Y-m-d');
+    //     $end = request()->get('end_date')
+    //         ?? request()->get('endDate')
+    //         ?? Carbon::now()->endOfDay()->format('Y-m-d');
 
-        return DB::table('bill_accounts')
-            ->select(
-                'bill_accounts.id',
-                'bill_accounts.price',
-                DB::raw('1 as quantity'), // Accounts don't have quantity
-                DB::raw('0 as discount'), // Accounts don't have discount
-                'bill_accounts.description',
-                'bills.bill_id',
-                'bills.bill_date as transaction_date',
-                'bills.type as bill_type',
-                'venders.name as vendor_name',
-                DB::raw("NULL as product_service_name"), // Mark as account
-                'chart_of_accounts.name as account_name',
-                DB::raw('0 as tax_amount') // Price already includes tax for accounts
-            )
-            ->join('bills', 'bills.id', '=', 'bill_accounts.ref_id')
-            ->join('purchases', function($join) {
-                $join->on('purchases.txn_id', '=', 'bills.id');
-            })
-            ->join('venders', 'venders.id', '=', 'purchases.vender_id')
-            ->join('chart_of_accounts', 'chart_of_accounts.id', '=', 'bill_accounts.chart_account_id')
-            ->where('purchases.created_by', \Auth::user()->creatorId())
-            ->whereBetween('bills.bill_date', [$start, $end])
-            ->whereNotNull('purchases.txn_id')
-            ->get();
-    }
+    //     return DB::table('bill_accounts')
+    //         ->select(
+    //             'bill_accounts.id',
+    //             'bill_accounts.price',
+    //             DB::raw('1 as quantity'), // Accounts don't have quantity
+    //             DB::raw('0 as discount'), // Accounts don't have discount
+    //             'bill_accounts.description',
+    //             'bills.bill_id',
+    //             'bills.bill_date as transaction_date',
+    //             'bills.type as bill_type',
+    //             'venders.name as vendor_name',
+    //             DB::raw("NULL as product_service_name"), // Mark as account
+    //             'chart_of_accounts.name as account_name',
+    //             DB::raw('0 as tax_amount') // Price already includes tax for accounts
+    //         )
+    //         ->join('bills', 'bills.id', '=', 'bill_accounts.ref_id')
+    //         ->join('purchases', function($join) {
+    //             $join->on('purchases.txn_id', '=', 'bills.id');
+    //         })
+    //         ->join('venders', 'venders.id', '=', 'purchases.vender_id')
+    //         ->join('chart_of_accounts', 'chart_of_accounts.id', '=', 'bill_accounts.chart_account_id')
+    //         ->where('purchases.created_by', \Auth::user()->creatorId())
+    //         ->whereBetween('bills.bill_date', [$start, $end])
+    //         ->whereNotNull('purchases.txn_id')
+    //         ->get();
+    // }
 
     public function html()
     {

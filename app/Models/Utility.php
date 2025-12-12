@@ -7372,6 +7372,29 @@ class Utility extends Model
         return $accountPayable;
     }
 
+  public static function getAllowedExpenseAccounts($createdBy)
+    {
+        // Allowed types according to QB logic
+        $allowedTypes = ['Expense', 'Expenses', 'COGS', 'Cost of Goods Sold', 'Other Expense'];
+
+        // Fetch subtype IDs first
+        $subTypes = ChartOfAccountType::where('created_by', $createdBy)
+            ->whereIn(DB::raw('LOWER(name)'), array_map('strtolower', $allowedTypes))
+            ->pluck('id')
+            ->toArray();
+
+        if (empty($subTypes)) {
+            return []; // No valid types found
+        }
+
+        // Now fetch actual Chart of Account IDs
+        return ChartOfAccount::where('created_by', $createdBy)
+            ->whereIn('type', $subTypes)
+            ->pluck('id')
+            ->toArray();
+    }
+
+
       /**
      * Generate journal number
      */

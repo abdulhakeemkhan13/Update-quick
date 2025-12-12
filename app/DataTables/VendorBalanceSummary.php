@@ -6,173 +6,155 @@ use App\Models\Bill;
 use Carbon\Carbon;
 use Yajra\DataTables\Services\DataTable;
 use Yajra\DataTables\Html\Column;
-use Illuminate\Support\Facades\DB; 
+use Illuminate\Support\Facades\DB;
 
 class VendorBalanceSummary extends DataTable
 {
-    /**
-     * Build DataTable class.
-     *
-     * @param mixed $query Results from query() method.
-     * @return \Yajra\DataTables\DataTableAbstract
-     */
     public function dataTable($query)
     {
-        $entries = $query->get()->toArray();
-        $mergedArray = [];
-        $totalBalance = 0;
-        $grandTotal = 0; 
+        $data = collect($query->get());
 
-        foreach ($entries as $item) {
-            // Use the vendor name for grouping
-            $name = $item['name'];
+        $grandTotal = 0;
+        $finalData = collect();
 
-            if (!isset($mergedArray[$name])) {
-                $mergedArray[$name] = [
-                    'name' => $name,
-                    'price' => 0.0,
-                    'pay_price' => 0.0,
-                    'total_tax' => 0.0,
-                    'debit_price' => 0.0,
-                ];
-            }
+        // Group by vendor and sum balances
+        $vendors = $data->groupBy('vendor_name');
 
-            // Ensure float conversion for accurate summation
-            $mergedArray[$name]['price'] += (float)($item['price'] ?? 0);
-            $mergedArray[$name]['pay_price'] += (float)($item['pay_price'] ?? 0);
-            $mergedArray[$name]['total_tax'] += (float)($item['total_tax'] ?? 0);
-            $mergedArray[$name]['debit_price'] += (float)($item['debit_price'] ?? 0);
-        }
-
-        $data = collect();
-        foreach ($mergedArray as $row) {
-            // Calculate Total Bill Amount (Subtotal + Tax)
-            $vendorTotal = $row['price'] + $row['total_tax'];
+        foreach ($vendors as $vendor => $rows) {
+            $vendorBalance = $rows->sum('open_balance');
             
-            // Calculate Vendor Open Balance (Total Bill - Payments)
-            $vendorOpenBalance = $vendorTotal - $row['pay_price'];
-            
-            // Calculate Final Balance (Open Balance - Debit Notes)
-            $balance = $vendorOpenBalance - $row['debit_price'];
+            // Only show vendors with non-zero balance (like QuickBooks)
+            // if (abs($vendorBalance) < 0.01) {
+            //     continue;
+            // }
 
-            $totalBalance += $balance;
-            $grandTotal = $totalBalance; 
-
-            $data->push([
-                'name' => $row['name'],
-                // FIX: Use number_format(value, 2) to ensure decimals are shown
-                'total' => number_format($balance, 2), 
+            $finalData->push((object) [
+                'name' => $vendor ?: 'Unknown Vendor',
+                'total' => $vendorBalance,
+                'isDetail' => true,
             ]);
+
+            $grandTotal += $vendorBalance;
         }
 
-        // Add total row
-        $data->push([
-            'name' => '<strong>Grand Total</strong>', 
-            // FIX: Use number_format(value, 2) to ensure decimals are shown
-            'total' => '<strong>' . number_format($grandTotal, 2) . '</strong>',
-            'DT_RowClass' => 'summary-total'
+        // Sort by vendor name
+        $finalData = $finalData->sortBy('name')->values();
+
+        // Add grand total row
+        $finalData->push((object) [
+            'name' => '<strong>TOTAL</strong>',
+            'total' => $grandTotal,
+            'isGrandTotal' => true,
         ]);
 
-        // Only render the 'name' and 'total' columns, allowing raw HTML for formatting
-        return datatables()->collection($data)->rawColumns(['name', 'total']);
+        return datatables()
+            ->collection($finalData)
+            ->editColumn('total', function ($row) {
+                $value = number_format((float) $row->total, 2);
+                if (isset($row->isGrandTotal)) {
+                    return '<strong>' . $value . '</strong>';
+                }
+                return $value;
+            })
+            ->setRowClass(function ($row) {
+                if (isset($row->isGrandTotal)) {
+                    return 'grandtotal-row font-weight-bold bg-light';
+                }
+                return 'detail-row';
+            })
+            ->rawColumns(['name', 'total']);
     }
 
-    /**
-     * Get query source of dataTable.
-     *
-     * @param \App\Models\Bill $model
-     * @return \Illuminate\Database\Eloquent\Builder
-     */
     public function query(Bill $model)
     {
-        $end = request()->get('endDate') ?? Carbon::now()->endOfDay()->format('Y-m-d');
-
-        return $model->newQuery()
+        ini_set('memory_limit', '512M');
+        set_time_limit(600);
+        $userId = \Auth::user()->creatorId();
+        $end = request()->get('end_date') ?? request()->get('endDate') ?? Carbon::now()->endOfDay()->format('Y-m-d');
+        // 1. Bills - Open Balance 
+        // FIX: We added "AND date <= '$end'" to payments and debit notes subqueries
+        // FIX: Use COALESCE with bills.total for Check/Expense types
+        $bills = DB::table('bills')
             ->select(
-                'venders.name',
-                // 👇 FIX: COMBINE PRODUCT SUBTOTAL AND ACCOUNT TOTAL (bill_accounts)
+                'venders.name as vendor_name',
                 DB::raw('(
-                    SELECT COALESCE(SUM(
-                        (bp.price * bp.quantity) - COALESCE(bp.discount, 0)
-                    ), 0)
-                    FROM bill_products bp
-                    WHERE bp.bill_id = bills.id
-                ) + (
-                    SELECT COALESCE(SUM(ba.price), 0)
-                    FROM bill_accounts ba
-                    WHERE ba.ref_id = bills.id
-                ) as price'), // 'price' now includes bill_products AND bill_accounts
-                // 👆 FIX END
-
-                DB::raw('(
-                    SELECT COALESCE(SUM(
-                        (bp2.price * bp2.quantity - COALESCE(bp2.discount, 0)) * (t.rate / 100)
-                    ), 0) 
-                    FROM bill_products bp2
-                    LEFT JOIN taxes t ON FIND_IN_SET(t.id, bp2.tax) > 0
-                    WHERE bp2.bill_id = bills.id
-                ) as total_tax'), // Total Tax
-
-                DB::raw('(
-                    SELECT COALESCE(SUM(amount), 0)
-                    FROM bill_payments
-                    WHERE bill_payments.bill_id = bills.id
-                ) as pay_price'), // Total Payments
-
-                DB::raw('(
-                    SELECT COALESCE(SUM(debit_notes.amount), 0) 
-                    FROM debit_notes
-                    WHERE debit_notes.bill = bills.id
-                ) as debit_price') // Total Debit Notes
+                    COALESCE(
+                        NULLIF(
+                            (SELECT IFNULL(SUM(bp.price * bp.quantity - IFNULL(bp.discount, 0)), 0) FROM bill_products bp WHERE bp.bill_id = bills.id)
+                            + (SELECT IFNULL(SUM(ba.price), 0) FROM bill_accounts ba WHERE ba.ref_id = bills.id),
+                            0
+                        ),
+                        bills.total
+                    ) - (
+                        SELECT IFNULL(SUM(amount), 0) FROM bill_payments 
+                        WHERE bill_payments.bill_id = bills.id 
+                        AND bill_payments.date <= "' . $end . '"  
+                    ) - (
+                        SELECT IFNULL(SUM(debit_notes.amount), 0) FROM debit_notes 
+                        WHERE debit_notes.bill = bills.id 
+                        AND debit_notes.date <= "' . $end . '"
+                    )
+                ) as open_balance')
             )
-            ->leftJoin('venders', 'venders.id', '=', 'bills.vender_id')
-            ->where('bills.created_by', \Auth::user()->creatorId())
-            ->where('bills.type', 'bill')
-            ->where('bills.status', '!=', '4') 
-            ->where('bills.bill_date', '<=', $end)
-            ->groupBy('bills.id', 'venders.name'); 
+            ->join('venders', 'venders.id', '=', 'bills.vender_id')
+            // ->where('venders.is_active', '1') // Temporarily disabled for debugging
+            ->where('bills.created_by', $userId)
+            ->whereRaw('LOWER(bills.type) IN (?, ?, ?)', ['bill', 'check', 'expense'])
+            ->where('bills.bill_date', '<=', $end); // Bill must exist before this date
+
+        // 2. Vendor Credits
+        // FIX: Ensure we only count credits created before the end date
+        $vendorCredits = DB::table('vendor_credits')
+            ->select(
+                'venders.name as vendor_name',
+                DB::raw('-1 * (
+                    (SELECT IFNULL(SUM(vcp.price * vcp.quantity), 0) FROM vendor_credit_products vcp WHERE vcp.vendor_credit_id = vendor_credits.id)
+                    + (SELECT IFNULL(SUM(vca.price), 0) FROM vendor_credit_accounts vca WHERE vca.vendor_credit_id = vendor_credits.id)
+                ) as open_balance')
+            )
+            ->join('venders', 'venders.id', '=', 'vendor_credits.vender_id')
+            ->where('venders.is_active', '1')
+            ->where('vendor_credits.created_by', $userId)
+            ->where('vendor_credits.date', '<=', $end);
+
+        // 3. Unapplied Payments - Negative balance (money paid but not applied to bills)
+        $unappliedPayments = DB::table('unapplied_payments')
+            ->select(
+                'venders.name as vendor_name',
+                DB::raw('-1 * unapplied_payments.unapplied_amount as open_balance')
+            )
+            ->join('venders', 'venders.id', '=', 'unapplied_payments.vendor_id')
+            ->where('venders.is_active', '1')
+            ->where('unapplied_payments.created_by', $userId)
+            // ->where('unapplied_payments.txn_date', '<=', $end)
+            ->where('unapplied_payments.unapplied_amount', '>', 0);
+
+        $combined = $bills->unionAll($vendorCredits)->unionAll($unappliedPayments);
+        return DB::query()->fromSub($combined, 'balances')
+            ->orderBy('vendor_name', 'asc');
     }
 
-    /**
-     * Optional method if you want to use the html builder.
-     *
-     * @return \Yajra\DataTables\Html\Builder
-     */
     public function html()
     {
         return $this->builder()
-            ->setTableId('vendor-balance-summary-table') 
+            ->setTableId('vendor-balance-summary-table')
             ->columns($this->getColumns())
             ->minifiedAjax()
-            ->orderBy(0, 'desc')
+            ->orderBy(0, 'asc')
             ->parameters([
                 'paging' => false,
                 'searching' => false,
                 'info' => false,
                 'ordering' => false,
-                'scrollY' => '500px',
-                'scrollCollapse' => true,
-                'colReorder' => true,
-                'createdRow' => "function(row, data) {
-                    $('td:eq(1)', row).addClass('text-left'); 
-                    if ($(row).hasClass('summary-total')) {
-                        $(row).addClass('font-weight-bold bg-light');
-                    }
-                }"
+                'dom' => 't',
             ]);
     }
 
-    /**
-     * Get columns.
-     *
-     * @return array
-     */
     protected function getColumns()
     {
-        // Only return the two required columns
         return [
-            Column::make('name')->title('Vendor Name'),
-            Column::make('total')->title('Total Balance')->addClass('text-left'), 
+            Column::make('name')->title('Vendor'),
+            Column::make('total')->title('Balance')->addClass('text-right'),
         ];
     }
 }

@@ -185,27 +185,80 @@ class BillPaymentList extends DataTable
             ?? request()->get('endDate')
             ?? Carbon::now()->endOfDay()->format('Y-m-d');
 
-        return DB::table('bill_payments')
+        $userId = \Auth::user()->creatorId();
+
+        // 1. Applied Bill Payments (grouped by reference)
+        $appliedPayments = DB::table('bill_payments')
             ->select(
-                'bill_payments.id as payment_id',
-                'bill_payments.date as bill_date',
-                'bill_payments.amount as total_amount',
+                'bill_payments.reference as payment_id',
+                DB::raw('MIN(bill_payments.date) as bill_date'),
+                
+                // Combined amount: SUM of bill_payments + SUM of vendor credits for this reference
+                DB::raw('(
+                    SUM(bill_payments.amount) 
+                    + COALESCE(
+                        (SELECT SUM(ABS(t.amount)) 
+                         FROM transactions t 
+                         JOIN bill_payments bp2 ON bp2.id = t.payment_id
+                         WHERE bp2.reference = bill_payments.reference
+                         AND LOWER(t.category) LIKE "%vendor credit%"
+                        ), 0
+                    )
+                ) as total_amount'),
+                
                 'bill_payments.reference',
-                'bill_payments.description',
-                'bills.bill_id as bill',
-                'venders.name as vendor_name',
+                DB::raw('MAX(bill_payments.description) as description'),
+                DB::raw('GROUP_CONCAT(DISTINCT bills.bill_id SEPARATOR ", ") as bill'),
+                DB::raw('MAX(venders.name) as vendor_name'),
                 'bank_accounts.bank_name',
-                // 👇 FIX: Select the account sub type for conditional signing
-                'bank_accounts.account_subtype as account_subtype'
+                'bank_accounts.account_subtype as account_subtype',
+                DB::raw('bill_payments.reference as memo')
             )
             ->leftJoin('bills', 'bills.id', '=', 'bill_payments.bill_id')
             ->leftJoin('venders', 'venders.id', '=', 'bills.vender_id')
-            // Assuming the sub_type column is directly on the bank_accounts table
             ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'bill_payments.account_id')
-            ->where('bills.created_by', \Auth::user()->creatorId())
+            ->where('bills.created_by', $userId)
             ->whereBetween('bill_payments.date', [$start, $end])
-            ->where('bills.type', 'bill')
-            ->orderBy('bill_payments.date', 'asc');
+            ->where('bills.type', 'Bill')
+            ->groupBy(
+                'bill_payments.reference',
+                'bank_accounts.bank_name',
+                'bank_accounts.account_subtype'
+            );
+
+        // 2. Unapplied Payments (not yet linked to bills)
+        // EXCLUDE payments that are already counted as vendor credits in the transactions table
+        $unappliedPayments = DB::table('unapplied_payments')
+            ->select(
+                'unapplied_payments.reference as payment_id',
+                'unapplied_payments.txn_date as bill_date',
+                'unapplied_payments.unapplied_amount as total_amount',
+                'unapplied_payments.reference',
+                DB::raw('NULL as description'),
+                DB::raw('"Unapplied" as bill'),
+                'venders.name as vendor_name',
+                'bank_accounts.bank_name',
+                'bank_accounts.account_subtype as account_subtype',
+                DB::raw('unapplied_payments.reference as memo')
+            )
+            ->leftJoin('venders', 'venders.id', '=', 'unapplied_payments.vendor_id')
+            ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'unapplied_payments.account_id')
+            ->where('unapplied_payments.created_by', $userId)
+            ->whereBetween('unapplied_payments.txn_date', [$start, $end])
+            ->where('unapplied_payments.unapplied_amount', '>', 0)
+            // Exclude if already counted as vendor credit in transactions table (same reference/payment_no)
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                    ->from('transactions')
+                    ->whereRaw('transactions.payment_no = unapplied_payments.reference')
+                    ->whereRaw('LOWER(transactions.category) LIKE "%vendor credit%"');
+            });
+
+        // Combine both queries
+        $combined = $appliedPayments->unionAll($unappliedPayments);
+
+        return DB::query()->fromSub($combined, 'all_payments')
+            ->orderBy('bill_date', 'asc');
     }
 
 
