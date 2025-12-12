@@ -5162,6 +5162,7 @@ class ReportController extends Controller
             return redirect()->back()->with('error', __('Permission denied.'));
         }
 
+        // Get date range from request or use defaults
         if (!empty($request->start_date) && !empty($request->end_date)) {
             $start = $request->start_date;
             $end   = $request->end_date;
@@ -5170,7 +5171,7 @@ class ReportController extends Controller
             $end   = date('Y-m-d');   // today
         }
 
-        // 🔹 Filter values for Blade
+        // Filter values for Blade view
         $filter['startDateRange'] = $start;
         $filter['endDateRange']   = $end;
         $filter['accountingMethod'] = $request->get('accounting_method', 'accrual');
@@ -5178,7 +5179,7 @@ class ReportController extends Controller
         // Get user for the view
         $user = \Auth::user();
 
-        // 🔹 Invoice Items for display summary
+        // Invoice Items for display summary
         $invoiceItems = InvoiceProduct::select(
             'product_services.name',
             \DB::raw('sum(invoice_products.quantity) as quantity'),
@@ -5193,13 +5194,14 @@ class ReportController extends Controller
             ->get()
             ->toArray();
 
-        
-        // return $dataTable->render('report.salesbyCustomerTypeDetail', compact('filter', 'invoiceItems', 'user'));
-        return $dataTable->render('sync.customerbalance.index', [ // ✅ keep same view, or create vendorbalance.index
-            'pageTitle' => "Sales by Customer Type Detail",
-            'startDate' => $request->get('start_date', date('Y-01-01')),
-            'endDate' => $request->get('end_date', date('Y-m-d', strtotime('+1 day')))
+        // Pass dates to DataTable via request merge so it can access them
+        request()->merge([
+            'start_date' => $start,
+            'end_date' => $end,
         ]);
+
+        // Render the correct view with all data
+        return $dataTable->render('report.salesbyCustomerTypeDetail', compact('filter', 'invoiceItems', 'user'));
     }
 
     public function SalesByCustomerSummary(

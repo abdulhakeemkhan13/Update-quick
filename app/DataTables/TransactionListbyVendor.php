@@ -208,7 +208,7 @@ class TransactionListByVendor extends DataTable
             THEN 1   -- If Credit Card, it is an increase in Liability (Positive sign)
             ELSE -1  -- Otherwise (e.g., Bank/Cash), it is a decrease in Asset (Negative sign)
         END
-END AS amount'),
+            END AS amount'),
                 DB::raw('CASE 
                     WHEN bills.type = "Bill" THEN (
                         (
@@ -260,35 +260,143 @@ END AS amount'),
             ->whereBetween('purchases.purchase_date', [$start, $end]);
 
         // 3️⃣ Bill Payments - credit card = positive, bank/cash = negative
-        $billPayments = DB::table('bill_payments')
+        // $billPayments = DB::table('bill_payments')
+        // ->select(
+        //     DB::raw('NULL as id'), // bills.id compatible
+        //     DB::raw('MIN(bill_payments.date) as transaction_date'),
+        //     'venders.name as vendor_name',
+            
+        //     // Important: transaction_number should match data type of others
+        //     DB::raw('GROUP_CONCAT(bill_payments.id) as transaction_number'),
+            
+        //     DB::raw('bill_payments.reference as memo'),
+
+        //     DB::raw('CASE 
+        //         WHEN bank_accounts.account_subtype = "credit_card" 
+        //             THEN "Bill Payment (Credit Card)"
+        //         ELSE "Bill Payment"
+        //     END as transaction_type'),
+
+        //     'bank_accounts.bank_name as account_name',
+
+        //     // Amount (matching column name of other queries)
+        //     DB::raw('SUM(
+        //         CASE 
+        //             WHEN bank_accounts.account_subtype = "credit_card" 
+        //                 THEN bill_payments.amount
+        //             ELSE -1 * bill_payments.amount
+        //         END
+        //     ) as amount'),
+
+        //     DB::raw('0 as open_balance')
+        // )
+        // ->join('bills', 'bills.id', '=', 'bill_payments.bill_id')
+        // ->join('venders', 'venders.id', '=', 'bills.vender_id')
+        // ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'bill_payments.account_id')
+        // ->where('bills.created_by', $userId)
+        // ->where('bills.type', 'Bill')
+        // ->whereBetween('bill_payments.date', [$start, $end])
+        // ->groupBy(
+        //     'venders.id',
+        //     'bill_payments.reference',
+        //     'transaction_type',
+        //     'bank_accounts.bank_name'
+        // );
+$billPayments = DB::table('bill_payments')
+    ->select(
+        DB::raw('NULL as id'),
+        DB::raw('MIN(bill_payments.date) as transaction_date'),
+        'venders.name as vendor_name',
+        DB::raw('GROUP_CONCAT(bill_payments.id) as transaction_number'),
+        DB::raw('bill_payments.reference as memo'),
+
+        DB::raw('CASE 
+            WHEN bank_accounts.account_subtype = "credit_card" 
+                THEN "Bill Payment (Credit Card)"
+            ELSE "Bill Payment"
+        END as transaction_type'),
+
+        'bank_accounts.bank_name as account_name',
+
+        // ⭐ FINAL FIX: DO NOT subtract credit, add AND sign negative
+        DB::raw('
+            -(
+                COALESCE(SUM(ABS(bill_payments.amount)), 0)
+                +
+                COALESCE(SUM(
+                    CASE 
+                        WHEN trans.category LIKE "%vendor credit%" 
+                            THEN ABS(trans.amount)
+                        ELSE 0
+                    END
+                ), 0)
+            ) as amount
+        '),
+
+        DB::raw('0 as open_balance')
+    )
+    ->join('bills', 'bills.id', '=', 'bill_payments.bill_id')
+    ->join('venders', 'venders.id', '=', 'bills.vender_id')
+    ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'bill_payments.account_id')
+    ->leftJoin('transactions as trans', function ($join) {
+        $join->on('trans.payment_id', '=', 'bill_payments.id')
+             ->where('trans.category', 'like', '%vendor credit%');
+    })
+    ->where('bills.created_by', $userId)
+    ->where('bills.type', 'Bill')
+    ->whereBetween('bill_payments.date', [$start, $end])
+    ->groupBy(
+        'venders.id',
+        'bill_payments.reference',
+        'transaction_type',
+        'bank_accounts.bank_name'
+    );
+
+         // 4️⃣ Vendor Credits - NEGATIVE (decreases amount owed)
+        $vendorCredits = DB::table('vendor_credits')
             ->select(
-                'bill_payments.id',
-                'bill_payments.date as transaction_date',
+                'vendor_credits.id',
+                'vendor_credits.date as transaction_date',
                 'venders.name as vendor_name',
-                'bill_payments.id as transaction_number',
-                'bill_payments.description as memo',
-                DB::raw('CASE 
-                    WHEN bill_payments.payment_type = "Check" THEN "Bill Payment (Check)"
-                    ELSE "Bill Payment"
-                END as transaction_type'),
-                'bank_accounts.bank_name as account_name',
-                // Credit card payments = POSITIVE (increasing credit card liability)
-                // Bank/Cash payments = NEGATIVE (cash out)
-                DB::raw('CASE 
-                    WHEN bank_accounts.account_subtype = "credit_card" THEN bill_payments.amount
-                    ELSE -1 * bill_payments.amount
-                END as amount'),
-                DB::raw('0 as open_balance')
+                'vendor_credits.vendor_credit_id as transaction_number', // Using ID as txn number
+                'vendor_credits.memo as memo',
+                DB::raw('"Vendor Credit" as transaction_type'),
+                DB::raw('"Accounts Payable (A/P)" as account_name'),
+                
+                // Calculate Total: (Products + Accounts) * -1
+                DB::raw('-1 * (
+                    (
+                        SELECT IFNULL(SUM(vcp.price * vcp.quantity), 0)
+                        FROM vendor_credit_products vcp
+                        WHERE vcp.vendor_credit_id = vendor_credits.id
+                    ) + (
+                        SELECT IFNULL(SUM(vca.price), 0)
+                        FROM vendor_credit_accounts vca
+                        WHERE vca.vendor_credit_id = vendor_credits.id
+                    )
+                ) as amount'),
+
+                // Open Balance for Credit (usually negative or 0)
+                DB::raw('-1 * (
+                    (
+                        SELECT IFNULL(SUM(vcp.price * vcp.quantity), 0)
+                        FROM vendor_credit_products vcp
+                        WHERE vcp.vendor_credit_id = vendor_credits.id
+                    ) + (
+                        SELECT IFNULL(SUM(vca.price), 0)
+                        FROM vendor_credit_accounts vca
+                        WHERE vca.vendor_credit_id = vendor_credits.id
+                    )
+                ) as open_balance')
             )
-            ->join('bills', 'bills.id', '=', 'bill_payments.bill_id')
-            ->join('venders', 'venders.id', '=', 'bills.vender_id')
-            ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'bill_payments.account_id')
-            ->where('bills.created_by', $userId)
-            ->where('bills.type', 'Bill') // ONLY show payments for actual Bills
-            ->whereBetween('bill_payments.date', [$start, $end]);
+            ->join('venders', 'venders.id', '=', 'vendor_credits.vender_id')
+            ->where('vendor_credits.created_by', $userId)
+            ->whereBetween('vendor_credits.date', [$start, $end]);
+
 
         // ✅ Union all
-        $combined = $bills->unionAll($purchaseOrders)->unionAll($billPayments);
+        
+        $combined = $bills->unionAll($purchaseOrders)->unionAll($billPayments)->unionAll($vendorCredits);
 
         return DB::query()->fromSub($combined, 'transactions')
             ->orderBy('vendor_name', 'asc')
@@ -300,7 +408,13 @@ END AS amount'),
         return $this->builder()
             ->setTableId('vendor-transaction-table')
             ->columns($this->getColumns())
-            ->minifiedAjax()
+              ->ajax([    
+                'url' => route('expenses.transaction_list_by_vendor'),
+                'type' => 'GET',
+                'headers' => [
+                    'X-CSRF-TOKEN' => csrf_token(),
+                ],
+            ])
             ->orderBy(0, 'asc')
             ->parameters([
                 'paging' => false,
