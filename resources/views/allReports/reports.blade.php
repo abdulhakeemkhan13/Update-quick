@@ -706,11 +706,11 @@
               ['route' => 'report.salesbyCustomerTypeDetail', 'label' => 'Sales by Customer Type Detail'],
               ['route' => 'productservice.inventoryValuationSummary', 'label' => 'Inventory Valuation Summary'],
               ['route' => 'productservice.incomeByCustomerSummary', 'label' => 'Product/Service List'],
-              ['route' => 'customercontact.list', 'label' => 'Customer Contact List'],
+              ['route' => 'customer.contact.list', 'label' => 'Customer Contact List'],
               ['route' => 'productservice.SalesByProductServiceSummary', 'label' => 'Sales by Product/Service Summary'],
               ['route' => 'productservice.incomeByCustomerSummaryTwo', 'label' => 'Income by Customer Summary'],
               ['route' => 'productservice.SalesByProductServiceDetail', 'label' => 'Sales by Product/Service Detail'],
-              ['route' => 'customercontact.list.phone.numbers', 'label' => 'Customer Phone List'],
+              ['route' => 'customer.contact.list.phone.numbers', 'label' => 'Customer Phone List'],
               ['route' => 'report.sales.salesByCustomerSummary', 'label' => 'Sales by Customer Summary'],
               ['route' => 'report.sales.salesByCustomerDetail', 'label' => 'Sales by Customer Detail'],
               ['route' => 'report.depositDetail', 'label' => 'Deposit Detail'],
@@ -817,7 +817,6 @@
           {{-- ================== Expenses & Vendors ================== --}}
           @php
             $expenseReports = [
-              ['route' => 'expenses.transaction_list_by_vendor', 'label' => 'Transaction List by Vendor'],
               ['route' => 'expenses.purchase_by_vendor', 'label' => 'Purchase by Vendor Detail'],
               ['route' => 'expenses.purchases_by_product_service_detail', 'label' => 'Purchases by Product Service Detail'],
               ['route' => 'expenses.vendors_contact_list', 'label' => 'Vendors Contact List'],
@@ -826,6 +825,7 @@
               ['route' => 'expenses.open_purchase_order_list', 'label' => 'Open Purchase Order List'],
               ['route' => 'expenses.vendors_phone_list', 'label' => 'Vendors Phone List'],
               ['route' => 'expenses.purchase_list', 'label' => 'Purchase List'],
+              ['route' => 'expenses.transaction_list_by_vendor', 'label' => 'Transaction List by Vendor'],
             ];
           @endphp
           <div class="accordion pb-2" id="reportsAccordion">

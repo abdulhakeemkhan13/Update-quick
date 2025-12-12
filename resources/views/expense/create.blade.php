@@ -1,14 +1,3 @@
-@extends('layouts.admin')
-@section('page-title')
-    {{__('Expense Create')}}
-@endsection
-@section('breadcrumb')
-    <li class="breadcrumb-item"><a href="{{route('dashboard')}}">{{__('Dashboard')}}</a></li>
-    <li class="breadcrumb-item"><a href="{{route('expense.index')}}">{{__('Expense')}}</a></li>
-    <li class="breadcrumb-item">{{__('Expense Create')}}</li>
-@endsection
-
-@push('script-page')
 <script src="{{ asset('js/jquery-ui.min.js') }}"></script>
 <script src="{{ asset('js/jquery.repeater.min.js') }}"></script>
 <script src="{{ asset('js/jquery-searchbox.js') }}"></script>
@@ -1156,20 +1145,8 @@
         // Initialize
         calculateTotal();
     });
-    // Auto-show modal
-    $(document).ready(function() {
-        var expenseModal = new bootstrap.Modal(document.getElementById('expense-modal'), {
-            backdrop: 'static',
-            keyboard: false
-        });
-        expenseModal.show();
-    });
 </script>
-@endpush
-@section('content')
-<div class="modal fade" id="expense-modal" tabindex="-1" aria-labelledby="expenseModalLabel" aria-hidden="true" style="background: #ffffff;">
-    <div class="modal-dialog modal-fullscreen">
-        <div class="modal-content">
+
 <div class="row">
     <div class="d-flex justify-content-between align-items-center border-bottom"
         style="
@@ -2547,7 +2524,4 @@
 
     {{ Form::close() }}
     </div>
-        </div>
-    </div>
 </div>
-@endsection

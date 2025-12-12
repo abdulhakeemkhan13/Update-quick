@@ -34,7 +34,9 @@ class VendorsListDataTable extends DataTable
                 return $vender->track_payments_1099 ? '<i class="ti ti-check text-dark"></i>' : '';
             })
             ->editColumn('balance', function ($vender) {
-                return \Auth::user()->priceFormat($vender->getDueAmount());
+                // Use pre-calculated balance from query subquery to avoid N+1 queries
+                $balance = $vender->calculated_balance ?? 0;
+                return \Auth::user()->priceFormat(max(0, $balance));
             })
             ->addColumn('ach_info', function ($vender) {
                 return '<div class="text-muted small">Missing</div><a href="#" class="text-primary small" style="text-decoration: none;">Add payment info</a>';
@@ -76,7 +78,20 @@ class VendorsListDataTable extends DataTable
         $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
         $column = ($user->type == 'company') ? 'created_by' : 'owned_by';
 
-        $query = $model->newQuery()->where($column, $ownerId);
+        // Build query with balance subquery to avoid N+1 queries
+        $query = $model->newQuery()
+            ->select('venders.*')
+            ->selectRaw('(
+                SELECT COALESCE(SUM(
+                    (SELECT COALESCE(SUM(bi.price * bi.quantity), 0) FROM bill_products bi WHERE bi.bill_id = b.id) -
+                    (SELECT COALESCE(SUM(bi.discount), 0) FROM bill_products bi WHERE bi.bill_id = b.id) -
+                    (SELECT COALESCE(SUM(bp.amount), 0) FROM bill_payments bp WHERE bp.bill_id = b.id) -
+                    (SELECT COALESCE(SUM(dn.amount), 0) FROM debit_notes dn WHERE dn.bill = b.id)
+                ), 0)
+                FROM bills b 
+                WHERE b.vender_id = venders.id AND b.status != 4
+            ) as calculated_balance')
+            ->where($column, $ownerId);
 
         if (request()->has('filter')) {
             $filter = request()->get('filter');
@@ -111,15 +126,21 @@ class VendorsListDataTable extends DataTable
                     ->setTableId('vendors-table')
                     ->columns($this->getColumns())
                     ->minifiedAjax()
-                    ->dom('t')
+                    ->dom('rtip')
                     ->orderBy(1)
+                    ->pageLength(25)
                     ->parameters([
-                        "dom" =>  "<'row'<'col-sm-12'tr>>",
+                        "dom" =>  "<'row'<'col-sm-12'tr>><'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
+                        'paging' => true,
+                        'serverSide' => true,
+                        'processing' => true,
+                        'lengthMenu' => [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
                         'language' => [
                             'paginate' => [
                                 'next' => '<i class="ti ti-chevron-right"></i>',
                                 'previous' => '<i class="ti ti-chevron-left"></i>'
-                            ]
+                            ],
+                            'processing' => '<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>'
                         ],
                         'drawCallback' => "function() {
                             $('.dataTables_paginate > .pagination').addClass('pagination-rounded');
@@ -141,7 +162,7 @@ class VendorsListDataTable extends DataTable
             Column::make('billing_phone')->title('PHONE')->addClass('align-middle'),
             Column::make('email')->title('EMAIL')->addClass('align-middle'),
             Column::make('track_payments_1099')->title('1099 TRACKING')->addClass('text-center align-middle'),
-            Column::make('balance')->title('OPEN BALANCE')->addClass('text-end align-middle'),
+            Column::computed('balance')->title('OPEN BALANCE')->addClass('text-end align-middle')->orderable(false),
             Column::computed('ach_info')->title('BILL PAY ACH INFO')->addClass('align-middle'),
             Column::computed('action')
                   ->exportable(false)

@@ -1245,8 +1245,9 @@
                                     <div class="col-3">
                                         <label for="payee_all" class="form-label">{{ __('Payee') }}</label>
 
-                                        <select id="payee_all" name="payee" class="form-control select" required>
-
+                                        <select id="payee_all" name="payee" class="form-control select" required
+                                            data-selected-payee="{{ $selected_payee ?? '' }}">
+                                            <!-- selected_payee={{ $selected_payee ?? 'EMPTY' }} -->
                                             <option value="">Who did you pay?</option>
 
                                             {{-- Employees --}}
@@ -1258,7 +1259,7 @@
                                                 </option>
                                                 @foreach ($employees as $id => $name)
                                                     <option value="employee_{{ $id }}"
-                                                        {{ $expense->user_type == 'employee' && $expense->vender_id == $id ? 'selected' : '' }}>
+                                                        {{ ($selected_payee ?? '') == 'employee_'.$id ? 'selected' : '' }}>
                                                         Employee - {{ $name }}
                                                     </option>
                                                 @endforeach
@@ -1273,7 +1274,7 @@
                                                 </option>
                                                 @foreach ($customers as $id => $name)
                                                     <option value="customer_{{ $id }}"
-                                                        {{ $expense->user_type == 'customer' && $expense->vender_id == $id ? 'selected' : '' }}>
+                                                        {{ ($selected_payee ?? '') == 'customer_'.$id ? 'selected' : '' }}>
                                                         Customer - {{ $name }}
                                                     </option>
                                                 @endforeach
@@ -1288,7 +1289,7 @@
                                                 </option>
                                                 @foreach ($venders as $id => $name)
                                                     <option value="vendor_{{ $id }}"
-                                                        {{ $expense->user_type == 'vendor' && $expense->vender_id == $id ? 'selected' : '' }}>
+                                                        {{ ($selected_payee ?? '') == 'vendor_'.$id ? 'selected' : '' }}>
                                                         Vendor - {{ $name }}
                                                     </option>
                                                 @endforeach

@@ -59,7 +59,12 @@ use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\FedapayController;
 use App\Http\Controllers\FlutterwavePaymentController;
 use App\Http\Controllers\FormBuilderController;
+use App\Http\Controllers\GlobalSearchController;
 use App\Http\Controllers\GoalController;
+
+Route::get('/global-search', [GlobalSearchController::class, 'search'])->name('global.search')->middleware(['auth', 'XSS']);
+Route::get('/global-search/recent', [GlobalSearchController::class, 'recentTransactions'])->name('global.search.recent')->middleware(['auth', 'XSS']);
+
 use App\Http\Controllers\GoalTrackingController;
 use App\Http\Controllers\GoalTypeController;
 use App\Http\Controllers\HolidayController;
@@ -267,6 +272,8 @@ Route::post('/quickbooks/import/journalReport', [QuickBooksImportController::cla
 Route::post('/quickbooks/api/query', [QuickBooksApiController::class, 'rawQuery'])->name('quickbooks.api.rawQuery'); 
 Route::post('/quickbooks/import/full', [QuickBooksImportController::class, 'startFullImport'])->name('quickbooks.import.full');
 Route::get('/quickbooks/import/progress', [QuickBooksImportController::class, 'getImportProgress'])->name('quickbooks.import.progress');
+Route::post('/quickbooks/sync-payments', [QuickBooksImportController::class, 'syncPaymentsForExistingInvoices'])->name('quickbooks.sync.payments');
+Route::get('/quickbooks/missing-payments-report', [QuickBooksImportController::class, 'getMissingPaymentsReport'])->name('quickbooks.missing.payments.report');
 Route::get('/Journalledger', [VoucherController::class, 'Journalledger'])->name('Journalledger.index');
 
 // All Reports Route
@@ -327,6 +334,7 @@ Route::get('/vender/bill/{id}/', [BillController::class, 'invoiceLink'])->name('
 Route::get('/vendor/purchase/{id}/', [PurchaseController::class, 'purchaseLink'])->name('purchase.link.copy');
 Route::get('/customer/proposal/{id}/', [ProposalController::class, 'invoiceLink'])->name('proposal.link.copy');
 Route::get('/invoice/customer-proposals', [ProposalController::class, 'customerProposalsForInvoice'])->name('invoice.customer.proposals');
+Route::get('/invoice/customer-suggestions', [InvoiceController::class, 'customerSuggestionsForInvoice'])->name('invoice.customer.suggestions');
 Route::get('proposal/pdf/{id}', [ProposalController::class, 'proposal'])->name('proposal.pdf')->middleware(['XSS', 'revalidate']);
 
 //================================= Invoice Payment Gateways  ====================================//
@@ -469,6 +477,10 @@ Route::group(['middleware' => ['verified']], function () {
     Route::post('/qbo-menu/config', [\App\Http\Controllers\QboMenuController::class, 'saveMenuConfig'])->name('qbo.menu.config.save')->middleware(['auth']);
     Route::get('/qbo-menu/bookmarks', [\App\Http\Controllers\QboMenuController::class, 'getBookmarks'])->name('qbo.menu.bookmarks')->middleware(['auth']);
     Route::post('/qbo-menu/bookmarks', [\App\Http\Controllers\QboMenuController::class, 'saveBookmarks'])->name('qbo.menu.bookmarks.save')->middleware(['auth']);
+    Route::get('/qbo-menu/available-pages', [\App\Http\Controllers\QboMenuController::class, 'getAvailablePages'])->name('qbo.menu.available.pages')->middleware(['auth']);
+    Route::put('/qbo-menu/bookmarks/{id}', [\App\Http\Controllers\QboMenuController::class, 'updateBookmark'])->name('qbo.menu.bookmarks.update')->middleware(['auth']);
+    Route::delete('/qbo-menu/bookmarks/{id}', [\App\Http\Controllers\QboMenuController::class, 'deleteBookmark'])->name('qbo.menu.bookmarks.delete')->middleware(['auth']);
+    Route::post('/qbo-menu/bookmarks/reset', [\App\Http\Controllers\QboMenuController::class, 'resetBookmarks'])->name('qbo.menu.bookmarks.reset')->middleware(['auth']);
     Route::get('/qbo-menu/pinned', [\App\Http\Controllers\QboMenuController::class, 'getPinnedItems'])->name('qbo.menu.pinned')->middleware(['auth']);
     Route::post('/qbo-menu/toggle-pin', [\App\Http\Controllers\QboMenuController::class, 'togglePin'])->name('qbo.menu.toggle.pin')->middleware(['auth']);
     Route::post('/qbo-menu/reset', [\App\Http\Controllers\QboMenuController::class, 'resetToDefault'])->name('qbo.menu.reset')->middleware(['auth']);
@@ -629,6 +641,10 @@ Route::group(['middleware' => ['verified']], function () {
             ],
         ],
         function () {
+            // Customer contact list routes - MUST come before resource('customer') to prevent {customer} from matching
+            Route::get('customer/contact-list', [App\Http\Controllers\sync\VoucherController::class, 'customerContactList'])->name('customer.contact.list');
+            Route::get('customer/phone-list', [App\Http\Controllers\sync\VoucherController::class, 'customerContactListPhoneNumbers'])->name('customer.contact.list.phone.numbers');
+            
             Route::get('customer/{id}/show', [CustomerController::class, 'show'])->name('customer.show');
             Route::resource('customer', CustomerController::class);
             Route::resource('payment-terms', \App\Http\Controllers\PaymentTermController::class);
@@ -826,8 +842,8 @@ Route::group(['middleware' => ['verified']], function () {
             Route::get('bill/create/{cid}', [BillController::class, 'create'])->name('bill.create');
         }
     ); 
-    Route::get('customer-contact-list', [CustomerController::class, 'contactList'])->name('customercontact.list');
-    Route::get('customer-contact-list-phone-numbers', [CustomerController::class, 'customerContactListPhoneNumbers'])->name('customercontact.list.phone.numbers');
+    // Route::get('customer-contact-list', [CustomerController::class, 'contactList'])->name('customercontact.list');
+    // Route::get('customer-contact-list-phone-numbers', [CustomerController::class, 'customerContactListPhoneNumbers'])->name('customercontact.list.phone.numbers');
     Route::get('payment/index', [PaymentController::class, 'index'])->name('payment.index')->middleware(['auth', 'XSS', 'revalidate']);
     Route::resource('payment', PaymentController::class)->middleware(['auth', 'XSS', 'revalidate']);
 
@@ -902,8 +918,7 @@ Route::group(['middleware' => ['verified']], function () {
             Route::get('report/payables', [ReportController::class, 'PayablesReport'])->name('report.payables');
             Route::get('report/recurring-invoices', [ReportController::class, 'RecurringInvoices'])->name('report.recurring');
             Route::get('report/recurring-payments', [ReportController::class, 'RecurringPayments'])->name('report.recurring-payments');
-            Route::get('customer/customer-contact-list', [CustomerController::class, 'customerContactList'])->name('customer.contact.list');
-            Route::get('customer/customer-contact-list-phone-numbers', [CustomerController::class, 'customerContactListPhoneNumbers'])->name('customer.contact.list.phone.numbers');
+            // Note: customer/contact-list and customer/phone-list routes moved to line ~642 before Route::resource('customer')
         }
     );
 
@@ -1074,7 +1089,7 @@ Route::group(['middleware' => ['verified']], function () {
         ->name("expenses.purchase_list");
 
     Route::get("/expensesandvendors/transactionlistbyvendor", [VoucherController::class, 'transactionlistbyvendor'])
-        ->name("expenses.transaction_list_by_vendor");
+        ->name("expenses.transaction_list_by_vendor")->middleware('auth');
 
     Route::get("/expensesandvendors/purchasebyvendor", [VoucherController::class, 'purchasebyvendor'])
         ->name("expenses.purchase_by_vendor");
@@ -1933,8 +1948,8 @@ Route::group(['middleware' => ['verified']], function () {
     Route::get('export/customer', [CustomerController::class, 'export'])->name('customer.export');
     Route::get('import/customer/file', [CustomerController::class, 'importFile'])->name('customer.file.import');
     Route::post('import/customer', [CustomerController::class, 'import'])->name('customer.import');
-    Route::post('customer/customer-contact-list', [CustomerController::class, 'customerContactList'])->name('customer.contact.list');
-    Route::post('customer/customer-contact-list-phone-numbers', [CustomerController::class, 'customerContactListPhoneNumbers'])->name('customer.contact.list.phone.numbers');
+    // Route::post('customer/customer-contact-list', [CustomerController::class, 'customerContactList'])->name('customer.contact.list');
+    // Route::post('customer/customer-contact-list-phone-numbers', [CustomerController::class, 'customerContactListPhoneNumbers'])->name('customer.contact.list.phone.numbers');
     Route::get('export/vender', [VenderController::class, 'export'])->name('vender.export');
     Route::get('import/vender/file', [VenderController::class, 'importFile'])->name('vender.file.import');
     Route::post('import/vender', [VenderController::class, 'import'])->name('vender.import');

@@ -61,6 +61,8 @@
 
 
     </div>
+
+@push('script-page')
     <script>
         $(document).on('click', '.openChecksModal', function (e) {
             e.preventDefault();
@@ -81,6 +83,7 @@
             });
         });
     </script>
+@endpush
 {{-- Filters Dropdown --}}
 <div class="dropdown mt-4 mb-2">
     <button class="btn btn-outline-primary dropdown-toggle d-flex align-items-center" type="button"

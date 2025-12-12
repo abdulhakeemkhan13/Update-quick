@@ -217,8 +217,8 @@ public function index(Request $request)
             // Get taxes for the form
             $taxes = Tax::where('created_by', $ownerId)->get()->pluck('name', 'id');
 
-            // Get customers for billable items
-            $customers = Customer::where($column, $ownerId)->orderBy('name')->get();
+            // Get customers for billable items (plucked for dropdown)
+            $customers = Customer::where($column, $ownerId)->orderBy('name')->get()->pluck('name', 'id')->toArray();
 
             $accounts = BankAccount::select('*', \DB::raw("CONCAT(bank_name,' ',holder_name) AS name"))->where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
 
@@ -562,8 +562,8 @@ public function index(Request $request)
                 $billableValidationError = null;
                 
                 // Check category items
-                if ($request->has('category') && is_array($request->category)) {
-                    foreach ($request->category as $index => $categoryData) {
+                if ($request->has('categories') && is_array($request->categories)) {
+                    foreach ($request->categories as $index => $categoryData) {
                         if (isset($categoryData['billable']) && $categoryData['billable']) {
                             if (empty($categoryData['customer_id'])) {
                                 $billableValidationError = __('Select a customer for each billable split line.') . ' (Category row ' . ($index + 1) . ')';
@@ -664,10 +664,12 @@ public function index(Request $request)
                 // Process ITEM DETAILS (Product/Service-based)
                 if ($request->has('items') && is_array($request->items)) {
                     foreach ($request->items as $index => $itemData) {
-                        // Skip empty rows
-                        if (empty($itemData['product_id']) && empty($itemData['quantity']) && empty($itemData['price'])) {
+                        // Skip rows without a product_id (required field)
+                        if (empty($itemData['product_id'])) {
                             continue;
                         }
+                        
+                        $account = null;
                         $product = ProductService::find($itemData['product_id']);
                         if ($product) {
                             if($product->type == 'product'){
@@ -679,7 +681,7 @@ public function index(Request $request)
 
                         $billProduct = new BillProduct();
                         $billProduct->bill_id = $bill->id;
-                        $billProduct->product_id = $itemData['product_id'] ?? null;
+                        $billProduct->product_id = $itemData['product_id'];
                         $billProduct->description = $itemData['description'] ?? '';
                         $billProduct->quantity = $itemData['quantity'] ?? 1;
                         $billProduct->price = $itemData['price'] ?? 0;
@@ -698,87 +700,28 @@ public function index(Request $request)
                         
                         // IMPORTANT: Save order to maintain exact row position
                         // This allows the same product to appear in multiple rows
-                        $useraction = json_decode($action->assigned_users);
-                        if (strtolower('create-bill') == $action->node_id) {
-                            if (@$useraction != '') {
-                                $useraction = json_decode($useraction);
-                                foreach ($useraction as $anyaction) {
-                                    if ($anyaction->type == 'user') {
-                                        $usr_Notification[] = $anyaction->id;
-                                    }
-                                }
-                            }
-
-                            $raw_json = trim($action->applied_conditions, '"');
-                            $cleaned_json = stripslashes($raw_json);
-                            $applied_conditions = json_decode($cleaned_json, true);
-
-                            if (isset($applied_conditions['conditions']) && is_array($applied_conditions['conditions'])) {
-                                $arr = [
-                                    'bill_date' => 'bill_date',
-                                    'due_date' => 'due_date',
-                                    'order_number' => 'order_number',
-                                ];
-                                $relate = [];
-
-                                foreach ($applied_conditions['conditions'] as $conditionGroup) {
-                                    if (in_array($conditionGroup['action'], ['send_email', 'send_notification', 'send_approval'])) {
-                                        $query = Bill::where('id', $bill->id);
-                                        foreach ($conditionGroup['conditions'] as $condition) {
-                                            $field = $condition['field'];
-                                            $operator = $condition['operator'];
-                                            $value = $condition['value'];
-                                            if (isset($arr[$field], $relate[$arr[$field]])) {
-                                                $relatedField = strpos($arr[$field], '_') !== false ? explode('_', $arr[$field], 2)[1] : $arr[$field];
-                                                $relation = $relate[$arr[$field]];
-                                                $query->whereHas($relation, function ($relatedQuery) use ($relatedField, $operator, $value) {
-                                                    $relatedQuery->where($relatedField, $operator, $value);
-                                                });
-                                            } else {
-                                                $query->where($arr[$field], $operator, $value);
-                                            }
-                                        }
-                                        $result = $query->first();
-
-                                        if (!empty($result)) {
-                                            if ($conditionGroup['action'] === 'send_email') {
-                                                $us_mail = 'true';
-                                            } elseif ($conditionGroup['action'] === 'send_notification') {
-                                                $us_notify = 'true';
-                                            } elseif ($conditionGroup['action'] === 'send_approval') {
-                                                $us_approve = 'true';
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if ($us_mail == 'true') {
-                                // email send
-                            }
-
-                            if ($us_notify == 'true' || $us_approve == 'true') {
-                                if (count($usr_Notification) > 0) {
-                                    $usr_Notification[] = Auth::user()->creatorId();
-                                    foreach ($usr_Notification as $usrLead) {
-                                        $data = [
-                                            "updated_by" => Auth::user()->id,
-                                            "data_id" => $bill->id,
-                                            "name" => '',
-                                        ];
-                                        if ($us_notify == 'true') {
-                                            Utility::makeNotification($usrLead, 'create_bill', $data, $bill->id, 'create Bill');
-                                            $bill->status = 5; // Pending Approval
-                                            $bill->save();
-                                        } elseif ($us_approve == 'true') {
-                                            Utility::makeNotification($usrLead, 'approve_bill', $data, $bill->id, 'For Approval Bill');
-                                            $bill->status = 5; // Pending Approval
-                                            $bill->save();
-                                        }
-                                    }
-                                }
-                            }
+                        $billProduct->order = $index;
+                        
+                        $billProduct->save();
+                        
+                        // Inventory management (Quantity) - increase stock for bills
+                        if ($billProduct->product_id) {
+                            Utility::total_quantity('plus', $billProduct->quantity, $billProduct->product_id);
+                            
+                            // Product Stock Report
+                            $type = 'bill';
+                            $type_id = $bill->id;
+                            $description = $billProduct->quantity . ' ' . __('quantity purchase in bill') . ' ' . \Auth::user()->billNumberFormat($bill->bill_id);
+                            Utility::addProductStock($billProduct->product_id, $billProduct->quantity, $type, $description, $type_id);
                         }
+                        
+                        $newitems[] = [
+                            'prod_id' => $billProduct->id,
+                            'product_id' => $billProduct->product_id,
+                            'quantity' => $billProduct->quantity,
+                            'price' => $billProduct->price,
+                            'order' => $index,
+                        ];
                     }
                 }
 
@@ -1176,8 +1119,8 @@ public function index(Request $request)
                 // Get taxes for the form
                 $taxes = Tax::where('created_by', $ownerId)->get()->pluck('name', 'id');
 
-                // Get customers for billable items
-                $customers = Customer::where($column, $ownerId)->orderBy('name')->get();
+                // Get customers for billable items (plucked for dropdown)
+                $customers = Customer::where($column, $ownerId)->orderBy('name')->get()->pluck('name', 'id')->toArray();
 
                 // Separate category details and items (QBO style)
                 $categoryDetails = $bill->accounts; // BillAccount records
@@ -3556,12 +3499,13 @@ public function index(Request $request)
         }
 
         // Get Accounts Payable account ID
-        $accountPayable = $this->getAccountPayableAccount(\Auth::user()->creatorId());
+        $accountPayable = Utility::getAccountPayableAccount(\Auth::user()->creatorId());
         
         if (!$accountPayable) {
             throw new \Exception('Accounts Payable account not found. Please configure your chart of accounts.');
         }
-
+    //    dd all
+    // dd($bill, $billProducts, $billAccounts);
         // Create journal entry using JournalService
         // This will throw an exception if creation fails, causing the entire bill transaction to rollback
         $journalEntry = JournalService::createJournalEntry([

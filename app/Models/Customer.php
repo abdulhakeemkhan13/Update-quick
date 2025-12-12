@@ -8,10 +8,23 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Traits\HasRoles;
 
+use Laravel\Scout\Searchable;
+
 class Customer extends Authenticatable
 {
     use HasRoles;
     use Notifiable;
+    use Searchable;
+
+    public function toSearchableArray()
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'email' => $this->email,
+            'contact' => $this->contact,
+        ];
+    }
 
     protected $guard_name = 'web';
 

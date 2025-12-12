@@ -3423,4 +3423,211 @@ class InvoiceController extends Controller
             }
         }
     }
+
+    /**
+     * Get all suggested transactions (estimates, billable time, billable expenses) for a customer
+     * Used in the invoice creation modal's suggestion panel
+     */
+    public function customerSuggestionsForInvoice(Request $request)
+    {
+        $user = \Auth::user();
+        
+        // Permission check
+        if (!$user->can('create invoice')) {
+            return response()->json(['message' => 'Permission denied.'], 403);
+        }
+
+        $customerId = $request->get('customer_id');
+        
+        if (!$customerId) {
+            return response()->json([
+                'estimates' => [],
+                'billable_time' => [],
+                'billable_expenses' => []
+            ]);
+        }
+
+        $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
+        $column = ($user->type == 'company') ? 'created_by' : 'owned_by';
+
+        // 1. Get Estimates (reuse logic from ProposalController)
+        $estimates = $this->getCustomerEstimates($customerId, $ownerId, $column, $user);
+
+        // 2. Get Billable Time Activities
+        $billableTime = $this->getCustomerBillableTime($customerId, $ownerId);
+
+        // 3. Get Billable Expenses
+        $billableExpenses = $this->getCustomerBillableExpenses($customerId, $ownerId);
+
+        return response()->json([
+            'estimates' => $estimates,
+            'billable_time' => $billableTime,
+            'billable_expenses' => $billableExpenses
+        ]);
+    }
+
+    /**
+     * Get estimates/proposals for a customer
+     */
+    private function getCustomerEstimates($customerId, $ownerId, $column, $user)
+    {
+        $proposals = \App\Models\Proposal::where('customer_id', $customerId)
+            ->where($column, $ownerId)
+            ->orderByDesc('issue_date')
+            ->take(10)
+            ->get();
+
+        $proposalIds = $proposals->pluck('id');
+
+        $itemsByProposal = \App\Models\ProposalProduct::whereIn('proposal_id', $proposalIds)
+            ->orderBy('id')
+            ->get()
+            ->groupBy('proposal_id');
+
+        // Get already invoiced items
+        $invoicedProposalProductIds = \App\Models\InvoiceProduct::whereIn('estimate_id', $proposalIds)
+            ->where('line_type', 'estimate')
+            ->whereNotNull('proposal_product_id')
+            ->pluck('proposal_product_id')
+            ->toArray();
+
+        $data = [];
+        foreach ($proposals as $p) {
+            $proposalItems = $itemsByProposal->get($p->id, collect());
+
+            // Filter out already invoiced items
+            $remainingItems = $proposalItems->filter(function ($item) use ($invoicedProposalProductIds) {
+                return !in_array($item->id, $invoicedProposalProductIds);
+            });
+
+            if ($remainingItems->isEmpty()) {
+                continue;
+            }
+
+            $items = $remainingItems->map(function ($item) {
+                return [
+                    'id'             => $item->id,
+                    'product_id'     => $item->product_id,
+                    'quantity'       => $item->quantity,
+                    'price'          => $item->price,
+                    'description'    => $item->description,
+                    'amount'         => $item->amount,
+                    'discount'       => $item->discount,
+                    'tax'            => $item->tax,
+                    'taxable'        => $item->taxable,
+                    'item_tax_price' => $item->item_tax_price,
+                    'item_tax_rate'  => $item->item_tax_rate,
+                ];
+            })->values()->all();
+
+            $data[] = [
+                'id'               => $p->id,
+                'type'             => 'estimate',
+                'encrypted_id'     => Crypt::encrypt($p->id),
+                'proposal_number'  => $user->proposalNumberFormat($p->proposal_id),
+                'issue_date'       => $p->issue_date,
+                'total_amount'     => $p->total_amount ?? $p->subtotal ?? 0,
+                'note'             => $p->note ?? '',
+                'items'            => $items,
+            ];
+        }
+
+        return $data;
+    }
+
+    /**
+     * Get billable time activities for a customer
+     */
+    private function getCustomerBillableTime($customerId, $ownerId)
+    {
+        $timeActivities = \App\Models\TimeActivity::where('customer_id', $customerId)
+            ->where('billable', true)
+            ->where('created_by', $ownerId)
+            ->whereNull('invoiced_at')
+            ->with(['service', 'employee', 'vendor'])
+            ->orderByDesc('date')
+            ->take(20)
+            ->get();
+
+        return $timeActivities->map(function ($entry) {
+            // Calculate amount based on duration and rate
+            $amount = $this->calculateTimeAmount($entry);
+            
+            // Get the name of who did the work
+            $workerName = '';
+            if ($entry->user_type === 'employee' && $entry->employee) {
+                $workerName = $entry->employee->name ?? '';
+            } elseif ($entry->user_type === 'vendor' && $entry->vendor) {
+                $workerName = $entry->vendor->name ?? '';
+            }
+
+            return [
+                'id' => $entry->id,
+                'type' => 'time',
+                'date' => $entry->date,
+                'duration' => $entry->duration,
+                'rate' => $entry->rate,
+                'amount' => $amount,
+                'service_id' => $entry->service_id,
+                'service_name' => $entry->service->name ?? 'Time Entry',
+                'notes' => $entry->notes,
+                'worker_name' => $workerName,
+                'taxable' => $entry->taxable,
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * Calculate the amount for a time activity
+     */
+    private function calculateTimeAmount($entry)
+    {
+        $rate = floatval($entry->rate ?? 0);
+        $duration = $entry->duration;
+        
+        // Duration might be in "HH:MM" format or decimal hours
+        if (strpos($duration, ':') !== false) {
+            $parts = explode(':', $duration);
+            $hours = floatval($parts[0] ?? 0);
+            $minutes = floatval($parts[1] ?? 0);
+            $totalHours = $hours + ($minutes / 60);
+        } else {
+            $totalHours = floatval($duration);
+        }
+        
+        return round($rate * $totalHours, 2);
+    }
+
+    /**
+     * Get billable expenses for a customer
+     */
+    private function getCustomerBillableExpenses($customerId, $ownerId)
+    {
+        // Get billable items from BillAccount that are marked as billable to this customer
+        $billableAccounts = \App\Models\BillAccount::where('customer_id', $customerId)
+            ->where('billable', true)
+            ->whereNull('invoiced_at')
+            ->whereHas('bill', function($q) use ($ownerId) {
+                $q->where('created_by', $ownerId);
+            })
+            ->with(['bill.vender', 'chartAccount'])
+            ->orderByDesc('id')
+            ->take(20)
+            ->get();
+
+        return $billableAccounts->map(function ($account) {
+            return [
+                'id' => $account->id,
+                'type' => 'expense',
+                'source_type' => 'bill',
+                'source_id' => $account->ref_id,
+                'date' => $account->bill->bill_date ?? null,
+                'amount' => floatval($account->price),
+                'description' => $account->description,
+                'account_name' => $account->chartAccount->name ?? '',
+                'vendor_name' => $account->bill->vender->name ?? '',
+            ];
+        })->values()->all();
+    }
 }
+

@@ -2584,6 +2584,7 @@
                                                     'id' => 'customer_id',
                                                     'data-url' => route('invoice.customer'),
                                                     'data-proposals-url' => route('invoice.customer.proposals'),
+                                                    'data-suggestions-url' => route('invoice.customer.suggestions'),
                                                     'data-proposal-edit-url' => route('proposal.edit', '__id__'), // ⬅️ added pattern
                                                     'required' => 'required',
                                                     'data-create-url' => route('customer.create'),
@@ -3578,6 +3579,8 @@
                                             <select id="suggestions-filter-type" class="form-select">
                                                 <option value="all">All transactions</option>
                                                 <option value="estimate">Estimates only</option>
+                                                <option value="time">Billable time only</option>
+                                                <option value="expense">Billable expenses only</option>
                                             </select>
                                         </div>
 
@@ -3898,15 +3901,20 @@
     <script>
         $(function() {
             const $customerSelect = $('#customer_id');
-            const proposalsUrl = $customerSelect.data('proposals-url');
+            const suggestionsUrl = $customerSelect.data('suggestions-url');
             const proposalEditUrlPattern = $customerSelect.data('proposal-edit-url');
             const $list = $('#suggestions-list');
             const $suggestionCol = $('#suggestion-col');
             const $mainCol = $('#invoice-main-col');
             const $filterPanel = $('#suggestions-filter-panel');
 
-            let allProposals = [];
-            let filteredProposals = [];
+            // Store all suggestions by type
+            let allSuggestions = {
+                estimates: [],
+                billable_time: [],
+                billable_expenses: []
+            };
+            let filteredItems = [];
 
             function formatDate(raw) {
                 if (!raw) return '';
@@ -3915,12 +3923,15 @@
                 return d.toLocaleDateString();
             }
 
-            function normalizeProposals(data) {
-                if (Array.isArray(data)) return data;
-                if (data && Array.isArray(data.proposals)) return data.proposals;
-                if (data && Array.isArray(data.data)) return data.data;
-                if (data && typeof data === 'object') return Object.values(data);
-                return [];
+            function formatDuration(duration) {
+                if (!duration) return '0:00';
+                if (typeof duration === 'string' && duration.includes(':')) {
+                    return duration;
+                }
+                // If it's decimal hours, convert to HH:MM
+                const hours = Math.floor(duration);
+                const minutes = Math.round((duration - hours) * 60);
+                return `${hours}:${minutes.toString().padStart(2, '0')}`;
             }
 
             function showSuggestionsPanel(show) {
@@ -3933,10 +3944,116 @@
                 }
             }
 
-            function renderSuggestions(list) {
+            // Render estimate card
+            function renderEstimateCard(p) {
+                return `
+                <div class="suggestion-card" data-type="estimate" data-id="${p.id}">
+                    <div class="suggestion-card-header">
+                        <span>
+                            ${(p.proposal_number || p.proposal_id) 
+                                ? `Estimate ${p.proposal_number || p.proposal_id}` 
+                                : 'Estimate'}
+                        </span>
+                        <a href="${proposalEditUrlPattern.replace('__id__', p.encrypted_id)}"
+                           target="_blank"
+                           style="font-size:11px;color:#6B6C72;">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                                 viewBox="0 0 24 24" color="currentColor"
+                                 width="20px" height="20px" focusable="false"
+                                 aria-hidden="true" class="icon">
+                                <path fill="currentColor"
+                                      d="M20 11.03a1 1 0 0 0-1 1l-.01 5.715a1.29 1.29 0 0 1-1.29 1.282l-11.425-.018a1.286 1.286 0 0 1-1.283-1.287l.017-11.43A1.284 1.284 0 0 1 6.294 5.01l5.714.009a1 1 0 1 0 0-2L6.3 3.008h-.006A3.284 3.284 0 0 0 3.009 6.29l-.017 11.428a3.29 3.29 0 0 0 3.28 3.29l11.429.019a3.29 3.29 0 0 0 3.287-3.281L21 12.032a1 1 0 0 0-1-1.002"></path>
+                                <path fill="currentColor"
+                                      d="m20.013 3.03-4-.006a1 1 0 0 0 0 2h1.586L13.3 9.314a1 1 0 1 0 1.412 1.415l4.3-4.287v1.586a1 1 0 0 0 2 0l.006-4a1 1 0 0 0-1.005-.998"></path>
+                            </svg>
+                        </a>
+                    </div>
+                    <div class="suggestion-card-body">
+                        <dl>
+                            <dt>Date:</dt><dd>${formatDate(p.issue_date)}</dd><br>
+                            <dt>Total:</dt><dd>$${Number(p.total_amount || 0).toFixed(2)}</dd><br>
+                            <dt>Notes:</dt><dd>${p.note ? p.note : ''}</dd>
+                        </dl>
+                    </div>
+                    <button type="button"
+                            class="suggestion-add-button"
+                            data-type="estimate"
+                            data-id="${p.id}">
+                        Add
+                    </button>
+                </div>
+            `;
+            }
+
+            // Render billable time card
+            function renderTimeCard(t) {
+                return `
+                <div class="suggestion-card" data-type="time" data-id="${t.id}">
+                    <div class="suggestion-card-header">
+                        <span>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            Billable time
+                        </span>
+                    </div>
+                    <div class="suggestion-card-body">
+                        <dl>
+                            <dt>Date:</dt><dd>${formatDate(t.date)}</dd><br>
+                            <dt>Duration:</dt><dd>${formatDuration(t.duration)}</dd><br>
+                            <dt>Rate:</dt><dd>$${Number(t.rate || 0).toFixed(2)}/hr</dd><br>
+                            <dt>Amount:</dt><dd>$${Number(t.amount || 0).toFixed(2)}</dd><br>
+                            <dt>Service:</dt><dd>${t.service_name || ''}</dd>
+                            ${t.worker_name ? `<br><dt>By:</dt><dd>${t.worker_name}</dd>` : ''}
+                        </dl>
+                    </div>
+                    <button type="button"
+                            class="suggestion-add-button"
+                            data-type="time"
+                            data-id="${t.id}">
+                        Add
+                    </button>
+                </div>
+            `;
+            }
+
+            // Render billable expense card
+            function renderExpenseCard(e) {
+                return `
+                <div class="suggestion-card" data-type="expense" data-id="${e.id}">
+                    <div class="suggestion-card-header">
+                        <span>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
+                                <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                                <line x1="1" y1="10" x2="23" y2="10"></line>
+                            </svg>
+                            Billable expense
+                        </span>
+                    </div>
+                    <div class="suggestion-card-body">
+                        <dl>
+                            <dt>Date:</dt><dd>${formatDate(e.date)}</dd><br>
+                            <dt>Amount:</dt><dd>$${Number(e.amount || 0).toFixed(2)}</dd><br>
+                            <dt>Account:</dt><dd>${e.account_name || ''}</dd>
+                            ${e.vendor_name ? `<br><dt>Vendor:</dt><dd>${e.vendor_name}</dd>` : ''}
+                            ${e.description ? `<br><dt>Desc:</dt><dd>${e.description}</dd>` : ''}
+                        </dl>
+                    </div>
+                    <button type="button"
+                            class="suggestion-add-button"
+                            data-type="expense"
+                            data-id="${e.id}">
+                        Add
+                    </button>
+                </div>
+            `;
+            }
+
+            function renderSuggestions(items) {
                 $list.empty();
 
-                if (!list || !list.length) {
+                if (!items || !items.length) {
                     $list.html(
                         '<p style="font-size:12px;color:#6b6f73;">' +
                         'No suggested transactions found for this customer.' +
@@ -3945,45 +4062,17 @@
                     return;
                 }
 
-                list.forEach(function(p) {
-                    const cardHtml = `
-                    <div class="suggestion-card" data-proposal-id="${p.id}">
-                        <div class="suggestion-card-header">
-                            <span>
-                                ${
-                                    (p.proposal_number || p.proposal_id)
-                                        ? `Estimate ${p.proposal_number || p.proposal_id}`
-                                        : 'Estimate'
-                                }
-                            </span>
-                            <a href="${proposalEditUrlPattern.replace('__id__', p.encrypted_id)}"
-                               target="_blank"
-                               style="font-size:11px;color:#6B6C72;">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none"
-                                     viewBox="0 0 24 24" color="currentColor"
-                                     width="20px" height="20px" focusable="false"
-                                     aria-hidden="true" class="icon">
-                                    <path fill="currentColor"
-                                          d="M20 11.03a1 1 0 0 0-1 1l-.01 5.715a1.29 1.29 0 0 1-1.29 1.282l-11.425-.018a1.286 1.286 0 0 1-1.283-1.287l.017-11.43A1.284 1.284 0 0 1 6.294 5.01l5.714.009a1 1 0 1 0 0-2L6.3 3.008h-.006A3.284 3.284 0 0 0 3.009 6.29l-.017 11.428a3.29 3.29 0 0 0 3.28 3.29l11.429.019a3.29 3.29 0 0 0 3.287-3.281L21 12.032a1 1 0 0 0-1-1.002"></path>
-                                    <path fill="currentColor"
-                                          d="m20.013 3.03-4-.006a1 1 0 0 0 0 2h1.586L13.3 9.314a1 1 0 1 0 1.412 1.415l4.3-4.287v1.586a1 1 0 0 0 2 0l.006-4a1 1 0 0 0-1.005-.998"></path>
-                                </svg>
-                            </a>
-                        </div>
-                        <div class="suggestion-card-body">
-                            <dl>
-                                <dt>Date:</dt><dd>${formatDate(p.issue_date)}</dd><br>
-                                <dt>Total:</dt><dd>$${Number(p.total_amount || 0).toFixed(2)}</dd><br>
-                                <dt>Notes:</dt><dd>${p.note ? p.note : ''}</dd>
-                            </dl>
-                        </div>
-                        <button type="button"
-                                class="suggestion-add-button"
-                                data-proposal-id="${p.id}">
-                            Add
-                        </button>
-                    </div>
-                `;
+                items.forEach(function(item) {
+                    let cardHtml = '';
+                    
+                    if (item.type === 'estimate') {
+                        cardHtml = renderEstimateCard(item);
+                    } else if (item.type === 'time') {
+                        cardHtml = renderTimeCard(item);
+                    } else if (item.type === 'expense') {
+                        cardHtml = renderExpenseCard(item);
+                    }
+                    
                     $list.append(cardHtml);
                 });
             }
@@ -3995,17 +4084,23 @@
                 const dateFilter = $('#suggestions-filter-date').val();
                 const now = new Date();
 
-                let list = allProposals.slice();
+                // Combine all types into a single list with type markers
+                let allItems = [];
+                allSuggestions.estimates.forEach(e => allItems.push({...e, type: 'estimate'}));
+                allSuggestions.billable_time.forEach(t => allItems.push({...t, type: 'time'}));
+                allSuggestions.billable_expenses.forEach(x => allItems.push({...x, type: 'expense'}));
 
-                if (typeFilter === 'estimate') {
-                    // placeholder if you ever add other types
-                    list = list;
+                // Apply type filter
+                if (typeFilter !== 'all') {
+                    allItems = allItems.filter(item => item.type === typeFilter);
                 }
 
+                // Apply date filter
                 if (dateFilter !== 'all') {
-                    list = list.filter(function(p) {
-                        if (!p.issue_date) return true;
-                        const d = new Date(p.issue_date);
+                    allItems = allItems.filter(function(item) {
+                        const itemDate = item.issue_date || item.date;
+                        if (!itemDate) return true;
+                        const d = new Date(itemDate);
                         if (isNaN(d)) return true;
                         const diffDays = (now - d) / 86400000;
                         if (dateFilter === 'last30') return diffDays <= 30;
@@ -4014,11 +4109,11 @@
                     });
                 }
 
-                filteredProposals = list;
-                renderSuggestions(filteredProposals);
+                filteredItems = allItems;
+                renderSuggestions(filteredItems);
             }
 
-            // ---------- load proposals for a customer ----------
+            // ---------- load suggestions for a customer ----------
 
             function loadCustomerSuggestions(customerId) {
                 if (!customerId) {
@@ -4027,30 +4122,54 @@
                         'Select a customer to see suggested transactions.' +
                         '</p>'
                     );
-                    allProposals = [];
-                    filteredProposals = [];
+                    allSuggestions = { estimates: [], billable_time: [], billable_expenses: [] };
+                    filteredItems = [];
                     showSuggestionsPanel(false);
                     return;
                 }
 
-                $.get(proposalsUrl, {
+                // Check if suggestionsUrl is available
+                if (!suggestionsUrl) {
+                    console.error('Suggestions URL not found. Check data-suggestions-url attribute on #customer_id.');
+                    $list.html(
+                        '<p style="font-size:12px;color:#d9534f;">' +
+                        'Configuration error: Suggestions URL not defined.' +
+                        '</p>'
+                    );
+                    showSuggestionsPanel(false);
+                    return;
+                }
+
+                console.log('Loading suggestions from:', suggestionsUrl, 'for customer:', customerId);
+
+                $.get(suggestionsUrl, {
                         customer_id: customerId
                     })
                     .done(function(data) {
-                        allProposals = normalizeProposals(data);
-                        filteredProposals = allProposals.slice();
+                        console.log('Suggestions loaded:', data);
+                        allSuggestions = {
+                            estimates: data.estimates || [],
+                            billable_time: data.billable_time || [],
+                            billable_expenses: data.billable_expenses || []
+                        };
+                        
+                        const totalCount = allSuggestions.estimates.length + 
+                                          allSuggestions.billable_time.length + 
+                                          allSuggestions.billable_expenses.length;
 
-                        renderSuggestions(filteredProposals);
-                        showSuggestionsPanel(allProposals.length > 0);
+                        console.log('Total suggestions:', totalCount);
+                        applyFilter();
+                        showSuggestionsPanel(totalCount > 0);
                     })
-                    .fail(function() {
+                    .fail(function(xhr, status, error) {
+                        console.error('Failed to load suggestions:', status, error, xhr.responseText);
                         $list.html(
                             '<p style="font-size:12px;color:#d9534f;">' +
                             'Failed to load suggested transactions.' +
                             '</p>'
                         );
-                        allProposals = [];
-                        filteredProposals = [];
+                        allSuggestions = { estimates: [], billable_time: [], billable_expenses: [] };
+                        filteredItems = [];
                         showSuggestionsPanel(false);
                     });
             }
@@ -4175,22 +4294,11 @@
                 }
             }
 
-            // --- Add SINGLE estimate ---
+            // --- Add SINGLE suggestion (estimate, time, or expense) ---
             $(document).on('click', '.suggestion-add-button', function() {
-                const proposalId = String($(this).data('proposal-id'));
-
-                const p =
-                    filteredProposals.find(x => String(x.id) === proposalId) ||
-                    allProposals.find(x => String(x.id) === proposalId);
-
-                if (!p) return;
-
-                // Calculate how many items will be added
-                var itemCount = (p.items && p.items.length) ? p.items.length : 1;
-
-                // Remove empty default row before adding estimate items
-                removeEmptyDefaultRowIfNeeded(itemCount);
-
+                const type = $(this).data('type');
+                const id = String($(this).data('id'));
+                
                 // Determine insertion point: before trailing special rows, if any
                 var $lastBody = $('#sortable-table').find('tbody').last();
                 var $insertBefore = null;
@@ -4198,30 +4306,108 @@
                     $insertBefore = $lastBody;
                 }
 
-                if (p.items && p.items.length) {
-                    p.items.forEach(function(item) {
-                        // Pass estimate_id as third parameter
-                        insertProposalItem(item, $insertBefore, p.id);
-                    });
-                } else {
-                    // fallback: single product row with total
-                    insertProposalItem({
-                        product_id: p.product_id || null,
-                        description: (p.note && p.note.length) ?
-                            p.note : (p.proposal_number ? 'Estimate ' + p.proposal_number :
-                                'Estimate'),
+                if (type === 'estimate') {
+                    const p = allSuggestions.estimates.find(x => String(x.id) === id);
+                    if (!p) return;
+
+                    // Calculate how many items will be added
+                    var itemCount = (p.items && p.items.length) ? p.items.length : 1;
+                    removeEmptyDefaultRowIfNeeded(itemCount);
+
+                    if (p.items && p.items.length) {
+                        p.items.forEach(function(item) {
+                            insertProposalItem(item, $insertBefore, p.id);
+                        });
+                    } else {
+                        insertProposalItem({
+                            product_id: p.product_id || null,
+                            description: (p.note && p.note.length) ?
+                                p.note : (p.proposal_number ? 'Estimate ' + p.proposal_number : 'Estimate'),
+                            quantity: 1,
+                            price: Number(p.total_amount || 0),
+                            amount: Number(p.total_amount || 0)
+                        }, $insertBefore, p.id);
+                    }
+
+                    // Remove from suggestions
+                    allSuggestions.estimates = allSuggestions.estimates.filter(x => String(x.id) !== id);
+                    
+                } else if (type === 'time') {
+                    const t = allSuggestions.billable_time.find(x => String(x.id) === id);
+                    if (!t) return;
+
+                    removeEmptyDefaultRowIfNeeded(1);
+
+                    // Convert duration string to decimal hours for quantity
+                    let quantity = 1;
+                    if (t.duration) {
+                        if (typeof t.duration === 'string' && t.duration.includes(':')) {
+                            const parts = t.duration.split(':');
+                            const hours = parseFloat(parts[0] || 0);
+                            const minutes = parseFloat(parts[1] || 0);
+                            quantity = hours + (minutes / 60);
+                        } else {
+                            quantity = parseFloat(t.duration) || 1;
+                        }
+                    }
+
+                    // Create invoice line for time entry
+                    window.qbInsertAfterTbody = null;
+                    window.qbInsertBeforeTbody = $insertBefore || null;
+                    window.qbDuplicateSource = null;
+                    window.qbProposalToAdd = {
+                        product_id: t.service_id || null,
+                        description: `Time: ${t.service_name || 'Time Entry'}${t.notes ? ' - ' + t.notes : ''}`,
+                        quantity: quantity.toFixed(2),
+                        price: Number(t.rate || 0),
+                        amount: Number(t.amount || 0),
+                        taxable: t.taxable || false,
+                        line_type: 'billable_time',
+                        source_id: t.id
+                    };
+                    $('[data-repeater-create]').trigger('click');
+
+                    // Remove from suggestions
+                    allSuggestions.billable_time = allSuggestions.billable_time.filter(x => String(x.id) !== id);
+                    
+                } else if (type === 'expense') {
+                    const e = allSuggestions.billable_expenses.find(x => String(x.id) === id);
+                    if (!e) return;
+
+                    removeEmptyDefaultRowIfNeeded(1);
+
+                    // Create invoice line for expense
+                    window.qbInsertAfterTbody = null;
+                    window.qbInsertBeforeTbody = $insertBefore || null;
+                    window.qbDuplicateSource = null;
+                    window.qbProposalToAdd = {
+                        product_id: null,
+                        description: `Expense: ${e.description || e.account_name}${e.vendor_name ? ' (from ' + e.vendor_name + ')' : ''}`,
                         quantity: 1,
-                        price: Number(p.total_amount || 0),
-                        amount: Number(p.total_amount || 0)
-                    }, $insertBefore, p.id);
+                        price: Number(e.amount || 0),
+                        amount: Number(e.amount || 0),
+                        line_type: 'billable_expense',
+                        source_id: e.id,
+                        source_type: e.source_type
+                    };
+                    $('[data-repeater-create]').trigger('click');
+
+                    // Remove from suggestions
+                    allSuggestions.billable_expenses = allSuggestions.billable_expenses.filter(x => String(x.id) !== id);
                 }
 
-                // remove card + update arrays
+                // Remove card from UI
                 $(this).closest('.suggestion-card').remove();
-                allProposals = allProposals.filter(x => String(x.id) !== proposalId);
-                filteredProposals = filteredProposals.filter(x => String(x.id) !== proposalId);
+                
+                // Update filteredItems
+                filteredItems = filteredItems.filter(x => !(x.type === type && String(x.id) === id));
 
-                if (!allProposals.length) {
+                // Check if any suggestions remain
+                const totalCount = allSuggestions.estimates.length + 
+                                  allSuggestions.billable_time.length + 
+                                  allSuggestions.billable_expenses.length;
+                
+                if (totalCount === 0) {
                     $list.html(
                         '<p style="font-size:12px;color:#6b6f73;">' +
                         'All suggested transactions have been added.' +
@@ -4231,17 +4417,21 @@
                 }
             });
 
-            // --- Add ALL visible estimates ---
+            // --- Add ALL visible suggestions ---
             $(document).on('click', '.suggestions-addall', function() {
-                if (!filteredProposals.length) return;
+                if (!filteredItems.length) return;
 
                 // Calculate total items to be added
                 var totalItemCount = 0;
-                filteredProposals.forEach(function(p) {
-                    totalItemCount += (p.items && p.items.length) ? p.items.length : 1;
+                filteredItems.forEach(function(item) {
+                    if (item.type === 'estimate' && item.items && item.items.length) {
+                        totalItemCount += item.items.length;
+                    } else {
+                        totalItemCount += 1;
+                    }
                 });
 
-                // Remove empty default row before adding estimate items
+                // Remove empty default row before adding items
                 removeEmptyDefaultRowIfNeeded(totalItemCount);
 
                 var $lastBody = $('#sortable-table').find('tbody').last();
@@ -4250,28 +4440,68 @@
                     $insertBefore = $lastBody;
                 }
 
-                filteredProposals.forEach(function(p) {
-                    if (p.items && p.items.length) {
-                        p.items.forEach(function(item) {
-                            // Pass estimate_id as third parameter
-                            insertProposalItem(item, $insertBefore, p.id);
-                        });
-                    } else {
-                        insertProposalItem({
-                            product_id: p.product_id || null,
-                            description: (p.note && p.note.length) ?
-                                p.note : (p.proposal_number ? 'Estimate ' + p
-                                    .proposal_number :
-                                    'Estimate'),
+                filteredItems.forEach(function(item) {
+                    if (item.type === 'estimate') {
+                        if (item.items && item.items.length) {
+                            item.items.forEach(function(lineItem) {
+                                insertProposalItem(lineItem, $insertBefore, item.id);
+                            });
+                        } else {
+                            insertProposalItem({
+                                product_id: item.product_id || null,
+                                description: (item.note && item.note.length) ?
+                                    item.note : (item.proposal_number ? 'Estimate ' + item.proposal_number : 'Estimate'),
+                                quantity: 1,
+                                price: Number(item.total_amount || 0),
+                                amount: Number(item.total_amount || 0)
+                            }, $insertBefore, item.id);
+                        }
+                    } else if (item.type === 'time') {
+                        let quantity = 1;
+                        if (item.duration) {
+                            if (typeof item.duration === 'string' && item.duration.includes(':')) {
+                                const parts = item.duration.split(':');
+                                const hours = parseFloat(parts[0] || 0);
+                                const minutes = parseFloat(parts[1] || 0);
+                                quantity = hours + (minutes / 60);
+                            } else {
+                                quantity = parseFloat(item.duration) || 1;
+                            }
+                        }
+                        window.qbInsertAfterTbody = null;
+                        window.qbInsertBeforeTbody = $insertBefore || null;
+                        window.qbDuplicateSource = null;
+                        window.qbProposalToAdd = {
+                            product_id: item.service_id || null,
+                            description: `Time: ${item.service_name || 'Time Entry'}${item.notes ? ' - ' + item.notes : ''}`,
+                            quantity: quantity.toFixed(2),
+                            price: Number(item.rate || 0),
+                            amount: Number(item.amount || 0),
+                            taxable: item.taxable || false,
+                            line_type: 'billable_time',
+                            source_id: item.id
+                        };
+                        $('[data-repeater-create]').trigger('click');
+                    } else if (item.type === 'expense') {
+                        window.qbInsertAfterTbody = null;
+                        window.qbInsertBeforeTbody = $insertBefore || null;
+                        window.qbDuplicateSource = null;
+                        window.qbProposalToAdd = {
+                            product_id: null,
+                            description: `Expense: ${item.description || item.account_name}${item.vendor_name ? ' (from ' + item.vendor_name + ')' : ''}`,
                             quantity: 1,
-                            price: Number(p.total_amount || 0),
-                            amount: Number(p.total_amount || 0)
-                        }, $insertBefore, p.id);
+                            price: Number(item.amount || 0),
+                            amount: Number(item.amount || 0),
+                            line_type: 'billable_expense',
+                            source_id: item.id,
+                            source_type: item.source_type
+                        };
+                        $('[data-repeater-create]').trigger('click');
                     }
                 });
 
-                allProposals = [];
-                filteredProposals = [];
+                allSuggestions = { estimates: [], billable_time: [], billable_expenses: [] };
+                filteredItems = [];
                 $list.html(
                     '<p style="font-size:12px;color:#6b6f73;">' +
                     'All suggested transactions have been added.' +
@@ -4305,8 +4535,7 @@
             $('#suggestions-filter-reset').on('click', function() {
                 $('#suggestions-filter-type').val('all');
                 $('#suggestions-filter-date').val('all');
-                filteredProposals = allProposals.slice();
-                renderSuggestions(filteredProposals);
+                applyFilter();
             });
 
             $('#suggestions-filter-apply').on('click', function() {
@@ -4316,4 +4545,4 @@
         });
     </script>
 @endsection
-<script src=\"{{ asset('js/invoice-items-payload-handler.js') }}\"></script>
+<script src="{{ asset('js/invoice-items-payload-handler.js') }}"></script>

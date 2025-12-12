@@ -1508,6 +1508,10 @@ class ExpenseController extends Controller
                 }
                 
                 $Id = $expense->id;
+                
+                // Get selected payee value for the dropdown (format: type_id)
+                $selected_payee = $expense->getSelectedPayee();
+                
                 return view('expense.edit', compact(
                     'employees',
                     'customers',
@@ -1523,7 +1527,8 @@ class ExpenseController extends Controller
                     'bankAccount',
                     'subAccounts',
                     'Id',
-                    'accounts'
+                    'accounts',
+                    'selected_payee'
                 ));
             } else {
                 return redirect()->back()->with('error', __('Expense Not Found.'));

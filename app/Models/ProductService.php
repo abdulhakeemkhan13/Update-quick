@@ -7,8 +7,20 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
+use Laravel\Scout\Searchable;
+
 class ProductService extends Model
 {
+    use Searchable;
+
+    public function toSearchableArray()
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'sku' => $this->sku,
+        ];
+    }
     protected $fillable = [
         'name',
         'sku',

@@ -24,7 +24,16 @@ class TimeActivity extends Model
         'taxable',
         'notes',
         'created_by',
+        'invoiced_at',
+        'invoice_id',
     ];
+
+    protected $casts = [
+        'billable' => 'boolean',
+        'taxable' => 'boolean',
+        'invoiced_at' => 'datetime',
+    ];
+
 
     public function employee()
     {
@@ -49,5 +58,10 @@ class TimeActivity extends Model
     public function service()
     {
         return $this->hasOne(ProductService::class, 'id', 'service_id');
+    }
+
+    public function invoice()
+    {
+        return $this->belongsTo(Invoice::class, 'invoice_id', 'id');
     }
 }

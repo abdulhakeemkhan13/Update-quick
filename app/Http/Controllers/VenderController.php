@@ -34,7 +34,7 @@ class VenderController extends Controller
         return view('vender.dashboard', $data);
     }
 
-    public function index(\App\DataTables\VendorsListDataTable $dataTable)
+  public function index(\App\DataTables\VendorsListDataTable $dataTable)
     {
         if(\Auth::user()->can('manage vender'))
         {
@@ -42,52 +42,73 @@ class VenderController extends Controller
             $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
             $column = ($user->type == 'company') ? 'created_by' : 'owned_by';
 
-            // Summary Data
+            // Summary Data - Using optimized database aggregation
             $last365 = \Carbon\Carbon::now()->subDays(365);
             $last30 = \Carbon\Carbon::now()->subDays(30);
 
-            // 1. Purchase Orders (Unbilled Last 365 Days)
-            $purchases = \App\Models\Purchase::where($column, $ownerId)
-                                 ->where('created_at', '>=', $last365)
-                                 ->get();
-            $purchaseOrderCount = $purchases->count();
-            $purchaseOrderAmount = 0;
-            foreach($purchases as $purchase){
-                $purchaseOrderAmount += $purchase->getTotal();
-            }
+            // 1. Purchase Orders (Unbilled Last 365 Days) - Optimized with DB aggregation
+            $purchaseStats = \App\Models\Purchase::where($column, $ownerId)
+                ->where('created_at', '>=', $last365)
+                ->selectRaw('COUNT(*) as count')
+                ->selectRaw('COALESCE(SUM(
+                    (SELECT COALESCE(SUM(pi.price * pi.quantity), 0) FROM purchase_products pi WHERE pi.purchase_id = purchases.id) -
+                    (SELECT COALESCE(SUM(pi.discount), 0) FROM purchase_products pi WHERE pi.purchase_id = purchases.id) +
+                    (SELECT COALESCE(SUM(
+                        (pi.price * pi.quantity - pi.discount) * COALESCE(
+                            (SELECT COALESCE(t.rate, 0) FROM taxes t WHERE t.id = pi.tax), 0
+                        ) / 100
+                    ), 0) FROM purchase_products pi WHERE pi.purchase_id = purchases.id)
+                ), 0) as total_amount')
+                ->first();
+            
+            $purchaseOrderCount = $purchaseStats->count ?? 0;
+            $purchaseOrderAmount = $purchaseStats->total_amount ?? 0;
 
-            // 2. Overdue (Unpaid Last 365 Days)
-            $overdueBills = \App\Models\Bill::where($column, $ownerId)
-                                ->where('due_date', '<', date('Y-m-d'))
-                                ->where('status', '!=', 4)
-                                ->where('bill_date', '>=', $last365->format('Y-m-d'))
-                                ->get();
-            $overdueCount = $overdueBills->count();
-            $overdueAmount = 0;
-            foreach($overdueBills as $bill){
-                $overdueAmount += $bill->getDue();
-            }
+            // 2. Overdue (Unpaid Last 365 Days) - Optimized with subquery for due calculation
+            $overdueStats = \App\Models\Bill::where($column, $ownerId)
+                ->where('due_date', '<', date('Y-m-d'))
+                ->where('status', '!=', 4)
+                ->where('bill_date', '>=', $last365->format('Y-m-d'))
+                ->selectRaw('COUNT(*) as count')
+                ->selectRaw('COALESCE(SUM(
+                    (SELECT COALESCE(SUM(bi.price * bi.quantity), 0) FROM bill_products bi WHERE bi.bill_id = bills.id) -
+                    (SELECT COALESCE(SUM(bi.discount), 0) FROM bill_products bi WHERE bi.bill_id = bills.id) -
+                    (SELECT COALESCE(SUM(bp.amount), 0) FROM bill_payments bp WHERE bp.bill_id = bills.id) -
+                    (SELECT COALESCE(SUM(dn.amount), 0) FROM debit_notes dn WHERE dn.bill = bills.id)
+                ), 0) as total_due')
+                ->first();
+            
+            $overdueCount = $overdueStats->count ?? 0;
+            $overdueAmount = max(0, $overdueStats->total_due ?? 0);
 
-            // 3. Open Bills
-            $openBills = \App\Models\Bill::where($column, $ownerId)
-                             ->where('status', '!=', 4)
-                             ->get();
-            $openBillCount = $openBills->count();
-            $openBillAmount = 0;
-            foreach($openBills as $bill){
-                $openBillAmount += $bill->getDue();
-            }
+            // 3. Open Bills - Optimized
+            $openBillStats = \App\Models\Bill::where($column, $ownerId)
+                ->where('status', '!=', 4)
+                ->selectRaw('COUNT(*) as count')
+                ->selectRaw('COALESCE(SUM(
+                    (SELECT COALESCE(SUM(bi.price * bi.quantity), 0) FROM bill_products bi WHERE bi.bill_id = bills.id) -
+                    (SELECT COALESCE(SUM(bi.discount), 0) FROM bill_products bi WHERE bi.bill_id = bills.id) -
+                    (SELECT COALESCE(SUM(bp.amount), 0) FROM bill_payments bp WHERE bp.bill_id = bills.id) -
+                    (SELECT COALESCE(SUM(dn.amount), 0) FROM debit_notes dn WHERE dn.bill = bills.id)
+                ), 0) as total_due')
+                ->first();
+            
+            $openBillCount = $openBillStats->count ?? 0;
+            $openBillAmount = max(0, $openBillStats->total_due ?? 0);
 
-            // 4. Paid Last 30 Days
-            $paidBills = \App\Models\Bill::where($column, $ownerId)
-                             ->where('status', 4)
-                             ->where('updated_at', '>=', $last30)
-                             ->get();
-            $paidCount = $paidBills->count();
-            $paidAmount = 0;
-            foreach($paidBills as $bill){
-                $paidAmount += $bill->getTotal();
-            }
+            // 4. Paid Last 30 Days - Optimized
+            $paidStats = \App\Models\Bill::where($column, $ownerId)
+                ->where('status', 4)
+                ->where('updated_at', '>=', $last30)
+                ->selectRaw('COUNT(*) as count')
+                ->selectRaw('COALESCE(SUM(
+                    (SELECT COALESCE(SUM(bi.price * bi.quantity), 0) FROM bill_products bi WHERE bi.bill_id = bills.id) -
+                    (SELECT COALESCE(SUM(bi.discount), 0) FROM bill_products bi WHERE bi.bill_id = bills.id)
+                ), 0) as total_amount')
+                ->first();
+            
+            $paidCount = $paidStats->count ?? 0;
+            $paidAmount = $paidStats->total_amount ?? 0;
 
             return $dataTable->render('vender.index', compact(
                 'purchaseOrderCount', 'purchaseOrderAmount',
@@ -101,7 +122,6 @@ class VenderController extends Controller
             return redirect()->back()->with('error', __('Permission denied.'));
         }
     }
-
 
     public function create()
     {

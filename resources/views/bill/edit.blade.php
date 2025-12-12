@@ -1811,7 +1811,7 @@
                                                     <span class="row-number">{{ $i + 1 }}</span>
                                                 </td>
                                                 <td>
-                                                    {{ Form::select("items[{$i}][item_id]", $product_services ?? [], $item->product_id ?? null, [
+                                                    {{ Form::select("items[{$i}][product_id]", $product_services ?? [], $item->product_id ?? null, [
                                                         'class' => 'form-control select2 item-select item-product',
                                                         'placeholder' => 'Select Product/Service',
                                                     ]) }}
@@ -1829,7 +1829,7 @@
                                                     ]) }}
                                                 </td>
                                                 <td>
-                                                    {{ Form::number("items[{$i}][rate]", $item->price ?? '', [
+                                                    {{ Form::number("items[{$i}][price]", $item->price ?? '', [
                                                         'class' => 'form-control text-end item-rate',
                                                         'step' => '0.01',
                                                         'placeholder' => '0.00',

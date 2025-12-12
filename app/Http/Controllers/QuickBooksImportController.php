@@ -1442,6 +1442,18 @@ class QuickBooksImportController extends Controller
                     break;
                 }
             }
+            
+            // Handle payments with no lines at all (edge case)
+            if (empty($payment['Line']) && $paymentTotalAmt > 0) {
+                $allocations[] = [
+                    'payment_id' => $paymentId,
+                    'invoice_id' => null,
+                    'allocated_amount' => $paymentTotalAmt,
+                    'allocation_type' => 'no_lines',
+                    'reason' => 'Payment has TotalAmt but no lines',
+                    'payment_date' => $paymentDate,
+                ];
+            }
         }
 
         // Make linked_invoices unique
@@ -8715,6 +8727,219 @@ class QuickBooksImportController extends Controller
         }
     }
 
+    /**
+     * Sync payments for existing invoices that are missing payment records.
+     * This fixes invoices that were imported before their payments existed in QBO.
+     */
+    public function syncPaymentsForExistingInvoices(Request $request)
+    {
+        ini_set('memory_limit', '512M');
+        set_time_limit(600);
 
+        try {
+            $creatorId = \Auth::user()->creatorId();
+            $imported = 0;
+            $skipped = 0;
+            $errors = [];
+
+            // 1. Fetch ALL payments from QuickBooks
+            $allPayments = collect();
+            $startPosition = 1;
+            $maxResults = 50;
+            do {
+                $query = "SELECT * FROM Payment STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
+                $res = $this->qbController->runQuery($query);
+                if ($res instanceof \Illuminate\Http\JsonResponse) {
+                    return $res;
+                }
+                $data = $res['QueryResponse']['Payment'] ?? [];
+                $allPayments = $allPayments->merge($data);
+                $startPosition += count($data);
+            } while (count($data) === $maxResults);
+
+            \Log::info("PAYMENT_SYNC: Fetched " . $allPayments->count() . " payments from QBO");
+
+            // 2. Get all local invoices that might need payment sync
+            $localInvoices = Invoice::where('created_by', $creatorId)
+                ->pluck('id', 'invoice_id')
+                ->toArray();
+
+            \Log::info("PAYMENT_SYNC: Found " . count($localInvoices) . " local invoices");
+
+            // 3. Process each payment
+            DB::beginTransaction();
+            try {
+                foreach ($allPayments as $payment) {
+                    $paymentId = $payment['Id'] ?? null;
+                    $paymentDate = $payment['TxnDate'] ?? now()->toDateString();
+                    $paymentMethod = $payment['PaymentMethodRef']['name'] ?? 'Unknown';
+
+                    // Extract linked invoices from payment lines
+                    $linkedInvoices = [];
+                    foreach ($payment['Line'] ?? [] as $line) {
+                        if (!empty($line['LinkedTxn'])) {
+                            $linked = is_array($line['LinkedTxn'][0] ?? null) ? $line['LinkedTxn'] : [$line['LinkedTxn']];
+                            foreach ($linked as $txn) {
+                                if (($txn['TxnType'] ?? null) === 'Invoice') {
+                                    $qbInvoiceId = (string) $txn['TxnId'];
+                                    $amount = (float) ($line['Amount'] ?? 0);
+                                    if ($amount > 0) {
+                                        $linkedInvoices[] = [
+                                            'qb_invoice_id' => $qbInvoiceId,
+                                            'amount' => $amount,
+                                        ];
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 4. For each linked invoice, check if local invoice exists and payment is missing
+                    foreach ($linkedInvoices as $linkData) {
+                        $qbInvoiceId = $linkData['qb_invoice_id'];
+                        $amount = $linkData['amount'];
+
+                        // Check if we have this invoice locally
+                        if (!isset($localInvoices[$qbInvoiceId])) {
+                            continue; // Invoice not in local DB
+                        }
+
+                        $localInvoiceId = $localInvoices[$qbInvoiceId];
+
+                        // Check if payment already exists for this invoice with this txn_id
+                        $existingPayment = InvoicePayment::where('invoice_id', $localInvoiceId)
+                            ->where('txn_id', $paymentId)
+                            ->first();
+
+                        if ($existingPayment) {
+                            $skipped++;
+                            continue; // Payment already synced
+                        }
+
+                        // Get bank account
+                        $bankAccountId = null;
+                        $accName = 'Undeposited Funds';
+                        if (isset($payment['DepositToAccountRef'])) {
+                            $accName = $payment['DepositToAccountRef']['name'] ?? 'Bank';
+                            $accCode = $payment['DepositToAccountRef']['value'] ?? null;
+                            $bankAccountId = $this->getOrCreateBankAccountFromChartAccount($accCode, $accName);
+                        }
+                        if (!$bankAccountId) {
+                            $bankAccountId = $this->getOrCreateBankAccountFromChartAccount(null, 'Bank');
+                        }
+
+                        // Create the missing payment record
+                        $invoice = Invoice::find($localInvoiceId);
+                        $allocatedAmount = min($amount, $invoice->total_amount ?? $amount);
+
+                        $newPayment = InvoicePayment::create([
+                            'invoice_id' => $localInvoiceId,
+                            'date' => $paymentDate,
+                            'amount' => $allocatedAmount,
+                            'account_id' => $bankAccountId,
+                            'payment_method' => $paymentMethod,
+                            'txn_id' => $paymentId,
+                            'description' => 'Payment synced from QBO',
+                        ]);
+
+                        // Create transaction record
+                        if ($invoice && $invoice->customer_id) {
+                            Transaction::create([
+                                'user_id' => $invoice->customer_id,
+                                'user_type' => 'Customer',
+                                'type' => 'Payment',
+                                'amount' => $allocatedAmount,
+                                'account' => $bankAccountId,
+                                'description' => 'Invoice Payment (synced)',
+                                'date' => $paymentDate,
+                                'category' => 'Invoice',
+                                'payment_id' => $newPayment->id,
+                                'payment_no' => $paymentId,
+                                'created_by' => $creatorId,
+                            ]);
+
+                            // Update balances
+                            if ($bankAccountId) {
+                                Utility::bankAccountBalance($bankAccountId, $allocatedAmount, 'credit');
+                            }
+                            Utility::updateUserBalance('customer', $invoice->customer_id, $allocatedAmount, 'credit');
+                        }
+
+                        \Log::info("PAYMENT_SYNC: Created payment for invoice {$qbInvoiceId} (local ID: {$localInvoiceId}), amount: {$allocatedAmount}");
+                        $imported++;
+                    }
+                }
+
+                DB::commit();
+
+                return response()->json([
+                    'status' => 'success',
+                    'imported' => $imported,
+                    'skipped' => $skipped,
+                    'errors' => $errors,
+                    'message' => "Synced {$imported} payments for existing invoices (skipped {$skipped} already synced).",
+                ]);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
+
+        } catch (\Exception $e) {
+            \Log::error('Payment sync error: ' . $e->getMessage(), ['exception' => $e]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Payment sync failed: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get a diagnostic report of invoices with missing payments.
+     * Compares local open balance vs what should be zero based on QBO data.
+     */
+    public function getMissingPaymentsReport(Request $request)
+    {
+        try {
+            $creatorId = \Auth::user()->creatorId();
+
+            // Find invoices with amount > 0 but no payments
+            $invoicesWithNoPayments = DB::select("
+                SELECT 
+                    i.id as local_id,
+                    i.invoice_id as qb_invoice_id,
+                    i.ref_number,
+                    c.name as customer_name,
+                    i.issue_date,
+                    (SELECT IFNULL(SUM((price * quantity) - discount), 0) FROM invoice_products WHERE invoice_id = i.id) as subtotal,
+                    (SELECT IFNULL(SUM(amount), 0) FROM invoice_payments WHERE invoice_id = i.id) as total_payments,
+                    (SELECT IFNULL(SUM(cn.amount), 0) 
+                        FROM credit_notes cn
+                        LEFT JOIN invoice_payments ip ON cn.payment_id = ip.id
+                        WHERE cn.invoice = i.id OR ip.invoice_id = i.id) as total_credits
+                FROM invoices i
+                LEFT JOIN customers c ON c.id = i.customer_id
+                WHERE i.created_by = ?
+                HAVING subtotal > 0 AND total_payments = 0 AND total_credits = 0
+                ORDER BY subtotal DESC
+                LIMIT 50
+            ", [$creatorId]);
+
+            $totalMissing = collect($invoicesWithNoPayments)->sum('subtotal');
+
+            return response()->json([
+                'status' => 'success',
+                'count' => count($invoicesWithNoPayments),
+                'total_missing_amount' => number_format($totalMissing, 2),
+                'invoices' => $invoicesWithNoPayments,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
 
 }
