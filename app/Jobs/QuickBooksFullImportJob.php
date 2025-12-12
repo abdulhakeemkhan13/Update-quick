@@ -28,6 +28,7 @@ class QuickBooksFullImportJob implements ShouldQueue
         // 'taxes' => 'Importing Taxes',
         // 'invoices' => 'Importing Invoices',
         // 'bills' => 'Importing Bills',
+        'unappliedPayments' => 'Importing Unapplied Payments',
         // 'expenses' => 'Importing Expenses',
         // 'estimates' => 'Importing Estimates',
         // 'deposits' => 'Importing Deposits',
@@ -112,6 +113,7 @@ class QuickBooksFullImportJob implements ShouldQueue
     }
 
     protected function customers($controller) { return $controller->customers(); }
+    protected function unappliedPayments($controller) { return $controller->importUnappliedPayments(new Request()); }
     protected function deposits($controller) { return $controller->importDeposits(new Request()); }
     protected function taxes($controller) { return $controller->importTaxes(); }
     protected function vendors($controller) { return $controller->vendors(); }

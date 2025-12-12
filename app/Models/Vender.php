@@ -6,10 +6,23 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 
+use Laravel\Scout\Searchable;
+
 class Vender extends Authenticatable
 {
     use HasRoles;
     use Notifiable;
+    use Searchable;
+
+    public function toSearchableArray()
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'email' => $this->email,
+            'contact' => $this->contact,
+        ];
+    }
 
     protected $guard_name = 'web';
     protected $fillable   = [

@@ -345,6 +345,7 @@ $billPayments = DB::table('bill_payments')
     })
     ->where('bills.created_by', $userId)
     ->where('bills.type', 'Bill')
+
     ->whereRaw('LOWER(bills.user_type) = ?', ['vendor'])
     ->whereBetween('bill_payments.date', [$start, $end])
     ->groupBy(
@@ -429,6 +430,7 @@ $billPayments = DB::table('bill_payments')
                     ->orderBy('vendor_name', 'asc')
                     ->orderBy('transaction_date', 'asc');
         }
+
 
     public function html()
     {

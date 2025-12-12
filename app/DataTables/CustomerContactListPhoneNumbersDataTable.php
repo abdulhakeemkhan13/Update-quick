@@ -33,14 +33,10 @@ class CustomerContactListPhoneNumbersDataTable extends DataTable
                 return $customer->email ?? '-';
             })
             ->addColumn('full_name', function($customer) {
-                // This could be the same as customer_full_name or different based on requirements
                 return $customer->name ?? '-';
             })
             ->addColumn('bill_address', function($customer) {
                 $address = [];
-                if (!empty($customer->billing_name)) {
-                    $address[] = $customer->billing_name;
-                }
                 if (!empty($customer->billing_address)) {
                     $address[] = $customer->billing_address;
                 }
@@ -60,9 +56,6 @@ class CustomerContactListPhoneNumbersDataTable extends DataTable
             })
             ->addColumn('ship_address', function($customer) {
                 $address = [];
-                if (!empty($customer->shipping_name)) {
-                    $address[] = $customer->shipping_name;
-                }
                 if (!empty($customer->shipping_address)) {
                     $address[] = $customer->shipping_address;
                 }
@@ -79,23 +72,46 @@ class CustomerContactListPhoneNumbersDataTable extends DataTable
                     $address[] = $customer->shipping_country;
                 }
                 return !empty($address) ? implode(', ', $address) : '-';
+            })
+            ->addColumn('company', function($customer) {
+                return $customer->billing_name ?? $customer->name ?? '-';
+            })
+            ->addColumn('created_on', function($customer) {
+                return $customer->created_at ? $customer->created_at->format('m/d/Y') : '-';
+            })
+            ->addColumn('customer', function($customer) {
+                return $customer->name ?? '-';
+            })
+            ->addColumn('deleted', function($customer) {
+                return $customer->is_active ? 'No' : 'Yes';
+            })
+            ->addColumn('ship_city', function($customer) {
+                return $customer->shipping_city ?? '-';
+            })
+            ->addColumn('ship_state', function($customer) {
+                return $customer->shipping_state ?? '-';
             });
     }
 
     public function query(Customer $model)
     {
         $user = Auth::user();
-        $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
-        $column = ($user->type == 'company') ? 'created_by' : 'owned_by';
 
         $query = $model->newQuery()
-            ->where($column, $ownerId)
-            ->where('is_active', 1);
+            ->where('created_by', $user->creatorId());
+
+        // Apply status filter (default: active only)
+        $status = request()->get('status', '1'); // Default to active
+        if ($status !== 'all') {
+            $query->where('is_active', (int) $status);
+        }
 
         // Apply customer name filter if provided
         if (request()->filled('customer_name') && request('customer_name') !== '') {
             $query->where('name', 'like', '%' . request('customer_name') . '%');
         }
+
+        $query->orderByRaw("CASE WHEN name REGEXP '^[0-9]' THEN 0 ELSE 1 END ASC")->orderBy('name', 'asc');
 
         return $query;
     }
@@ -108,36 +124,39 @@ class CustomerContactListPhoneNumbersDataTable extends DataTable
             ->minifiedAjax()
             ->dom('rt')
             ->parameters([
-                'responsive' => true,
-                'autoWidth'  => false,
+                'responsive' => false,
+                'autoWidth'  => true,
                 'paging'     => false,
                 'searching'  => false,
                 'info'       => false,
-                'ordering'   => false,
-                'colReorder' => true,
-                'fixedHeader'=> true,
-                // 'scrollY'    => '420px',
-                'scrollX'    => true,
-                'scrollCollapse' => true,
+                'ordering'   => true,
+                'order'      => [[0, 'asc']],
             ]);
     }
 
     protected function getColumns()
     {
         return [
-        Column::make('customer_full_name')->data('customer_full_name')->name('name')->title(__('Customer Full Name')),
-        Column::make('phone_numbers')->data('phone_numbers')->title(__('Phone Numbers')),
-
-        // hidden by default
-        Column::make('email')->data('email')->name('email')->title(__('Email'))->visible(false),
-        Column::make('full_name')->data('full_name')->name('name')->title(__('Full Name'))->visible(false),
-        Column::make('bill_address')->data('bill_address')->title(__('Bill Address'))->visible(false),
-        Column::make('ship_address')->data('ship_address')->title(__('Ship Address'))->visible(false),
+            // Default visible columns for Phone List
+            Column::make('customer_full_name')->data('customer_full_name')->name('name')->title(__('Customer full name'))->orderable(true),
+            Column::make('phone_numbers')->data('phone_numbers')->title(__('Phone'))->orderable(true),
+            
+            // Hidden by default columns
+            Column::make('email')->data('email')->name('email')->title(__('Email'))->visible(false)->orderable(true),
+            Column::make('full_name')->data('full_name')->title(__('Full name'))->visible(false)->orderable(true),
+            Column::make('bill_address')->data('bill_address')->title(__('Bill address'))->visible(false)->orderable(true),
+            Column::make('ship_address')->data('ship_address')->title(__('Ship address'))->visible(false)->orderable(true),
+            Column::make('company')->data('company')->title(__('Company'))->visible(false)->orderable(true),
+            Column::make('created_on')->data('created_on')->title(__('Created on'))->visible(false)->orderable(true),
+            Column::make('customer')->data('customer')->title(__('Customer'))->visible(false)->orderable(true),
+            Column::make('deleted')->data('deleted')->title(__('Deleted'))->visible(false)->orderable(true),
+            Column::make('ship_city')->data('ship_city')->title(__('Ship city'))->visible(false)->orderable(true),
+            Column::make('ship_state')->data('ship_state')->title(__('Ship state'))->visible(false)->orderable(true),
         ];
     }
 
     protected function filename(): string
     {
-        return 'CustomerContactList_'.date('YmdHis');
+        return 'CustomerPhoneList_'.date('YmdHis');
     }
 }

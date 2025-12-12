@@ -22,8 +22,9 @@
 .qbo-sidebar {
     position: fixed;
     left: 0;
-    top: 0;
-    height: 100vh;
+    top: var(--qbo-header-height);
+    /* Sidebar below header */
+    height: calc(100vh - var(--qbo-header-height));
     width: var(--qbo-sidebar-width);
     background: var(--qbo-sidebar-bg);
     border-right: 1px solid var(--qbo-sidebar-border);
@@ -353,7 +354,8 @@
 .qbo-header {
     position: fixed;
     top: 0;
-    left: var(--qbo-sidebar-width);
+    left: 0;
+    /* Full width header like QBO */
     right: 0;
     height: var(--qbo-header-height);
     background: #fff;
@@ -361,7 +363,45 @@
     align-items: center;
     padding: 0 20px;
     border-bottom: 1px solid var(--qbo-sidebar-border);
-    z-index: 1040;
+    z-index: 1060;
+    /* Higher than sidebar */
+    gap: 16px;
+}
+
+/* Header Brand Section - Logo & Company Name */
+.qbo-header-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.qbo-header-logo {
+    display: flex;
+    align-items: center;
+    text-decoration: none;
+}
+
+.qbo-logo-img {
+    height: 32px;
+    width: auto;
+    max-width: 120px;
+    object-fit: contain;
+}
+
+.qbo-header-company-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #393a3d;
+    text-decoration: none;
+    white-space: nowrap;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.qbo-header-company-name:hover {
+    color: #0077c5;
 }
 
 /* Search Bar */
@@ -461,6 +501,22 @@
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+/* User Alert Button with Red Badge (like QBO) */
+.qbo-user-alert-btn {
+    position: relative;
+}
+
+.qbo-alert-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 10px;
+    height: 10px;
+    background: #e21836;
+    border-radius: 50%;
+    border: 2px solid #fff;
 }
 
 /* User Menu */
@@ -1126,8 +1182,9 @@
    ===================================================== */
 .qbo-main-content {
     margin-left: var(--qbo-sidebar-width) !important;
-    /* margin-top: var(--qbo-header-height); */
-    /* padding: 24px; */
+    margin-top: var(--qbo-header-height);
+    /* Space for fixed header */
+    padding-top: 24px;
     min-height: calc(100vh - var(--qbo-header-height));
 }
 
@@ -1163,6 +1220,14 @@
 
     .qbo-header {
         padding: 0 12px;
+    }
+
+    .qbo-header-company-name {
+        display: none;
+    }
+
+    .qbo-logo-img {
+        height: 28px;
     }
 }
 

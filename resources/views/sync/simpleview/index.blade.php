@@ -124,9 +124,10 @@
             <div class="offcanvas-body">
            
                 <div class="filter-item mb-3">
-                    <label class="filter-label">Vendor</label>
-                    <select id="sidebar-filter-status" class="form-control">
-                        <option value="1">Active</option>
+                    <label class="filter-label">Status</label>
+                    <select id="sidebar-filter-status" class="form-control" onchange="applyStatusFilter()">
+                        <option value="all">All</option>
+                        <option value="1" selected>Active</option>
                         <option value="0">Inactive</option>
                     </select>
                 </div>
@@ -136,15 +137,16 @@
 
         <!-- Report Content -->
         <div class="report-content">
-            <div class="report-title-section">
-                <h2 class="report-title">{{ $pageTitle }}</h2>
-                <p class="date-range">
-                    <span id="date-range-display">As of {{ Carbon\Carbon::now()->format('F j, Y') }}</span>
+            <div class="report-title-section text-center">
+                <h2 class="report-title mb-1">{{ $pageTitle }}</h2>
+                <p class="company-name mb-0" style="font-size: 13px; color: #6b7280;">{{ Auth::user()->name ?? 'Company' }}</p>
+                <p class="date-range mt-2" style="font-size: 12px; color: #9ca3af;">
+                    <span id="date-range-display">Date Prepared: {{ Carbon\Carbon::now()->format('m/d/Y') }}</span>
                 </p>
             </div>
-            <div class="table-wrapper qb-scroll">
+            <div class="table-wrapper" style="overflow-x: auto;">
                 <div class="table-container">
-                    {!! $dataTable->table(['class' => 'table proposals-by-customer-table', 'id' => 'proposals-by-customer-table']) !!}
+                    {!! $dataTable->table(['class' => 'table proposals-by-customer-table table-bordered', 'id' => 'proposals-by-customer-table', 'style' => 'width: 100%; border-collapse: collapse;']) !!}
                 </div>
             </div>
         </div>
@@ -385,9 +387,29 @@
         .column-item {
             display: flex;
             align-items: center;
+            justify-content: space-between;
             padding: 12px 0;
             border-bottom: 1px solid #f3f4f6;
-            cursor: move;
+        }
+
+        .column-checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 0;
+            cursor: pointer;
+            font-size: 14px;
+            color: #374151;
+        }
+
+        .column-checkbox-label input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .column-name {
+            user-select: none;
         }
 
         .handle {
@@ -408,6 +430,34 @@
         .additional-columns .column-item {
             padding-left: 28px;
             cursor: default;
+        }
+
+        /* Table styling for QBO-like header */
+        #proposals-by-customer-table {
+            width: 100% !important;
+        }
+
+        #proposals-by-customer-table thead th {
+            background-color: #2d4a22 !important;
+            color: white !important;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+            padding: 12px 16px;
+            border: none;
+            white-space: nowrap;
+        }
+
+        #proposals-by-customer-table tbody td {
+            padding: 10px 16px;
+            border-bottom: 1px solid #e5e7eb;
+            font-size: 13px;
+            color: #0077c5;
+        }
+
+        #proposals-by-customer-table tbody tr:hover {
+            background-color: #f9fafb;
         }
 
         /* Enhanced form controls */
@@ -2270,6 +2320,154 @@
             });
 
             console.log('QuickBooks-style General Ledger initialized successfully');
+        });
+
+        // Status filter function - works with both header and sidebar dropdowns
+        function applyStatusFilter() {
+            // Get status from whichever dropdown triggered (header takes priority)
+            var headerStatus = $('#header-filter-status').val();
+            var sidebarStatus = $('#sidebar-filter-status').val();
+            
+            // Sync both dropdowns
+            if (headerStatus !== sidebarStatus) {
+                if (document.activeElement.id === 'header-filter-status') {
+                    $('#sidebar-filter-status').val(headerStatus);
+                } else {
+                    $('#header-filter-status').val(sidebarStatus);
+                }
+            }
+            
+            var status = headerStatus || sidebarStatus || '1';
+            var table = $('#proposals-by-customer-table').DataTable();
+            
+            // Get current ajax URL and modify it
+            var currentUrl = table.ajax.url();
+            var url = new URL(currentUrl, window.location.origin);
+            url.searchParams.set('status', status);
+            
+            // Reload table with new filter
+            table.ajax.url(url.toString()).load();
+        }
+
+        // Refresh table data
+        function refreshTableData() {
+            var table = $('#proposals-by-customer-table').DataTable();
+            table.ajax.reload();
+        }
+        
+        // Get current status for exports
+        function getCurrentStatusFilter() {
+            return $('#header-filter-status').val() || '1';
+        }
+        
+        // Override exportDataTable to include status filter
+        var originalExportDataTable = typeof exportDataTable === 'function' ? exportDataTable : null;
+        function exportDataTableWithStatus(tableId, title, format) {
+            var status = getCurrentStatusFilter();
+            // Add status to export - most export functions will use the current table data which already has the filter applied
+            if (originalExportDataTable) {
+                originalExportDataTable(tableId, title, format);
+            } else {
+                // Fallback: just log that export was called
+                console.log('Export called with status:', status, 'format:', format);
+            }
+        }
+
+        // =========================
+        // COLUMN TOGGLE FUNCTIONALITY
+        // =========================
+        
+        var dataTableInstance = null;
+        
+        // Get DataTable instance safely (without re-initializing)
+        function getDataTableInstance() {
+            if (dataTableInstance) return dataTableInstance;
+            
+            var tableElement = $('#proposals-by-customer-table');
+            if ($.fn.DataTable.isDataTable(tableElement)) {
+                dataTableInstance = tableElement.DataTable();
+            }
+            return dataTableInstance;
+        }
+        
+        // Initialize columns modal when table is ready
+        $(document).on('init.dt', '#proposals-by-customer-table', function(e, settings) {
+            dataTableInstance = new $.fn.dataTable.Api(settings);
+            initializeColumnsModal();
+        });
+
+        // Fallback: initialize after a short delay if event doesn't fire
+        setTimeout(function() {
+            if ($('#sortable-columns').children().length === 0) {
+                initializeColumnsModal();
+            }
+        }, 1500);
+
+        function initializeColumnsModal() {
+            var table = getDataTableInstance();
+            if (!table) return; // Table not ready yet
+            
+            var columnsContainer = $('#sortable-columns');
+            columnsContainer.empty();
+
+            // Get all columns and create checkboxes
+            table.columns().every(function(index) {
+                var column = this;
+                var columnTitle = $(column.header()).text() || 'Column ' + (index + 1);
+                var isVisible = column.visible();
+
+                var columnItem = $('<div class="column-item" data-column-index="' + index + '">' +
+                    '<label class="column-checkbox-label">' +
+                    '<input type="checkbox" class="column-visibility-checkbox" data-column="' + index + '" ' + (isVisible ? 'checked' : '') + '>' +
+                    '<span class="column-name">' + columnTitle + '</span>' +
+                    '</label>' +
+                    '<i class="fa fa-grip-vertical drag-handle" style="cursor: grab; color: #9ca3af;"></i>' +
+                    '</div>');
+
+                columnsContainer.append(columnItem);
+            });
+
+            // Remove previous handlers and add new one (prevent duplicates)
+            columnsContainer.off('change', '.column-visibility-checkbox').on('change', '.column-visibility-checkbox', function() {
+                var columnIndex = $(this).data('column');
+                var isChecked = $(this).is(':checked');
+                var tbl = getDataTableInstance();
+                if (tbl) {
+                    tbl.column(columnIndex).visible(isChecked);
+                    updateColumnCountBadge();
+                }
+            });
+
+            updateColumnCountBadge();
+        }
+
+        function updateColumnCountBadge() {
+            var table = getDataTableInstance();
+            if (!table) return;
+            
+            var visibleCount = 0;
+            table.columns().every(function() {
+                if (this.visible()) visibleCount++;
+            });
+            $('#columns-btn .badge').text(visibleCount);
+        }
+
+        // Columns button click handler
+        $('#columns-btn').on('click', function() {
+            $('#columns-overlay').show();
+            initializeColumnsModal(); // Refresh the list
+        });
+
+        // Close columns modal
+        $('#close-columns').on('click', function() {
+            $('#columns-overlay').hide();
+        });
+
+        // Close modal when clicking overlay
+        $('#columns-overlay').on('click', function(e) {
+            if (e.target === this) {
+                $(this).hide();
+            }
         });
     </script>
 

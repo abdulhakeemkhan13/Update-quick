@@ -4,8 +4,20 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
+use Laravel\Scout\Searchable;
+
 class Invoice extends Model
 {
+    use Searchable;
+
+    public function toSearchableArray()
+    {
+        return [
+            'id' => $this->id,
+            'invoice_id' => $this->invoice_id,
+            'ref_number' => $this->ref_number,
+        ];
+    }
     protected $fillable = [
         'invoice_id',
         'customer_id',

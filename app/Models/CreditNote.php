@@ -7,10 +7,14 @@ use Illuminate\Database\Eloquent\Model;
 class CreditNote extends Model
 {
     protected $fillable = [
-        'invoice',
+        'credit_note_id',
         'customer',
-        'amount',
         'date',
+        'amount',
+        'description',
+        'created_by',
+        'owned_by',
+        'payment_id',
     ];
 
     public function customer()
