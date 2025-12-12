@@ -138,11 +138,11 @@
             {{-- Create Actions Section --}}
             <div class="qbo-create-actions">
                 <span class="qbo-actions-title">{{ __('Create actions') }}</span>
-                <a href="#" class="qbo-action-btn">{{ __('Get paid online') }}</a>
-                <a href="#" class="qbo-action-btn">{{ __('Create invoice') }}</a>
-                <a href="#" class="qbo-action-btn">{{ __('Record expense') }}</a>
-                <a href="#" class="qbo-action-btn">{{ __('Add bank deposit') }}</a>
-                <a href="#" class="qbo-action-btn">{{ __('Create check') }}</a>
+                <a href="#" class="qbo-create-action-btn">{{ __('Get paid online') }}</a>
+                <a href="#" class="qbo-create-action-btn">{{ __('Create invoice') }}</a>
+                <a href="#" class="qbo-create-action-btn">{{ __('Record expense') }}</a>
+                <a href="#" class="qbo-create-action-btn">{{ __('Add bank deposit') }}</a>
+                <a href="#" class="qbo-create-action-btn">{{ __('Create check') }}</a>
                 <a href="#" class="qbo-action-show-all">{{ __('Show all') }}</a>
             </div>
 
