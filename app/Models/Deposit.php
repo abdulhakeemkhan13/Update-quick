@@ -17,6 +17,7 @@ class Deposit extends Model
         'currency',
         'bank_id',
         'customer_id',
+        'entity_type',
         'chart_account_id',
         'other_account_id',
     ];

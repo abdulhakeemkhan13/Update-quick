@@ -22,61 +22,88 @@ class TransactionListByCustomerDataTable extends DataTable
         // group rows by stable party_id (so names/spacing don't split groups)
         $grouped = $rows->groupBy('party_id');
 
+        $grandTotal = 0.0;
+
         foreach ($grouped as $partyId => $transactions) {
             $groupKey = 'party-' . ($partyId ?? 'unknown');
             $displayName = $transactions->first()->customer_name ?? 'Unknown Customer';
 
-            // compute group total (numeric). amount logic same as in amount() column
+            // compute group total (numeric)
             $groupTotal = 0.0;
             foreach ($transactions as $t) {
-                $amt = 0.0;
-                if ((float)$t->credit > 0) {
-                    $amt = (float)$t->credit;
-                } elseif ((float)$t->debit > 0) {
-                    $amt = -(float)$t->debit;
-                }
+                $amt = $this->calculateAmount($t);
                 $groupTotal += $amt;
             }
+
+            $grandTotal += $groupTotal;
 
             // push the group header first (header will appear above its items)
             $final->push([
                 'group_key' => $groupKey,
                 'is_group_header' => true,
-                // date column used to render header (chevron + name + total)
                 'date' => '',
                 'transaction_type' => '',
                 'num' => '',
                 'posting' => '',
                 'memo_description' => '',
                 'account_full_name' => '',
-                'amount' => number_format($groupTotal, 2),
+                'amount' => $groupTotal,
                 'customer_name' => $displayName,
             ]);
 
-            // then push all transactions for this group with running balance
-            $running = 0.0;
+            // then push all transactions for this group
             foreach ($transactions as $t) {
-                $amt = 0.0;
-                if ((float)$t->credit > 0) {
-                    $amt = (float)$t->credit;
-                } elseif ((float)$t->debit > 0) {
-                    $amt = -(float)$t->debit;
-                }
-                $running += $amt;
+                $amt = $this->calculateAmount($t);
 
                 $final->push([
                     'group_key' => $groupKey,
                     'is_group_header' => false,
+                    'is_total_row' => false,
+                    'is_grand_total' => false,
                     'date' => $t->date ? Carbon::parse($t->date)->format('m/d/Y') : '-',
                     'transaction_type' => $this->mapReferenceToType($t->reference),
                     'num' => $this->formatReferenceNumber($t->reference, $t->reference_id),
                     'posting' => 'Y',
                     'memo_description' => $this->buildDescription($t),
                     'account_full_name' => $t->account_name ?? '-',
-                    'amount' => number_format($amt, 2),
+                    'amount' => $amt,
                     'customer_name' => $t->customer_name ?? 'Unknown Customer',
                 ]);
             }
+
+            // Add total row for the customer
+            $final->push([
+                'group_key' => $groupKey,
+                'is_group_header' => false,
+                'is_total_row' => true,
+                'is_grand_total' => false,
+                'date' => '<strong>Total for ' . e($displayName) . '</strong>',
+                'transaction_type' => '',
+                'num' => '',
+                'posting' => '',
+                'memo_description' => '',
+                'account_full_name' => '',
+                'amount' => $groupTotal,
+                'customer_name' => $displayName,
+            ]);
+        }
+
+        // Add grand total row
+        if ($final->isNotEmpty()) {
+            $final->push([
+                'group_key' => 'grand-total',
+                'is_group_header' => false,
+                'is_total_row' => false,
+                'is_grand_total' => true,
+                'date' => '<strong>Grand Total</strong>',
+                'transaction_type' => '',
+                'num' => '',
+                'posting' => '',
+                'memo_description' => '',
+                'account_full_name' => '',
+                'amount' => $grandTotal,
+                'customer_name' => 'Grand Total',
+            ]);
         }
 
         // Return datatables collection with header HTML + row attributes
@@ -84,31 +111,53 @@ class TransactionListByCustomerDataTable extends DataTable
             ->collection($final)
             ->addColumn('date', function ($r) {
                 if (!empty($r['is_group_header'])) {
-                    // group header (chevron + customer name + total). data-group used by JS.
                     return '<span class="group-toggle" data-group="' . e($r['group_key']) . '" style="cursor:pointer;">'
                         . '<i class="fas fa-chevron-right me-2"></i>'
                         . '<strong>' . e($r['customer_name']) . '</strong>'
                         . ' <span class="text-muted"></span>'
                         . '</span>';
                 }
+                if (!empty($r['is_total_row']) || !empty($r['is_grand_total'])) {
+                    return $r['date'];
+                }
                 return e($r['date']);
             })
-            ->addColumn('transaction_type', fn($r) => $r['is_group_header'] ? '' : e($r['transaction_type']))
-            ->addColumn('num', fn($r) => $r['is_group_header'] ? '' : e($r['num']))
-            ->addColumn('posting', fn($r) => $r['is_group_header'] ? '' : e($r['posting']))
-            ->addColumn('memo_description', fn($r) => $r['is_group_header'] ? '' : e($r['memo_description']))
-            ->addColumn('account_full_name', fn($r) => $r['is_group_header'] ? '' : e($r['account_full_name']))
-            ->addColumn('amount', fn($r) => $r['is_group_header'] ? '' : e($r['amount']))
+            ->addColumn('transaction_type', fn($r) => (!empty($r['is_group_header']) || !empty($r['is_total_row']) || !empty($r['is_grand_total'])) ? '' : e($r['transaction_type']))
+            ->addColumn('num', fn($r) => (!empty($r['is_group_header']) || !empty($r['is_total_row']) || !empty($r['is_grand_total'])) ? '' : e($r['num']))
+            ->addColumn('posting', fn($r) => (!empty($r['is_group_header']) || !empty($r['is_total_row']) || !empty($r['is_grand_total'])) ? '' : e($r['posting']))
+            ->addColumn('memo_description', fn($r) => (!empty($r['is_group_header']) || !empty($r['is_total_row']) || !empty($r['is_grand_total'])) ? '' : e($r['memo_description']))
+            ->addColumn('account_full_name', fn($r) => (!empty($r['is_group_header']) || !empty($r['is_total_row']) || !empty($r['is_grand_total'])) ? '' : e($r['account_full_name']))
+            ->addColumn('amount', function ($r) {
+                $amount = (float)($r['amount'] ?? 0);
+                $formatted = number_format($amount, 2);
+                
+                if (!empty($r['is_total_row']) || !empty($r['is_grand_total'])) {
+                    return '<strong>' . $formatted . '</strong>';
+                }
+                
+                return $formatted;
+            })
             ->addColumn('customer_name', fn($r) => e($r['customer_name']))
             ->setRowAttr([
                 'class' => function ($r) {
+                    if (!empty($r['is_grand_total'])) {
+                        return 'summary-total';
+                    }
+                    if (!empty($r['is_total_row'])) {
+                        return 'customer-total-row font-weight-bold';
+                    }
                     return !empty($r['is_group_header']) ? 'group-header' : 'group-row group-' . $r['group_key'];
                 },
                 'data-group' => function ($r) {
                     return $r['group_key'];
                 },
-                // headers visible; rows hidden by default
                 'style' => function ($r) {
+                    if (!empty($r['is_grand_total'])) {
+                        return 'background-color:#e2e8f0; font-weight:700;';
+                    }
+                    if (!empty($r['is_total_row'])) {
+                        return 'background-color:#fefeff; font-weight:700; display:table-row;';
+                    }
                     return !empty($r['is_group_header']) ? 'background-color:#f8f9fa; font-weight:600; cursor:pointer;' : 'display:none;';
                 },
             ])
@@ -116,7 +165,50 @@ class TransactionListByCustomerDataTable extends DataTable
     }
 
     /**
-     * Map raw reference string to nicer display label (same mapping you had).
+     * Calculate the amount for a transaction consistently
+     * Invoice = +600 (credit)
+     * Payment = -10 (debit, negative in ledger)
+     * Credit Memo = -500, -10, -50 (debit, negative in ledger)
+     */
+    protected function calculateAmount($transaction)
+    {
+        // Safely extract and cast all values
+        $credit = 0.0;
+        $debit = 0.0;
+        $reference = '';
+
+        // Handle credit - cast to float, handle null
+        if (isset($transaction->credit) && $transaction->credit !== null && $transaction->credit !== '') {
+            $credit = floatval($transaction->credit);
+        }
+
+        // Handle debit - cast to float, handle null
+        if (isset($transaction->debit) && $transaction->debit !== null && $transaction->debit !== '') {
+            $debit = floatval($transaction->debit);
+        }
+
+        // Handle reference - cast to string, handle null
+        if (isset($transaction->reference) && $transaction->reference !== null) {
+            $reference = strtolower(strval($transaction->reference));
+        }
+
+        $amt = 0.0;
+
+        // Logic:
+        // If credit > 0: amount is positive (Invoice, Revenue) = +600
+        // If debit > 0: amount is negative (Payment, Credit Memo) = -10, -500, -10, -50
+        
+        if ($credit > 0) {
+            $amt = $credit;  // +600
+        } elseif ($debit > 0) {
+            $amt = -$debit;  // -10, -500, -10, -50
+        }
+
+        return $amt;
+    }
+
+    /**
+     * Map raw reference string to nicer display label
      */
     protected function mapReferenceToType($reference)
     {
@@ -133,12 +225,13 @@ class TransactionListByCustomerDataTable extends DataTable
             'Expense' => 'Expense',
             'Expense Payment' => 'Expense Payment',
             'Expense Account' => 'Expense',
+            'Credit Memo' => 'Credit Memo',
         ];
         return $map[$type] ?? ucwords(str_replace('_', ' ', $type));
     }
 
     /**
-     * Format a stable reference number for display.
+     * Format a stable reference number for display
      */
     protected function formatReferenceNumber($reference, $referenceId)
     {
@@ -163,12 +256,15 @@ class TransactionListByCustomerDataTable extends DataTable
             case 'Expense Account':
                 $prefix = 'EXP';
                 break;
+            case 'Credit Memo':
+                $prefix = 'CN';
+                break;
         }
         return $prefix . '-' . str_pad((int)$referenceId, 4, '0', STR_PAD_LEFT);
     }
 
     /**
-     * Build a reasonable description from available fields.
+     * Build a reasonable description from available fields
      */
     protected function buildDescription($t)
     {
@@ -189,80 +285,90 @@ class TransactionListByCustomerDataTable extends DataTable
             case 'Payment':
             case 'Expense':
                 return 'Expense payment to ' . ($t->vendor_name ?? 'Vendor');
+            case 'Credit Memo':
+                return 'Credit Memo to ' . ($t->customer_name ?? 'Customer');
             default:
                 return ucwords($t->reference ?? 'Transaction');
         }
     }
 
-    public function query(TransactionLines $model)
+    public function query()
     {
         $user = Auth::user();
         $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
 
-        // Build the same complex query you had but include party_id (alias) for grouping
-        $query = $model->newQuery()
-            ->select([
-                'transaction_lines.id',
-                'transaction_lines.date',
-                'transaction_lines.reference',
-                'transaction_lines.reference_id',
-                'transaction_lines.reference_sub_id',
-                'transaction_lines.debit',
-                'transaction_lines.credit',
-                'transaction_lines.created_by',
-                'chart_of_accounts.name as account_name',
-                'chart_of_accounts.code as account_code',
-                DB::raw('COALESCE(customers.name, revenues_customers.name, payments_venders.name, bills_venders.name) as customer_name'),
-                DB::raw('COALESCE(venders.name, payments_venders.name, bills_venders.name) as vendor_name'),
-                DB::raw('COALESCE(invoices.customer_id, revenues.customer_id, bills.vender_id, payments.vender_id) as party_id'),
-            ])
-            ->leftJoin('chart_of_accounts', 'transaction_lines.account_id', '=', 'chart_of_accounts.id')
-            ->leftJoin('invoices', function ($join) {
-                $join->on('transaction_lines.reference_id', '=', 'invoices.id')
-                    ->whereIn('transaction_lines.reference', ['Invoice', 'Invoice Payment', 'Invoice Account']);
-            })
-            ->leftJoin('customers', 'invoices.customer_id', '=', 'customers.id')
-            ->leftJoin('bills', function ($join) {
-                $join->on('transaction_lines.reference_id', '=', 'bills.id')
-                    ->whereIn('transaction_lines.reference', ['Bill', 'Bill Payment', 'Bill Account']);
-            })
-            ->leftJoin('venders', 'bills.vender_id', '=', 'venders.id')
-            ->leftJoin('revenues', function ($join) {
-                $join->on('transaction_lines.reference_id', '=', 'revenues.id')
-                    ->where('transaction_lines.reference', '=', 'Revenue');
-            })
-            ->leftJoin('customers as revenues_customers', 'revenues.customer_id', '=', 'revenues_customers.id')
-            ->leftJoin('payments', function ($join) {
-                $join->on('transaction_lines.reference_id', '=', 'payments.id')
-                    ->whereIn('transaction_lines.reference', ['Payment', 'Expense', 'Expense Payment', 'Expense Account']);
-            })
-            ->leftJoin('venders as payments_venders', 'payments.vender_id', '=', 'payments_venders.id')
-            ->leftJoin('venders as bills_venders', 'bills.vender_id', '=', 'bills_venders.id')
-            ->where('transaction_lines.created_by', $ownerId)
-            ->whereNotNull(DB::raw('COALESCE(customers.name, revenues_customers.name, payments_venders.name, bills_venders.name)'));
+        // Invoices
+        $invoiceQuery = DB::table('invoices')
+            ->join('customers', 'invoices.customer_id', '=', 'customers.id')
+            ->selectRaw("invoices.id as id, invoices.issue_date as date, 'Invoice' as reference, invoices.id as reference_id, NULL as reference_sub_id, 0 as debit, invoices.total_amount as credit, invoices.created_by, 'Accounts Receivable' as account_name, NULL as account_code, customers.name as customer_name, NULL as vendor_name, invoices.customer_id as party_id, invoices.memo as description")
+            ->where('invoices.created_by', $ownerId)
+            ->where('invoices.status', '!=', 0);
 
-        // Apply optional filters (customer_name, transaction_type, date range)
+        // Invoice Payments
+        $invoicePaymentQuery = DB::table('invoice_payments')
+            ->join('invoices', 'invoice_payments.invoice_id', '=', 'invoices.id')
+            ->join('customers', 'invoices.customer_id', '=', 'customers.id')
+            ->leftJoin('bank_accounts', 'invoice_payments.account_id', '=', 'bank_accounts.id')
+            ->selectRaw("invoice_payments.id as id, invoice_payments.date, 'Invoice Payment' as reference, invoice_payments.invoice_id as reference_id, NULL as reference_sub_id, 0 as debit, (invoice_payments.amount - COALESCE((SELECT SUM(credit_notes.amount) FROM credit_notes WHERE credit_notes.payment_id = invoice_payments.id), 0) + COALESCE((SELECT SUM(t2.amount) FROM transactions t2 WHERE t2.payment_no = (SELECT t1.payment_no FROM transactions t1 WHERE t1.payment_id = invoice_payments.id LIMIT 1) AND t2.category = 'customer credit'), 0)) as credit, NULL as created_by, COALESCE(bank_accounts.bank_name, 'Cash') as account_name, NULL as account_code, customers.name as customer_name, NULL as vendor_name, invoices.customer_id as party_id, invoice_payments.description as description")
+            ->where('invoices.created_by', $ownerId);
+
+        // Credit Notes
+        $creditQuery = DB::table('credit_notes')
+            ->join('customers', 'credit_notes.customer', '=', 'customers.id')
+            ->selectRaw("credit_notes.id as id, credit_notes.date, 'Credit Memo' as reference, credit_notes.id as reference_id, NULL as reference_sub_id, credit_notes.amount as debit, 0 as credit, credit_notes.created_by, 'Accounts Receivable' as account_name, NULL as account_code, customers.name as customer_name, NULL as vendor_name, credit_notes.customer as party_id, credit_notes.description")
+            ->where('credit_notes.created_by', $ownerId);
+
+        // Revenues
+        $revenueQuery = DB::table('revenues')
+            ->join('customers', 'revenues.customer_id', '=', 'customers.id')
+            ->selectRaw("revenues.id as id, revenues.date, 'Revenue' as reference, revenues.id as reference_id, NULL as reference_sub_id, 0 as debit, revenues.amount as credit, revenues.created_by, 'Revenue' as account_name, NULL as account_code, customers.name as customer_name, NULL as vendor_name, revenues.customer_id as party_id, revenues.description")
+            ->where('revenues.created_by', $ownerId);
+
+        // Payments (expenses)
+        $paymentQuery = DB::table('payments')
+            ->join('venders', 'payments.vender_id', '=', 'venders.id')
+            ->selectRaw("payments.id as id, payments.date, 'Payment' as reference, payments.id as reference_id, NULL as reference_sub_id, payments.amount as debit, 0 as credit, payments.created_by, 'Expense' as account_name, NULL as account_code, NULL as customer_name, venders.name as vendor_name, payments.vender_id as party_id, payments.description")
+            ->where('payments.created_by', $ownerId);
+
+        // Apply optional filters
         if (request()->filled('customer_name') && request('customer_name') !== '') {
             $name = request('customer_name');
-            $query->where(function ($q) use ($name) {
-                $q->where('customers.name', 'LIKE', "%{$name}%")
-                  ->orWhere('revenues_customers.name', 'LIKE', "%{$name}%")
-                  ->orWhere('payments_venders.name', 'LIKE', "%{$name}%")
-                  ->orWhere('bills_venders.name', 'LIKE', "%{$name}%");
-            });
+            $invoiceQuery->where('customers.name', 'LIKE', "%{$name}%");
+            $invoicePaymentQuery->where('customers.name', 'LIKE', "%{$name}%");
+            $creditQuery->where('customers.name', 'LIKE', "%{$name}%");
+            $revenueQuery->where('customers.name', 'LIKE', "%{$name}%");
+        }
+
+        if (request()->filled('start_date') && request()->filled('end_date')) {
+            $start = request('start_date');
+            $end = request('end_date');
+            $invoiceQuery->where('invoices.issue_date', '>=', $start)->where('invoices.issue_date', '<=', $end);
+            $invoicePaymentQuery->where('invoice_payments.date', '>=', $start)->where('invoice_payments.date', '<=', $end);
+            $creditQuery->where('credit_notes.date', '>=', $start)->where('credit_notes.date', '<=', $end);
+            $revenueQuery->where('revenues.date', '>=', $start)->where('revenues.date', '<=', $end);
+            $paymentQuery->where('payments.date', '>=', $start)->where('payments.date', '<=', $end);
         }
 
         if (request()->filled('transaction_type') && request('transaction_type') !== '') {
-            $query->where('transaction_lines.reference', request('transaction_type'));
-        }
-        
-        if (request()->filled('startDate') && request()->filled('endDate')) {
-            $query->whereBetween('transaction_lines.date', [request('startDate'), request('endDate')]);
+            $type = request('transaction_type');
+            if ($type === 'Invoice') {
+                $query = $invoiceQuery;
+            } elseif ($type === 'Invoice Payment') {
+                $query = $invoicePaymentQuery;
+            } elseif ($type === 'Credit Memo') {
+                $query = $creditQuery;
+            } elseif ($type === 'Revenue') {
+                $query = $revenueQuery;
+            } elseif ($type === 'Payment') {
+                $query = $paymentQuery;
+            } else {
+                $query = $invoiceQuery->unionAll($invoicePaymentQuery)->unionAll($creditQuery)->unionAll($revenueQuery)->unionAll($paymentQuery);
+            }
+        } else {
+            $query = $invoiceQuery->unionAll($invoicePaymentQuery)->unionAll($creditQuery)->unionAll($revenueQuery)->unionAll($paymentQuery);
         }
 
-        // ordering so grouped results are consistent
-        return $query->orderBy('transaction_lines.date', 'desc')
-                     ->orderBy(DB::raw('COALESCE(customers.name, revenues_customers.name, payments_venders.name, bills_venders.name)'), 'asc');
+        return $query->orderBy('date', 'desc')->orderBy('customer_name', 'asc');
     }
 
     public function html()
@@ -297,7 +403,6 @@ class TransactionListByCustomerDataTable extends DataTable
             Column::make('memo_description')->title(__('Memo/Description')),
             Column::make('account_full_name')->title(__('Account Full Name')),
             Column::make('amount')->title(__('Amount'))->addClass('text-right'),
-            // keep customer_name hidden if you still want to use it for other purposes
             Column::make('customer_name')->title(__('Customer'))->visible(false),
         ];
     }
