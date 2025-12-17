@@ -9,10 +9,18 @@ use Carbon\Carbon;
 
 class AgingSummaryDataTable extends DataTable
 {
+    /**
+     * Build DataTable class.
+     *
+     * @param mixed $query Results from query() method.
+     * @return \Yajra\DataTables\DataTableAbstract
+     */
     public function dataTable($query)
     {
         $data = collect();
 
+        // Fetches the data, which includes invoice aging buckets, payments,
+        // and aggregated unapplied credits/overpayments (per customer subqueries).
         $entries = $query->get();
 
         // Track totals
@@ -24,100 +32,81 @@ class AgingSummaryDataTable extends DataTable
         $grandTotal = 0;
 
         if ($entries->count() > 0) {
-            foreach ($entries as $entry) {
-                $customerName = $entry->customer_name;
-                
-                // Buckets with tax included (from SQL)
+            // Group the results by customer name to correctly aggregate invoice data,
+            // and use the single customer-level credit/overpayment values.
+            $customerData = $entries->groupBy('customer_name')->map(function ($invoices) {
+                // Sum all aging buckets and payments across all invoices for this customer
                 $buckets = [
-                    'current'      => $entry->current ?? 0,
-                    'days_1_30'    => $entry->days_1_30 ?? 0,
-                    'days_31_60'   => $entry->days_31_60 ?? 0,
-                    'days_61_90'   => $entry->days_61_90 ?? 0,
-                    'days_90_plus' => $entry->days_90_plus ?? 0,
+                    'current'      => $invoices->sum('current'),
+                    'day_1_30'     => $invoices->sum('day_1_30'),
+                    'day_30_60'    => $invoices->sum('day_30_60'),
+                    'days_61_90'   => $invoices->sum('days_61_90'),
+                    'days_90_plus' => $invoices->sum('days_90_plus'),
                 ];
 
-                $payPrice = $entry->pay_price ?? 0;
-                $customerCreditAmount = $entry->customer_credit_amount ?? 0;
-                $creditNoteAmount = $entry->credit_note_amount ?? 0;
+                $payPrice = $invoices->sum('pay_price');
                 $bucketTotal = array_sum($buckets);
 
-                // Actual payment = total payments - overpayments (customer credit)
-                // Overpayments are stored in transactions table as 'Customer Credit'
-                $actualPayment = $payPrice - $customerCreditAmount;
-
-                // Total deductions = actual payments + credit notes applied to invoices
-                $totalDeductions = $actualPayment + $creditNoteAmount;
-
-                // Allocate payments and credit notes proportionally
-                if ($bucketTotal > 0 && $totalDeductions > 0) {
+                // Allocate payments proportionally to the positive aging buckets
+                if ($bucketTotal > 0 && $payPrice > 0) {
                     foreach ($buckets as $key => $val) {
                         $share = $val / $bucketTotal;
-                        $buckets[$key] = max(0, $val - ($totalDeductions * $share));
+                        // Subtract the payment share, ensuring the result is not negative
+                        $buckets[$key] = max(0, $val - ($payPrice * $share));
                     }
                 }
 
-                $totalDue = array_sum($buckets);
+                // Calculate Total Due: Sum of aged invoices (after payments) MINUS unapplied credits
+                $unappliedCredits = $invoices->first()->unapplied_credits ?? 0;
+                $totalDue = array_sum($buckets) - $unappliedCredits;
 
-                // Note: Overpayments are already included in invoice_payments amount
-                // so we should NOT subtract them again from the bucket totals.
-                // Unapplied credit notes are not linked to any invoice, so they also
-                // should not affect the aging buckets.
+                return [
+                    'customer_name' => $invoices->first()->customer_name,
+                    'unapplied_credits' => $unappliedCredits,
+                    'buckets'       => $buckets,
+                    'total_due'     => $totalDue,
+                ];
+            });
 
-                // Skip customers with zero balance
-                if (round($totalDue, 2) == 0.00) {
-                    continue;
-                }
 
+            foreach ($customerData as $entry) {
                 // Add row
                 $data->push([
-                    'customer_name' => $customerName,
-                    'current'       => number_format($buckets['current'], 2),
-                    'days_1_30'     => number_format($buckets['days_1_30'], 2),
-                    'days_31_60'    => number_format($buckets['days_31_60'], 2),
-                    'days_61_90'    => number_format($buckets['days_61_90'], 2),
-                    'days_90_plus'  => number_format($buckets['days_90_plus'], 2),
-                    'total_due'     => '<strong>' . number_format($totalDue, 2) . '</strong>',
+                    'customer_name' => $entry['customer_name'],
+                    'current'       => number_format($entry['buckets']['current'], 2),
+                    'day_1_30'      => number_format($entry['buckets']['day_1_30'], 2),
+                    'day_30_60'     => number_format($entry['buckets']['day_30_60'], 2),
+                    'days_61_90'    => number_format($entry['buckets']['days_61_90'], 2),
+                    'days_90_plus'  => number_format($entry['buckets']['days_90_plus'], 2),
+                    'total_due'     => '<strong>' . number_format($entry['total_due'], 2) . '</strong>',
                 ]);
 
                 // Update totals
-                $currentTotal    += $buckets['current'];
-                $days30Total     += $buckets['days_1_30'];
-                $days60Total     += $buckets['days_31_60'];
-                $days90Total     += $buckets['days_61_90'];
-                $daysMore90Total += $buckets['days_90_plus'];
-                $grandTotal      += $totalDue;
+                $currentTotal      += $entry['buckets']['current'];
+                $days15Total       += $entry['buckets']['day_1_30'];
+                $days30Total       += $entry['buckets']['day_30_60'];
+                $days45Total       += $entry['buckets']['days_61_90'];
+                $daysMore45Total   += $entry['buckets']['days_90_plus'];
+                $grandTotal        += $entry['total_due'];
             }
 
-            if ($data->count() > 0) {
-                // Totals row
-                $data->push([
-                    'customer_name' => '<strong>Total</strong>',
-                    'current'       => '<strong>' . number_format($currentTotal, 2) . '</strong>',
-                    'days_1_30'     => '<strong>' . number_format($days30Total, 2) . '</strong>',
-                    'days_31_60'    => '<strong>' . number_format($days60Total, 2) . '</strong>',
-                    'days_61_90'    => '<strong>' . number_format($days90Total, 2) . '</strong>',
-                    'days_90_plus'  => '<strong>' . number_format($daysMore90Total, 2) . '</strong>',
-                    'total_due'     => '<strong>' . number_format($grandTotal, 2) . '</strong>',
-                    'DT_RowClass'   => 'summary-total'
-                ]);
-            } else {
-                $data->push([
-                    'customer_name' => 'No data found for the selected period.',
-                    'current'       => '',
-                    'days_1_30'     => '',
-                    'days_31_60'    => '',
-                    'days_61_90'    => '',
-                    'days_90_plus'  => '',
-                    'total_due'     => '',
-                    'DT_RowClass'   => 'no-data-row'
-                ]);
-            }
+            // Totals row
+            $data->push([
+                'customer_name' => '<strong>Total</strong>',
+                'current'       => '<strong>' . number_format($currentTotal, 2) . '</strong>',
+                'day_1_30'      => '<strong>' . number_format($days15Total, 2) . '</strong>',
+                'day_30_60'     => '<strong>' . number_format($days30Total, 2) . '</strong>',
+                'days_61_90'    => '<strong>' . number_format($days45Total, 2) . '</strong>',
+                'days_90_plus'  => '<strong>' . number_format($daysMore45Total, 2) . '</strong>',
+                'total_due'     => '<strong>' . number_format($grandTotal, 2) . '</strong>',
+                'DT_RowClass'   => 'summary-total'
+            ]);
         } else {
             $data->push([
                 'customer_name' => 'No data found for the selected period.',
                 'current'       => '',
-                'days_1_30'     => '',
-                'days_31_60'    => '',
+                'day_1_30'      => '',
+                'day_30_60'     => '',
                 'days_61_90'    => '',
                 'days_90_plus'  => '',
                 'total_due'     => '',
@@ -130,17 +119,22 @@ class AgingSummaryDataTable extends DataTable
             ->rawColumns([
                 'customer_name',
                 'current',
-                'days_1_30',
-                'days_31_60',
+                'day_1_30',
+                'day_30_60',
                 'days_61_90',
                 'days_90_plus',
                 'total_due'
             ]);
     }
 
+    /**
+     * Get query source of dataTable.
+     *
+     * @param \App\Models\Invoice $model
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
     public function query(Invoice $model)
     {
-        // dd(request()->all(), request()->get('startDate'), request()->get('endDate'));
         $start = request()->get('startDate') ?? Carbon::now()->startOfYear()->format('Y-m-d');
         $end   = request()->get('endDate') ?? Carbon::now()->endOfDay()->format('Y-m-d');
 
@@ -178,10 +172,10 @@ class AgingSummaryDataTable extends DataTable
                         ),0)
                     )
                     ELSE 0 END
-                ) as days_1_30
+                ) as day_1_30
             ")
 
-            // 31–60
+            // 31–60 Days
             ->selectRaw("
                 SUM(CASE 
                     WHEN DATEDIFF('$end', invoices.due_date) BETWEEN 31 AND 60
@@ -195,10 +189,10 @@ class AgingSummaryDataTable extends DataTable
                         ),0)
                     )
                     ELSE 0 END
-                ) as days_31_60
+                ) as day_30_60
             ")
 
-            // 61–90
+            // 61–90 Days
             ->selectRaw("
                 SUM(CASE 
                     WHEN DATEDIFF('$end', invoices.due_date) BETWEEN 61 AND 90
@@ -215,7 +209,7 @@ class AgingSummaryDataTable extends DataTable
                 ) as days_61_90
             ")
 
-            // >90
+            // 91+ Days
             ->selectRaw("
                 SUM(CASE 
                     WHEN DATEDIFF('$end', invoices.due_date) > 90
@@ -232,40 +226,39 @@ class AgingSummaryDataTable extends DataTable
                 ) as days_90_plus
             ")
 
-            // Payments total (not per bucket – allocated in PHP)
+            // Payments total
             ->selectRaw("(
                 SELECT COALESCE(SUM(ipay.amount), 0)
                 FROM invoice_payments ipay
                 WHERE ipay.invoice_id = invoices.id
             ) as pay_price")
 
-            // Customer credit (overpayment) from transactions table
-            // Using JOINs instead of nested subquery for better performance
-            ->selectRaw("(
-                SELECT COALESCE(SUM(tr_credit.amount), 0)
-                FROM transactions tr_credit
-                JOIN transactions tr_inv ON tr_inv.payment_no = tr_credit.payment_no
-                JOIN invoice_payments ipay ON tr_inv.payment_id = ipay.id
-                WHERE ipay.invoice_id = invoices.id
-                AND tr_inv.category = 'Invoice'
-                AND tr_credit.category = 'Customer Credit'
-            ) as customer_credit_amount")
-
-            // Credit notes applied to invoices (only those with payment_id > 0, meaning they're applied)
+            // Unapplied credit notes
             ->selectRaw("(
                 SELECT COALESCE(SUM(cn.amount), 0)
                 FROM credit_notes cn
-                WHERE cn.invoice = invoices.id
-                AND cn.payment_id > 0
-            ) as credit_note_amount")
+                WHERE cn.customer = invoices.customer_id
+                  AND cn.date <= '$end'
+                  AND cn.created_by = invoices.created_by
+                  AND (cn.invoice IS NULL OR cn.invoice = 0)
+            ) as unapplied_credits")
 
+
+            
             ->leftJoin('customers', 'customers.id', '=', 'invoices.customer_id')
             ->leftJoin('invoice_products', 'invoice_products.invoice_id', '=', 'invoices.id')
             ->where('invoices.created_by', \Auth::user()->creatorId())
             ->where('invoices.issue_date', '<=' ,$end)
-            ->groupBy('customers.name');
+            // Group by all non-aggregated columns, including invoice ID to preserve
+            // the distinct pay_price and aging buckets before PHP aggregation.
+            ->groupBy('customers.name', 'invoices.customer_id', 'invoices.created_by', 'invoices.id');
     }
 
+    /**
+     * Optional method if you want to use the html builder.
+     *
+     * @return \Yajra\DataTables\Html\Builder
+     */
     public function html()
     {
         return $this->builder()
@@ -274,14 +267,14 @@ class AgingSummaryDataTable extends DataTable
             ->minifiedAjax()
             ->orderBy(0, 'desc')
             ->parameters([
-                'paging'         => false,
-                'searching'      => false,
-                'info'           => false,
-                'ordering'       => false,
-                'scrollY'        => '500px',
-                'colReorder'     => true,
-                'scrollCollapse' => true,
-                'createdRow'     => "function(row, data) {
+                'paging'          => false,
+                'searching'       => false,
+                'info'            => false,
+                'ordering'        => false,
+                'scrollY'         => '500px',
+                'colReorder'      => true,
+                'scrollCollapse'  => true,
+                'createdRow'      => "function(row, data) {
                     $('td:eq(1), td:eq(2), td:eq(3), td:eq(4), td:eq(5), td:eq(6)', row).addClass('text-center');
                     if ($(row).hasClass('summary-total')) {
                         $(row).addClass('font-weight-bold bg-light');
@@ -290,15 +283,20 @@ class AgingSummaryDataTable extends DataTable
             ]);
     }
 
+    /**
+     * Get columns.
+     *
+     * @return array
+     */
     protected function getColumns()
     {
         return [
             Column::make('customer_name')->title('Customer Name'),
             Column::make('current')->title('Current'),
-            Column::make('days_1_30')->title('1-30 DAYS'),
-            Column::make('days_31_60')->title('31-60 DAYS'),
+            Column::make('day_1_30')->title('1-30 DAYS'),
+            Column::make('day_30_60')->title('31-60 DAYS'),
             Column::make('days_61_90')->title('61-90 DAYS'),
-            Column::make('days_90_plus')->title('> 90 DAYS'),
+            Column::make('days_90_plus')->title('91 AND OVER'),
             Column::make('total_due')->title('Total'),
         ];
     }

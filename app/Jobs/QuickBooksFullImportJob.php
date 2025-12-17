@@ -21,14 +21,14 @@ class QuickBooksFullImportJob implements ShouldQueue
     public $tries = 3;
 
     protected $importOrder = [
-        // 'customers' => 'Importing Customers',
+        'customers' => 'Importing Customers',
         // 'vendors' => 'Importing Vendors',
         // 'chartOfAccounts' => 'Importing Chart of Accounts',
         // 'items' => 'Importing Items/Products',
         // 'taxes' => 'Importing Taxes',
         // 'invoices' => 'Importing Invoices',
         // 'bills' => 'Importing Bills',
-        'unappliedPayments' => 'Importing Unapplied Payments',
+        // 'unappliedPayments' => 'Importing Unapplied Payments',
         // 'expenses' => 'Importing Expenses',
         // 'estimates' => 'Importing Estimates',
         // 'deposits' => 'Importing Deposits',

@@ -116,12 +116,12 @@
                             <div class="filter-item col-md-2">
                                 <label class="filter-label">From</label>
                                 <input type="date" class="form-control" name="start_date" id="filter-start-date"
-                                    value="{{ Carbon\Carbon::now()->startOfMonth()->format('Y-m-d') }}">
+                                    value="{{ $startDate ?? Carbon\Carbon::now()->startOfMonth()->format('Y-m-d') }}">
                             </div>
                             <div class="filter-item col-md-2">
                                 <label class="filter-label">To</label>
                                 <input type="date" class="form-control" name="end_date" id="filter-end-date"
-                                    value="{{ Carbon\Carbon::now()->format('Y-m-d') }}">
+                                    value="{{ $endDate ?? Carbon\Carbon::now()->format('Y-m-d') }}">
                             </div>
                             @if (isset($accounting_method) && $accounting_method)
                                 <div class="filter-item col-md-2">
@@ -221,13 +221,13 @@
                                             <label class="filter-label">From</label>
                                             <input type="date" class="form-control" name="start_date"
                                                 id="sidebar-filter-start-date"
-                                                value="{{ Carbon\Carbon::now()->startOfMonth()->format('Y-m-d') }}">
+                                                value="{{ $startDate ?? Carbon\Carbon::now()->startOfMonth()->format('Y-m-d') }}">
                                         </div>
                                         <div class="filter-item mb-2">
                                             <label class="filter-label">To</label>
                                             <input type="date" class="form-control" name="end_date"
                                                 id="sidebar-filter-end-date"
-                                                value="{{ Carbon\Carbon::now()->format('Y-m-d') }}">
+                                                value="{{ $endDate ?? '' }}">
                                         </div>
                                     </div>
                                 </div>
@@ -1702,7 +1702,7 @@
                 const formattedStart = startDate.format('MMMM D, YYYY');
                 const formattedEnd = endDate.format('MMMM D, YYYY');
 
-                $('#date-range-display').text(' As of  ' + formattedEnd);
+                $('#date-range-display').text(formattedStart + ' - ' + formattedEnd);
             }
 
             // Refresh data function
@@ -1731,8 +1731,20 @@
                 refreshData();
             });
 
+            $('#filter-start-date').on('change', function() {
+                $('#sidebar-filter-start-date').val($(this).val());
+                updateDateDisplay();
+                refreshData();
+            });
+
             $('#sidebar-filter-end-date').on('change', function() {
                 $('#filter-end-date').val($(this).val());
+                updateDateDisplay();
+                refreshData();
+            });
+
+            $('#sidebar-filter-start-date').on('change', function() {
+                $('#filter-start-date').val($(this).val());
                 updateDateDisplay();
                 refreshData();
             });

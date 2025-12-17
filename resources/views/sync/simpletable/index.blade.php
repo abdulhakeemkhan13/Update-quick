@@ -149,7 +149,7 @@
             <div class="report-title-section">
                 <h2 class="report-title">{{ $pageTitle }}</h2>
                 <p class="date-range">
-                    <span id="date-range-display">As of {{ Carbon\Carbon::now()->format('F j, Y') }}</span>
+                    <span id="date-range-display">From {{ \Carbon\Carbon::parse($startDate ?? date('Y-01-01'))->format('F j, Y') }} to {{ \Carbon\Carbon::parse($endDate ?? date('Y-m-d'))->format('F j, Y') }}</span>
                 </p>
             </div>
             <div class="table-container">
@@ -209,7 +209,9 @@
             align-items: center;
             gap: 16px;
         }
-
+        .customer-header-row strong{
+            text-align: left;
+        }
         .last-updated {
             color: #6b7280;
             font-size: 13px;
@@ -400,9 +402,7 @@
 
         .customer-header-row strong {
             display: block;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            white-space: normal;
         }
 
         .customer-header-row strong:hover {
@@ -777,8 +777,9 @@
         }
 
         function updateDateDisplay() {
+            const startDate = moment($('#filter-start-date').val());
             const endDate = moment($('#filter-end-date').val());
-            $('#date-range-display').text('As of ' + endDate.format('MMMM D, YYYY'));
+            $('#date-range-display').text('From ' + startDate.format('MMMM D, YYYY') + ' to ' + endDate.format('MMMM D, YYYY'));
         }
 
         function refreshTableData() {
@@ -907,15 +908,23 @@
                 const customerId = chevron.getAttribute('data-parent-id');
                 const isExpanded = expandedGroups.get(customerId);
                 const childRows = table.querySelectorAll('.child-of-customer-' + customerId);
+                const headerRow = chevron.closest('tr');
+                const customerName = headerRow.getAttribute('data-customer-name');
+                const formattedTotal = headerRow.getAttribute('data-formatted-total');
+                const strong = chevron.nextElementSibling;
 
                 if (isExpanded) {
+                    // collapsing
                     childRows.forEach(row => row.style.display = 'none');
                     expandedGroups.set(customerId, false);
                     chevron.style.transform = 'rotate(-90deg)';
+                    strong.innerHTML = customerName + ' - Total: ' + formattedTotal;
                 } else {
+                    // expanding
                     childRows.forEach(row => row.style.display = '');
                     expandedGroups.set(customerId, true);
                     chevron.style.transform = 'rotate(0deg)';
+                    strong.innerHTML = customerName;
                 }
             });
         });
