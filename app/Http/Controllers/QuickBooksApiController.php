@@ -53,7 +53,8 @@ class QuickBooksApiController extends Controller
         $this->tokenUrl = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
         $this->scope = 'com.intuit.quickbooks.accounting openid profile email';
         // $this->redirectUri = 'https://update.creativesuite.co/quickbooks/callback';
-        $this->redirectUri = 'https://test.creativesuite.co/quickbooks/callback';
+        // $this->redirectUri = 'https://test.creativesuite.co/quickbooks/callback';
+        $this->redirectUri = 'https://demo.creativesuite.co/quickbooks/callback';
         $this->baseUrl = 'https://quickbooks.api.intuit.com';
     }
     // public function __construct()
@@ -297,8 +298,9 @@ class QuickBooksApiController extends Controller
 
         $response = Http::withToken($token)
             ->accept('application/json')
+            ->timeout(300)
+            ->retry(3, 1000)
             ->get($url);
-
         if ($response->status() === 401) {
             return response()->json([
                 'error' => true,
@@ -319,37 +321,38 @@ class QuickBooksApiController extends Controller
     }
 
     public function invoices()
-    {
-        $startPosition = 1;
-        $maxResults = 50;
-        $allInvoices = [];
+{
+    $startPosition = 1;
+    $maxResults = 50;
+    $allInvoices = [];
 
-        do {
-            $query = "SELECT * FROM Invoice STARTPOSITION $startPosition MAXRESULTS $maxResults";
-            $data = $this->runQuery($query);
+    do {
+        $query = "SELECT * FROM Invoice STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
+        $data = $this->runQuery($query);
 
-            // Protect against unexpected responses
-            $invoices = $data['QueryResponse']['Invoice'] ?? [];
-            $count = count($invoices);
+        // Protect against unexpected responses
+        $invoices = $data['QueryResponse']['Invoice'] ?? [];
+        $count = count($invoices);
 
-            // Merge the results
-            $allInvoices = array_merge($allInvoices, $invoices);
+        // Merge results
+        $allInvoices = array_merge($allInvoices, $invoices);
 
-            // Increment start position for next batch (1, 51, 101 ...)
-            $startPosition += $maxResults;
+        // Move to next batch
+        $startPosition += $maxResults;
 
-        } while ($count === $maxResults); // Keep looping while we get a full batch
+    } while ($count === $maxResults);
 
-        // Get first invoice safely
-        $firstInvoice = $allInvoices[0] ?? null;
+    // Safely get first invoice
+    $firstInvoice = $allInvoices[0] ?? null;
 
-        // Use an associative array with dd() to get labeled output
-        dd([
-            'total_invoices' => count($allInvoices),
-            'first_invoice' => $firstInvoice,
-            'all_invoices' => $allInvoices,
-        ]);
-    }
+    return response()->json([
+        'status'          => 'success',
+        'total_invoices'  => count($allInvoices),
+        'first_invoice'   => $firstInvoice,
+        'all_invoices'    => $allInvoices,
+    ]);
+}
+
 
 
 
@@ -3077,6 +3080,9 @@ sleep(1);
 
             $depositsData = $depositResponse['QueryResponse']['Deposit'] ?? [];
             // dd($depositsData);
+            return  response()->json([
+                'data' => $depositsData,
+            ]);
             // 2) Map into a rich, readable shape
             $deposits = collect($depositsData)->map(function ($deposit) {
                 $lines = collect($deposit['Line'] ?? [])->map(function ($line) {

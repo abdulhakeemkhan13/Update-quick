@@ -166,16 +166,41 @@
         <div class="filter-controls">
             <div class="filter-row">
                 <div class="filter-group row mb-2 align-items-end">
-                    <div class="filter-item col-lg-8 col-md-8 mt-4">
+                    <div class="filter-item col-lg-2 col-md-2">
+                        <label class="filter-label">Report Period</label>
+                        <select id="report-period" class="form-control">
+                            <option value="">Custom</option>
+                            <option value="this_month">This Month</option>
+                            <option value="last_month">Last Month</option>
+                            <option value="this_quarter">This Quarter</option>
+                            <option value="last_quarter">Last Quarter</option>
+                            <option value="this_year">This Year</option>
+                            <option value="last_year">Last Year</option>
+                            <option value="all_dates">All Dates</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-item col-lg-2 col-md-2">
+                        <label class="filter-label">From Date</label>
+                        <input type="date" id="start-date" class="form-control"
+                            value="{{ $filter['startDateRange'] ?? '' }}">
+                    </div>
+
+                    <div class="filter-item col-lg-2 col-md-2">
+                        <label class="filter-label">To Date</label>
+                        <input type="date" id="end-date" class="form-control"
+                            value="{{ $filter['endDateRange'] ?? '' }}">
+                    </div>
+                    <div class="filter-item col-lg-3 col-md-3 mt-4">
                         <button class="btn btn-view-options" id="view-options-btn"
-                            style="border: none !important; width: 20% !important; border-radius: 0px !important; ">
+                            style="border: none !important; width: 60% !important; border-radius: 0px !important; ">
                             <i class="fa fa-eye"></i> View options
                         </button>
                     </div>
 
                     <!-- Action buttons row -->
-                    <div class="col-md-4 d-flex align-items-end gap-2 " style="justify-content: end;">
-                        <button class="btn btn-outline" id="filter-btn">
+                    <div class="col-md-3 d-flex align-items-end " style="justify-content: end;">
+                        <button class="btn btn-outline me-1" id="filter-btn">
                             <i class="fa fa-filter"></i> Filter
                         </button>
                         <button class="btn btn-outline" id="general-options-btn">
@@ -1073,18 +1098,77 @@
                 }
             }
 
+            // Set dates from report period
+            function setDatesFromPeriod(period) {
+                const today = moment();
+                let start, end;
+                switch (period) {
+                    case 'this_month':
+                        start = today.clone().startOf('month');
+                        end = today.clone().endOf('month');
+                        break;
+                    case 'last_month':
+                        start = today.clone().subtract(1, 'month').startOf('month');
+                        end = today.clone().subtract(1, 'month').endOf('month');
+                        break;
+                    case 'this_quarter':
+                        start = today.clone().startOf('quarter');
+                        end = today.clone().endOf('quarter');
+                        break;
+                    case 'last_quarter':
+                        start = today.clone().subtract(1, 'quarter').startOf('quarter');
+                        end = today.clone().subtract(1, 'quarter').endOf('quarter');
+                        break;
+                    case 'this_year':
+                        start = today.clone().startOf('year');
+                        end = today.clone().endOf('year');
+                        break;
+                    case 'last_year':
+                        start = today.clone().subtract(1, 'year').startOf('year');
+                        end = today.clone().subtract(1, 'year').endOf('year');
+                        break;
+                    case 'all_dates':
+                        $('#start-date').val('');
+                        $('#end-date').val('');
+                        return;
+                    default:
+                        return;
+                }
+                $('#start-date').val(start.format('YYYY-MM-DD'));
+                $('#end-date').val(end.format('YYYY-MM-DD'));
+            }
+
+            // Update date range display
+            function updateDateRangeDisplay() {
+                const start = $('#start-date').val();
+                const end = $('#end-date').val();
+                let display = 'All Transactions';
+                if (start && end) {
+                    display = moment(start).format('MMM D, YYYY') + ' - ' + moment(end).format('MMM D, YYYY');
+                } else if (start) {
+                    display = 'From ' + moment(start).format('MMM D, YYYY');
+                } else if (end) {
+                    display = 'To ' + moment(end).format('MMM D, YYYY');
+                }
+                $('#date-range-display').text(display);
+            }
+
             // Handle filter changes
-            $('#filter-customer-modal, #filter-transaction-type-modal, #filter-start-date-modal, #filter-end-date-modal')
+            $('#filter-customer-modal, #filter-transaction-type-modal, #start-date, #end-date, #report-period')
                 .on('change', function() {
+                    if ($(this).attr('id') === 'report-period') {
+                        setDatesFromPeriod($(this).val());
+                    }
                     refreshData();
+                    updateDateRangeDisplay();
                 });
 
             // Setup DataTable ajax parameters
             $('#transaction-list-table').on('preXhr.dt', function(e, settings, data) {
                 data.customer_name = $('#filter-customer-modal').val();
                 data.transaction_type = $('#filter-transaction-type-modal').val();
-                data.start_date = $('#filter-start-date-modal').val();
-                data.end_date = $('#filter-end-date-modal').val();
+                data.start_date = $('#start-date').val();
+                data.end_date = $('#end-date').val();
                 data.reportOptions = window.reportOptions;
             });
 
@@ -1478,11 +1562,19 @@
                 }, 1000);
             });
 
+            // Group toggle functionality
+            $(document).on('click', '.group-toggle', function() {
+                const group = $(this).data('group');
+                $('.group-row.group-' + group).toggle();
+                $(this).find('i').toggleClass('fa-chevron-right fa-chevron-down');
+            });
+
             // Initialize general options with default values
             setTimeout(function() {
                 applyGeneralOptions();
                 applyViewOptions();
                 updateColumnCountBadge();
+                updateDateRangeDisplay();
             }, 100);
 
             // Format numbers in table based on options

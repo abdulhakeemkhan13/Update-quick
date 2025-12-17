@@ -103,35 +103,54 @@ class SalesByProductServiceDetailDataTable extends DataTable
 
         $finalData = collect();
 
+        $grandTotalQuantity = 0.0;
+        $grandTotalAmount = 0.0;
+
+        $currencySymbol = \Auth::user()->currencySymbol();
+        
+        $formatWithCurrency = function ($val) use ($currencySymbol) {
+            $formatted = \Auth::user()->priceFormat($val);
+            if (strpos($formatted, $currencySymbol) === false) {
+                 return $currencySymbol . ' ' . $formatted;
+            }
+            return $formatted;
+        };
+
         foreach ($grouped as $productId => $transactions) {
             // Use product_id as stable key
             $groupKey = 'product-' . (string) $productId;
 
-            // Display name from first transaction (preserve original case/label)
+            // Display name from first transaction
             $displayName = $transactions->first()->product_name ?? 'Unknown';
 
             // --- Calculate group total using numeric arithmetic (no formatted strings) ---
             $groupTotalRaw = 0.0;
+            $groupTotalQuantity = 0.0;
+
             foreach ($transactions as $t) {
+                // Ensure values are fully numeric before logic
                 $price = (float) $t->price;
                 $qty = (float) $t->quantity;
                 $discount = (float) ($t->discount ?? 0);
                 $taxAmount = (float) $this->calculateTaxAmount($t);
 
                 $amountRaw = ($price * $qty) - $discount + $taxAmount;
+
                 $groupTotalRaw += $amountRaw;
+                
+                // User filter: don't add quantity if price and amount are both 0
+                if (!($price == 0 && $amountRaw == 0)) {
+                    $groupTotalQuantity += $qty;
+                }
             }
 
-            // Log group info for debugging
-            \Log::info('SalesByProduct grouping', [
-                'product_id' => $productId,
-                'product_name' => $displayName,
-                'count' => $transactions->count(),
-                'ids' => $transactions->pluck('id')->toArray(),
-                'group_total' => $groupTotalRaw,
-            ]);
+            // Update Grand Totals
+            $grandTotalQuantity += $groupTotalQuantity;
+            $grandTotalAmount += $groupTotalRaw;
 
-            // --- Push group header first (so header shows above the items) ---
+            // --- Push Group Header ---
+            // Header still contains the totals as requested for collapsed view, 
+            // but formatted with priceFormat for currency fields.
             $finalData->push([
                 'group_key' => $groupKey,
                 'group' => $displayName,
@@ -140,14 +159,15 @@ class SalesByProductServiceDetailDataTable extends DataTable
                 'num' => '',
                 'customer_full_name' => '',
                 'memo_description' => '',
-                'quantity' => '',
+                'quantity' => number_format($groupTotalQuantity, 2),
                 'sales_price' => '',
-                'amount' => '',
-                'balance' => number_format($groupTotalRaw, 2),
+                'amount' => $formatWithCurrency($groupTotalRaw),
+                'balance' => $formatWithCurrency($groupTotalRaw),
                 'is_group_header' => true,
+                'is_grand_total' => false,
             ]);
 
-            // --- Push each transaction under this group with running balance ---
+            // --- Push Detail Rows ---
             $runningBalance = 0.0;
             foreach ($transactions as $transaction) {
                 $price = (float) $transaction->price;
@@ -167,17 +187,59 @@ class SalesByProductServiceDetailDataTable extends DataTable
                     'customer_full_name' => $transaction->customer_name ?? '-',
                     'memo_description' => $transaction->description ?? '-',
                     'quantity' => number_format($qty, 2),
-                    'sales_price' => number_format($price, 2),
-                    'amount' => number_format($amountRaw, 2),
-                    'balance' => number_format($runningBalance, 2),
+                    'sales_price' => $formatWithCurrency($price),
+                    'amount' => $formatWithCurrency($amountRaw),
+                    'balance' => $formatWithCurrency($runningBalance),
                     'is_group_header' => false,
+                    'is_grand_total' => false,
                 ]);
             }
+
+            // --- Add Product Total Row (Summary Footer) ---
+            $finalData->push([
+                'group_key' => $groupKey,
+                'group' => $displayName,
+                'transaction_date' => '<strong>Total for ' . e($displayName) . '</strong>',
+                'transaction_type' => '',
+                'num' => '',
+                'customer_full_name' => '',
+                'memo_description' => '',
+                'quantity' => '<strong>' . number_format($groupTotalQuantity, 2) . '</strong>',
+                'sales_price' => '',
+                'amount' => '<strong>' . $formatWithCurrency($groupTotalRaw) . '</strong>',
+                'balance' => '<strong>' . $formatWithCurrency($groupTotalRaw) . '</strong>',
+                'is_group_header' => false,
+                'is_grand_total' => false,
+                'is_total_row' => true, // New flag for styling if needed
+            ]);
+        }
+
+        // --- Add Grand Total Row ---
+        if ($finalData->isNotEmpty()) {
+            $finalData->push([
+                'group_key' => 'grand-total',
+                'group' => 'Grand Total',
+                'transaction_date' => 'Total',
+                'transaction_type' => '',
+                'num' => '',
+                'customer_full_name' => '',
+                'memo_description' => '',
+                'quantity' => number_format($grandTotalQuantity, 2),
+                'sales_price' => '',
+                'amount' => $formatWithCurrency($grandTotalAmount),
+                'balance' => $formatWithCurrency($grandTotalAmount),
+                'is_group_header' => true, 
+                'is_grand_total' => true,
+            ]);
         }
 
         return datatables()
             ->collection($finalData)
             ->addColumn('transaction_date', function ($r) {
+                if (($r['is_total_row'] ?? false) || ($r['is_grand_total'] ?? false)) {
+                     // For total rows, return the label directly (it might have HTML)
+                     return $r['transaction_date'];
+                }
                 if ($r['is_group_header']) {
                     return '<span class="group-toggle" data-group="' . e($r['group_key']) . '">
                                 <i class="fas fa-chevron-right me-2"></i>
@@ -190,24 +252,39 @@ class SalesByProductServiceDetailDataTable extends DataTable
             ->addColumn('num', fn($r) => $r['is_group_header'] ? '' : e($r['num']))
             ->addColumn('customer_full_name', fn($r) => $r['is_group_header'] ? '' : e($r['customer_full_name']))
             ->addColumn('memo_description', fn($r) => $r['is_group_header'] ? '' : e($r['memo_description']))
-            ->addColumn('quantity', fn($r) => $r['is_group_header'] ? '' : $r['quantity'])
+            ->addColumn('quantity', fn($r) => $r['quantity']) // Already formatted or styled string
             ->addColumn('sales_price', fn($r) => $r['is_group_header'] ? '' : $r['sales_price'])
-            ->addColumn('amount', fn($r) => $r['is_group_header'] ? '' : $r['amount'])
-            ->addColumn('balance', fn($r) => $r['is_group_header'] ? '' : $r['balance'])
+            ->addColumn('amount', fn($r) => $r['amount']) // Already formatted or styled string
+            ->addColumn('balance', fn($r) => $r['balance']) // Already formatted or styled string
             ->setRowAttr([
                 'class' => function ($r) {
+                    if ($r['is_grand_total'] ?? false) {
+                        return 'summary-total';
+                    }
+                    if ($r['is_total_row'] ?? false) {
+                        return 'group-row group-' . $r['group_key'] . ' font-weight-bold'; // Add bold class
+                    }
                     return $r['is_group_header'] ? 'group-header' : 'group-row group-' . $r['group_key'];
                 },
                 'data-group' => function ($r) {
                     return $r['group_key'];
                 },
                 'style' => function ($r) {
+                    if ($r['is_grand_total'] ?? false) {
+                         return 'background-color:#e2e8f0; font-weight:700;';
+                    }
+                     if ($r['is_total_row'] ?? false) {
+                         // Starts hidden like other detail rows, usually? 
+                         // "as row expand the quantity and total are not hiding" -> this implies expanding shows them.
+                         // So this row should behave like a detail row (hidden initially).
+                         return 'background-color:#fefeff; font-weight:700; display:none;';
+                    }
                     return $r['is_group_header']
                         ? 'background-color:#f8f9fa; font-weight:600; cursor:pointer;'
                         : 'display:none;';
                 },
             ])
-            ->rawColumns(['transaction_date']);
+            ->rawColumns(['transaction_date', 'quantity', 'amount', 'balance']);
     }
 
 
@@ -248,13 +325,19 @@ class SalesByProductServiceDetailDataTable extends DataTable
             $endDate = $dates['end'];
         }
 
-        $model = new InvoiceProduct();
-        $q = $model->newQuery()
+        // Query 1: Invoice Products
+        $invoiceQuery = DB::table('invoice_products')
             ->join('invoices as i', 'i.id', '=', 'invoice_products.invoice_id')
             ->join('product_services as ps', 'ps.id', '=', 'invoice_products.product_id')
             ->join('customers as c', 'c.id', '=', 'i.customer_id')
             ->select([
-                'invoice_products.*',
+                'invoice_products.id',
+                'invoice_products.product_id',
+                'invoice_products.quantity',
+                'invoice_products.price',
+                'invoice_products.discount',
+                'invoice_products.tax',
+                'invoice_products.description',
                 'i.issue_date as transaction_date',
                 'i.invoice_id as invoice_number',
                 'ps.name as product_name',
@@ -264,32 +347,61 @@ class SalesByProductServiceDetailDataTable extends DataTable
             ->where('i.created_by', $ownerId)
             ->where('i.status', '!=', 0);
 
+        // Query 2: Credit Note Products
+        $creditMemoQuery = DB::table('credit_note_products')
+            ->join('credit_notes as cn', 'cn.id', '=', 'credit_note_products.credit_note_id')
+            ->join('product_services as ps', 'ps.id', '=', 'credit_note_products.product_id')
+            ->join('customers as c', 'c.id', '=', 'cn.customer')
+            ->select([
+                'credit_note_products.id',
+                'credit_note_products.product_id',
+                DB::raw('(credit_note_products.quantity * -1) as quantity'),
+                'credit_note_products.price',
+                'credit_note_products.discount',
+                'credit_note_products.tax',
+                'credit_note_products.description',
+                'cn.date as transaction_date',
+                'cn.credit_note_id as invoice_number',
+                'ps.name as product_name',
+                'c.name as customer_name',
+                DB::raw("'Credit Memo' as transaction_type"),
+            ])
+            ->where('cn.created_by', $ownerId);
+
+        // Apply filters to both
         if ($startDate) {
-            $q->whereDate('i.issue_date', '>=', $startDate);
+            $invoiceQuery->whereDate('i.issue_date', '>=', $startDate);
+            $creditMemoQuery->whereDate('cn.date', '>=', $startDate);
         }
-
         if ($endDate) {
-            $q->whereDate('i.issue_date', '<=', $endDate);
+            $invoiceQuery->whereDate('i.issue_date', '<=', $endDate);
+            $creditMemoQuery->whereDate('cn.date', '<=', $endDate);
         }
-
-
         if (request()->filled('product_name')) {
-            $q->where('ps.name', 'like', '%' . request('product_name') . '%');
+            $search = '%' . request('product_name') . '%';
+            $invoiceQuery->where('ps.name', 'like', $search);
+            $creditMemoQuery->where('ps.name', 'like', $search);
         }
-
         if (request()->filled('customer_name')) {
-            $q->where('c.name', 'like', '%' . request('customer_name') . '%');
+            $search = '%' . request('customer_name') . '%';
+            $invoiceQuery->where('c.name', 'like', $search);
+            $creditMemoQuery->where('c.name', 'like', $search);
         }
-
         if (request()->filled('category')) {
-            $q->where('ps.category_id', request('category'));
+            $cat = request('category');
+            $invoiceQuery->where('ps.category_id', $cat);
+            $creditMemoQuery->where('ps.category_id', $cat);
         }
-
         if (request()->filled('type')) {
-            $q->where('ps.type', request('type'));
+            $type = request('type');
+            $invoiceQuery->where('ps.type', $type);
+            $creditMemoQuery->where('ps.type', $type);
         }
 
-        return $q->orderBy('i.issue_date', 'desc');
+        // Union
+        $invoiceQuery->unionAll($creditMemoQuery);
+
+        return $invoiceQuery->orderBy('transaction_date', 'desc')->orderBy('invoice_number', 'desc');
     }
 
 

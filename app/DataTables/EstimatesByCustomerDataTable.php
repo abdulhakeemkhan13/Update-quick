@@ -2,7 +2,7 @@
 
 namespace App\DataTables;
 
-use App\Models\Quotation;
+use App\Models\Proposal;
 use App\Models\Customer;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -14,87 +14,197 @@ class EstimatesByCustomerDataTable extends DataTable
 {
     public function dataTable($query)
     {
+        // Fetch rows from the query
+        $rows = $query->get();
+
+        $final = collect();
+
+        // Group by customer_id
+        $grouped = $rows->groupBy('customer_id');
+
+        $grandTotal = 0;
+
+        foreach ($grouped as $customerId => $proposals) {
+            $displayName = $proposals->first()->customer_name ?? 'Unknown Customer';
+
+            // Calculate group total
+            $groupTotal = 0;
+            foreach ($proposals as $proposal) {
+                $groupTotal += $this->calculateProposalAmountRaw($proposal);
+            }
+            $grandTotal += $groupTotal;
+
+            // Add group header
+            $final->push([
+                'customer_id' => $customerId,
+                'customer_name' => $displayName,
+                'group_total' => $groupTotal,
+                'formatted_total' => Auth::user()->priceFormat($groupTotal),
+                'date' => '',
+                'num' => '',
+                'estimate_status' => '',
+                'accepted_on' => '',
+                'accepted_by' => '',
+                'expiration_date' => '',
+                'invoice_number' => '',
+                'amount' => '',
+                'is_group_header' => true,
+            ]);
+
+            // Add proposal rows
+            foreach ($proposals as $proposal) {
+                $final->push([
+                    'customer_id' => $customerId,
+                    'customer_name' => $displayName,
+                    'date' => $proposal->issue_date ? Carbon::parse($proposal->issue_date)->format('m/d/Y') : '-',
+                    'num' => 'EST-' . str_pad($proposal->proposal_id, 4, '0', STR_PAD_LEFT),
+                    'estimate_status' => isset(Proposal::$statues[$proposal->status]) ? __(Proposal::$statues[$proposal->status]) : 'Unknown',
+                    'accepted_on' => $proposal->status == 2 ? ($proposal->issue_date ? Carbon::parse($proposal->issue_date)->format('m/d/Y') : '-') : '-',
+                    'accepted_by' => $proposal->status == 2 ? ($proposal->customer ? $proposal->customer->name : 'Customer') : '-',
+                    'expiration_date' => $proposal->issue_date ? Carbon::parse($proposal->issue_date)->addDays(30)->format('m/d/Y') : '-',
+                    'invoice_number' => $proposal->is_convert && $proposal->converted_invoice_id ? 'INV-' . str_pad($proposal->converted_invoice_id, 4, '0', STR_PAD_LEFT) : '-',
+                    'amount' => Auth::user()->priceFormat($this->calculateProposalAmountRaw($proposal)),
+                    'is_group_header' => false,
+                ]);
+            }
+
+            // Add customer total row
+            $final->push([
+                'customer_id' => $customerId,
+                'customer_name' => $displayName,
+                'date' => 'Total',
+                'num' => '',
+                'estimate_status' => '',
+                'accepted_on' => '',
+                'accepted_by' => '',
+                'expiration_date' => '',
+                'invoice_number' => '',
+                'amount' => $groupTotal,
+                'is_group_header' => false,
+                'is_customer_total' => true,
+            ]);
+        }
+
+        // Add grand total row
+        $final->push([
+            'customer_id' => null,
+            'customer_name' => 'TOTAL',
+            'group_total' => $grandTotal,
+            'date' => 'TOTAL',
+            'num' => '',
+            'estimate_status' => '',
+            'accepted_on' => '',
+            'accepted_by' => '',
+            'expiration_date' => '',
+            'invoice_number' => '',
+            'amount' => $grandTotal,
+            'is_group_header' => false,
+            'is_grand_total' => true,
+        ]);
+
         return datatables()
-            ->eloquent($query)
-            ->addColumn('date', function ($quotation) {
-                return $quotation->quotation_date ? Carbon::parse($quotation->quotation_date)->format('m/d/Y') : '-';
-            })
-            ->addColumn('num', function ($quotation) {
-                return 'QUO-' . str_pad($quotation->quotation_id, 4, '0', STR_PAD_LEFT);
-            })
-            ->addColumn('estimate_status', function ($quotation) {
-                switch ($quotation->status) {
-                    case 0:
-                        return 'Pending';
-                    case 1:
-                        return 'Accepted';
-                    case 2:
-                        return 'Rejected';
-                    case 3:
-                        return 'Expired';
-                    default:
-                        return 'Unknown';
+            ->collection($final)
+            ->addColumn('date', function ($r) {
+                if (!empty($r['is_group_header'])) {
+                    $customerId = $r['customer_id'];
+                    $chevron = '<i class="chevron-icon" data-parent-type="customer" data-parent-id="' . $customerId . '" style="margin-right: 10px; cursor: pointer; display: inline-block; transition: transform 0.2s;">▼</i>';
+                    return '<strong title="' . e($r['customer_name']) . '">' . $chevron . e($r['customer_name']) . '</strong>';
                 }
-            })
-            ->addColumn('accepted_on', function ($quotation) {
-                // Assuming we store accepted date in a field, for now returning N/A
-                return $quotation->status == 1 ? ($quotation->quotation_date ? Carbon::parse($quotation->quotation_date)->format('m/d/Y') : '-') : '-';
-            })
-            ->addColumn('accepted_by', function ($quotation) {
-                // Assuming we store who accepted, for now returning N/A
-                return $quotation->status == 1 ? 'Customer' : '-';
-            })
-            ->addColumn('expiration_date', function ($quotation) {
-                // Calculate expiration date as 30 days from quotation date
-                if ($quotation->quotation_date) {
-                    $expDate = Carbon::parse($quotation->quotation_date)->addDays(30);
-                    return $expDate->format('m/d/Y');
+                if (!empty($r['is_grand_total'])) {
+                    return '<strong>' . e($r['date']) . '</strong>';
                 }
-                return '-';
-            })
-            ->addColumn('invoice_number', function ($quotation) {
-                // Check if quotation is converted to invoice
-                if ($quotation->is_converted && $quotation->converted_pos_id) {
-                    return 'INV-' . str_pad($quotation->converted_pos_id, 4, '0', STR_PAD_LEFT);
+                if (!empty($r['is_customer_total'])) {
+                    return '<strong>' . e($r['date']) . '</strong>';
                 }
-                return '-';
+                return e($r['date']);
             })
-            ->addColumn('amount', function ($quotation) {
-                $totalAmount = 0;
-                foreach ($quotation->items as $item) {
-                    $totalAmount += ($item->price * $item->quantity) + (($item->price * $item->quantity * $item->tax) / 100) - $item->discount;
+            ->addColumn('num', fn($r) => $r['is_group_header'] ? '' : e($r['num']))
+            ->addColumn('estimate_status', fn($r) => $r['is_group_header'] ? '' : e($r['estimate_status']))
+            ->addColumn('accepted_on', fn($r) => $r['is_group_header'] ? '' : e($r['accepted_on']))
+            ->addColumn('accepted_by', fn($r) => $r['is_group_header'] ? '' : e($r['accepted_by']))
+            ->addColumn('expiration_date', fn($r) => $r['is_group_header'] ? '' : e($r['expiration_date']))
+            ->addColumn('invoice_number', fn($r) => $r['is_group_header'] ? '' : e($r['invoice_number']))
+            ->addColumn('amount', function ($r) {
+                if (!empty($r['is_grand_total'])) {
+                    return '<strong>' . Auth::user()->priceFormat($r['amount']) . '</strong>';
                 }
-                return Auth::user()->priceFormat($totalAmount);
+                if (!empty($r['is_customer_total'])) {
+                    return '<strong>' . Auth::user()->priceFormat($r['amount']) . '</strong>';
+                }
+                return $r['is_group_header'] ? '' : $r['amount'];
             })
-            ->addColumn('customer_name', function ($quotation) {
-                return $quotation->customer ? $quotation->customer->name : 'Unknown Customer';
-            })
-            ->rawColumns(['amount']);
+            ->setRowAttr([
+                'class' => function ($r) {
+                    $classes = [];
+                    if (!empty($r['is_group_header'])) {
+                        $classes[] = 'customer-header-row';
+                        $classes[] = 'parent-customer-' . $r['customer_id'];
+                    } elseif (!empty($r['is_grand_total'])) {
+                        $classes[] = 'grand-total-row';
+                    } elseif (!empty($r['is_customer_total'])) {
+                        $classes[] = 'customer-total-row';
+                        $classes[] = 'child-of-customer-' . $r['customer_id'];
+                    } else {
+                        $classes[] = 'child-row';
+                        $classes[] = 'child-of-customer-' . $r['customer_id'];
+                    }
+                    return implode(' ', $classes);
+                },
+                'data-customer-id' => function ($r) {
+                    return $r['customer_id'];
+                },
+                'data-customer-name' => function ($r) {
+                    return $r['customer_name'];
+                },
+                'data-formatted-total' => function ($r) {
+                    return $r['formatted_total'] ?? '';
+                },
+                'style' => function ($r) {
+                    if (!empty($r['is_grand_total'])) {
+                        return 'background-color:#e8f4f8; font-weight:700;';
+                    }
+                    if (!empty($r['is_customer_total'])) {
+                        return 'background-color:#f0f8ff; font-weight:600;';
+                    }
+                    return !empty($r['is_group_header'])
+                        ? 'background-color:#f8f9fa; font-weight:600; cursor:pointer;'
+                        : 'display: table-row;';
+                },
+            ])
+            ->rawColumns(['date', 'amount']);
     }
 
-    public function query(Quotation $model)
+    private function calculateProposalAmountRaw($proposal)
+    {
+        $totalAmount = 0;
+        foreach ($proposal->items as $item) {
+            $totalAmount += ($item->price * $item->quantity) + (($item->price * $item->quantity * $item->tax) / 100) - $item->discount;
+        }
+        return $totalAmount;
+    }
+
+    public function query(Proposal $model)
     {
         $user = Auth::user();
         $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
-
-        // Build query to get quotations with customer information
+        // Build query to get proposals with customer information
         $query = $model->newQuery()
             ->select([
-                'quotations.id',
-                'quotations.quotation_id',
-                'quotations.customer_id',
-                'quotations.quotation_date',
-                'quotations.status',
-                'quotations.converted_pos_id',
-                'quotations.is_converted',
-                'quotations.created_by',
+                'proposals.id',
+                'proposals.proposal_id',
+                'proposals.customer_id',
+                'proposals.issue_date',
+                'proposals.status',
+                'proposals.converted_invoice_id',
+                'proposals.is_convert',
+                'proposals.created_by',
                 'customers.name as customer_name'
             ])
             // Join with customers
-            ->leftJoin('customers', 'quotations.customer_id', '=', 'customers.id')
+            ->leftJoin('customers', 'proposals.customer_id', '=', 'customers.id')
             // Filter by created_by
-            ->where('quotations.created_by', $ownerId)
-            // Only show quotations that have a customer
+            ->where('proposals.created_by', $ownerId)
+            // Only show proposals that have a customer
             ->whereNotNull('customers.name');
 
         // Apply filters from request
@@ -105,36 +215,21 @@ class EstimatesByCustomerDataTable extends DataTable
 
         if (request()->filled('status') && request('status') !== '') {
             $status = request('status');
-            $query->where('quotations.status', $status);
+            $query->where('proposals.status', $status);
         }
 
-        if (request()->filled('start_date') && request()->filled('end_date')) {
-            $startDate = request('start_date');
-            $endDate = request('end_date');
-            $query->whereBetween('quotations.quotation_date', [$startDate, $endDate]);
-        }
-
-        // Group by quotation fields to avoid duplicates
-        $query->groupBy([
-            'quotations.id',
-            'quotations.quotation_id',
-            'quotations.customer_id',
-            'quotations.quotation_date',
-            'quotations.status',
-            'quotations.converted_pos_id',
-            'quotations.is_converted',
-            'quotations.created_by',
-            'customers.name'
-        ]);
-
-        return $query->orderBy('quotations.quotation_date', 'desc')
-                    ->orderBy('customers.name', 'asc');
+        $startDate = request('startDate', date('Y-01-01'));
+        $endDate = request('endDate', date('Y-m-d'));
+        $query->whereBetween('proposals.issue_date', [$startDate, $endDate]);
+        // dd($query->get(),$query->first());
+        return $query->orderBy(DB::raw("REPLACE(REPLACE(customers.name, ' - ', '-'), '- ', '-')"), 'asc')
+                    ->orderBy('proposals.issue_date', 'asc');
     }
 
     public function html()
     {
         return $this->builder()
-            ->setTableId('estimates-by-customer-table')
+            ->setTableId('proposals-by-customer-table')
             ->columns($this->getColumns())
             ->minifiedAjax()
             ->dom('rt')
@@ -150,9 +245,15 @@ class EstimatesByCustomerDataTable extends DataTable
                 'scrollY' => '420px',
                 'scrollX' => true,
                 'scrollCollapse' => true,
-                'rowGroup' => [
-                    'dataSrc' => 'customer_name'
-                ]
+                'createdRow' => "function(row, data, dataIndex) {
+                    if (data.is_group_header) {
+                        $('td', row).eq(0).attr('colspan', 8);
+                        $('td', row).slice(1).remove();
+                    }
+                    if (data.is_grand_total) {
+                        $('td', row).eq(0).css('text-align', 'left');
+                    }
+                }",
             ]);
     }
 
@@ -167,7 +268,6 @@ class EstimatesByCustomerDataTable extends DataTable
             Column::make('expiration_date')->title(__('Expiration Date'))->addClass('text-center'),
             Column::make('invoice_number')->title(__('Invoice Number')),
             Column::make('amount')->title(__('Amount'))->addClass('text-right'),
-            Column::make('customer_name')->title(__('Customer'))->visible(false), // Hidden but used for grouping
         ];
     }
 

@@ -48,7 +48,24 @@ public function query(ProductService $model)
         ->leftJoinSub($stockAgg, 'sr_agg', function ($join) {
             $join->on('product_services.id', '=', 'sr_agg.product_id');
         })
-        ->addSelect('product_services.*', DB::raw('COALESCE(sr_agg.total_quantity, 0) as total_quantity'));
+        ->addSelect('product_services.*', DB::raw('COALESCE(sr_agg.total_quantity, 0) as total_quantity'))
+        // Filter out products with colon in name where the base product already exists
+        ->where(function($query) use ($ownerId) {
+            $query->where(function($q) {
+                // Include products without colon in their name
+                $q->where('product_services.name', 'NOT LIKE', '%:%');
+            })->orWhere(function($q) use ($ownerId) {
+                // Include products with colon ONLY if the base name (after colon) doesn't exist
+                $q->where('product_services.name', 'LIKE', '%:%')
+                  ->whereNotExists(function($subquery) use ($ownerId) {
+                      $subquery->select(DB::raw(1))
+                          ->from('product_services as ps2')
+                          ->where('ps2.created_by', $ownerId)
+                          ->whereRaw("ps2.name = TRIM(SUBSTRING_INDEX(product_services.name, ':', -1))")
+                          ->where('ps2.name', 'NOT LIKE', '%:%');
+                  });
+            });
+        });
 
     // Apply category and type filters if provided
     if (request()->filled('category') && request('category') !== '') {

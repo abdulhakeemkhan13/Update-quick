@@ -21,8 +21,8 @@ class SalesByProductServiceSummaryDataTable extends DataTable
         $totalCogs     = (float) $rows->sum(fn($r) => (float)($r->purchase_price ?? 0) * (float)($r->total_quantity ?? 0));
         $totalGrossMargin = $totalAmount - $totalCogs;
         $totalGrossMarginPercent = $totalAmount > 0 ? ($totalGrossMargin / $totalAmount) * 100 : 0;
-        $avgCogs = $totalQuantity > 0 ? $totalCogs / $totalQuantity : 0;
-        $avgPrice = $totalQuantity > 0 ? $totalAmount / $totalQuantity : 0;
+        $avgCogs = $totalQuantity != 0 ? $totalCogs / $totalQuantity : 0;
+        $avgPrice = $totalQuantity != 0 ? $totalAmount / $totalQuantity : 0;
         $data = collect();
 
         foreach ($rows as $r) {
@@ -30,7 +30,7 @@ class SalesByProductServiceSummaryDataTable extends DataTable
             $amt = (float) ($r->total_amount ?? 0);
             $cogs = (float) ($r->purchase_price ?? 0) * $qty;
             $grossMargin = $amt - $cogs;
-            $grossMarginPercent = $amt > 0 ? ($grossMargin / $amt) * 100 : 0;
+            $grossMarginPercent = $amt != 0 ? ($grossMargin / $amt) * 100 : 0; // Fix divide by zero for gross margin % too
 
             $data->push([
                 // product_service shown as plain text (we'll allow HTML in totals row via rawColumns)
@@ -38,14 +38,14 @@ class SalesByProductServiceSummaryDataTable extends DataTable
                 // numeric columns are formatted numbers (no currency symbol)
                 'quantity' => number_format($qty, 2),
                 'amount' => number_format($amt, 2),
-                'percent_of_sales' => $totalAmount > 0
+                'percent_of_sales' => $totalAmount != 0
                     ? number_format(($amt / $totalAmount) * 100, 1) . '%'
                     : '0.0%',
-                'average_price' => number_format($qty > 0 ? ($amt / $qty) : 0, 2),
+                'average_price' => number_format($qty != 0 ? ($amt / $qty) : 0, 2),
                 'cogs' => number_format($cogs, 2),
                 'avg_cogs' => number_format((float)($r->purchase_price ?? 0), 2),
-                'gross_margin' => number_format($grossMargin, 2),
-                'gross_margin_percent' => number_format($grossMarginPercent, 1) . '%',
+                'gross_margin' => $cogs != 0 ? number_format($grossMargin, 2) : '-',
+                'gross_margin_percent' => $cogs != 0 ? (number_format($grossMarginPercent, 1) . '%') : '-',
             ]);
         }
 
@@ -59,8 +59,8 @@ class SalesByProductServiceSummaryDataTable extends DataTable
                 'average_price' => '<strong>' . number_format($avgPrice, 2) . '</strong>',
                 'cogs' => '<strong>' . number_format($totalCogs, 2) . '</strong>',
                 'avg_cogs' => '<strong>' . number_format($avgCogs, 2) . '</strong>',
-                'gross_margin' => '<strong>' . number_format($totalGrossMargin, 2) . '</strong>',
-                'gross_margin_percent' => '<strong>' . number_format($totalGrossMarginPercent, 1) . '%</strong>',
+                'gross_margin' => '<strong>' . ($totalCogs != 0 ? number_format($totalGrossMargin, 2) : '-') . '</strong>',
+                'gross_margin_percent' => '<strong>' . ($totalCogs != 0 ? number_format($totalGrossMarginPercent, 1) . '%' : '-') . '</strong>',
                 'DT_RowClass' => 'summary-total'
             ]);
         } else {
@@ -111,32 +111,61 @@ class SalesByProductServiceSummaryDataTable extends DataTable
             $endDate   = $dates['end'];
         }
 
-        // === Subquery: Invoices joined with products ===
-        $invoiceProductsSubquery = DB::table('invoice_products as ip')
+        // === Subquery 1: Invoices ===
+        $invoices = DB::table('invoice_products as ip')
             ->join('invoices as i', 'i.id', '=', 'ip.invoice_id')
-            ->leftJoin('taxes as t', DB::raw('FIND_IN_SET(t.id, ip.tax)'), '>', DB::raw('0'))
             ->select(
                 'ip.product_id',
-                DB::raw('SUM(ip.quantity) as total_quantity'),
-                DB::raw('SUM(ip.price * ip.quantity - COALESCE(ip.discount, 0)) as total_amount')
+                'ip.quantity',
+                'ip.price',
+                DB::raw('(ip.price * ip.quantity - COALESCE(ip.discount, 0)) as amount'),
+                'i.issue_date as date',
+                'i.' . $column . ' as owner_id',
+                 'i.status'
             )
             ->where('i.' . $column, $ownerId)
-            ->where('i.status', '!=', 0);
+            ->where('i.status', '!=', 0); // Not draft/cancelled if 0 is such status
 
+        // === Subquery 2: Credit Notes (Negative values) ===
+        $creditNotes = DB::table('credit_note_products as cp')
+            ->join('credit_notes as c', 'c.id', '=', 'cp.credit_note_id')
+            ->select(
+                'cp.product_id',
+                DB::raw('(-1 * cp.quantity) as quantity'),
+                'cp.price',
+                DB::raw('(-1 * (cp.price * cp.quantity - COALESCE(cp.discount, 0))) as amount'), // Assuming discount logic same
+                'c.date as date',
+                'c.' . $column . ' as owner_id',
+                DB::raw('1 as status') // Dummy status, assume valid if exists
+            )
+            ->where('c.' . $column, $ownerId);
+
+        // Apply date filters to both *before* union for performance
         if ($startDate) {
-            $invoiceProductsSubquery->whereDate('i.issue_date', '>=', $startDate);
+            $invoices->whereDate('i.issue_date', '>=', $startDate);
+            $creditNotes->whereDate('c.date', '>=', $startDate);
         }
         if ($endDate) {
-            $invoiceProductsSubquery->whereDate('i.issue_date', '<=', $endDate);
+            $invoices->whereDate('i.issue_date', '<=', $endDate);
+            $creditNotes->whereDate('c.date', '<=', $endDate);
         }
 
-        $invoiceProductsSubquery->groupBy('ip.product_id');
+        // === Union and Aggregate ===
+        $unionQuery = $invoices->unionAll($creditNotes);
+
+        $salesSubquery = DB::query()->fromSub($unionQuery, 'combined_sales')
+            ->select(
+                'product_id', 
+                DB::raw('SUM(CASE WHEN price = 0 AND amount = 0 THEN 0 ELSE quantity END) as total_quantity'), 
+                DB::raw('SUM(amount) as total_amount')
+            )
+            ->groupBy('product_id');
 
         // === Main Query ===
         $model = new ProductService();
         $q = $model->newQuery()
             ->where('product_services.' . $column, $ownerId)
-            ->leftJoinSub($invoiceProductsSubquery, 'sales', function ($join) {
+            ->leftJoinSub($salesSubquery, 'sales', function ($join) {
                 $join->on('product_services.id', '=', 'sales.product_id');
             })
             ->select([
@@ -144,7 +173,8 @@ class SalesByProductServiceSummaryDataTable extends DataTable
                 DB::raw('COALESCE(sales.total_quantity, 0) as total_quantity'),
                 DB::raw('COALESCE(sales.total_amount, 0) as total_amount'),
             ])
-            ->having('total_quantity', '>', 0);
+            ->having('total_quantity', '!=', 0); // Show if net quantity is not zero (could be negative returns)
+
 
         // === Optional Filters ===
         if (request()->filled('product_name')) {
