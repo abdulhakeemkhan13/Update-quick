@@ -116,12 +116,12 @@
                             <div class="filter-item col-md-2">
                                 <label class="filter-label">From</label>
                                 <input type="date" class="form-control" name="start_date" id="filter-start-date"
-                                    value="{{ $startDate ?? '' }}">
+                                    value="{{ $startDate ?? Carbon\Carbon::now()->startOfMonth()->format('Y-m-d') }}">
                             </div>
                             <div class="filter-item col-md-2">
                                 <label class="filter-label">To</label>
                                 <input type="date" class="form-control" name="end_date" id="filter-end-date"
-                                    value="{{ $endDate ?? '' }}">
+                                    value="{{ $endDate ?? Carbon\Carbon::now()->format('Y-m-d') }}">
                             </div>
                             @if (isset($accounting_method) && $accounting_method)
                                 <div class="filter-item col-md-2">
@@ -221,7 +221,7 @@
                                             <label class="filter-label">From</label>
                                             <input type="date" class="form-control" name="start_date"
                                                 id="sidebar-filter-start-date"
-                                                value="{{ $startDate ?? '' }}">
+                                                value="{{ $startDate ?? Carbon\Carbon::now()->startOfMonth()->format('Y-m-d') }}">
                                         </div>
                                         <div class="filter-item mb-2">
                                             <label class="filter-label">To</label>
@@ -1163,10 +1163,10 @@
         /* Responsive */
         @media (max-width: 768px) {
             /* .filter-group {
-                                                                                                                                                                                                                                                                        flex-direction: column;
-                                                                                                                                                                                                                                                                        width: 100%;
-                                                                                                                                                                                                                                                                        gap: 16px;
-                                                                                                                                                                                                                                                                    } */
+                                                                                                                                                                                                                                                                            flex-direction: column;
+                                                                                                                                                                                                                                                                            width: 100%;
+                                                                                                                                                                                                                                                                            gap: 16px;
+                                                                                                                                                                                                                                                                        } */
 
             .filter-item {
                 width: 100%;
@@ -1197,7 +1197,8 @@
         i {
             font-style: normal;
         }
-        .summary-total{
+
+        .summary-total {
             font-weight: bold;
         }
     </style>
@@ -1220,24 +1221,25 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
     <script>
-$(document).on('click', '.group-toggle', function() {
-    const key = $(this).data('group');
-    const icon = $(this).find('i.fas');
-    const rows = $('.group-' + key);
+        $(document).on('click', '.group-toggle', function() {
+            const key = $(this).data('group');
+            const icon = $(this).find('i.fas');
+            const rows = $('.group-' + key);
 
-    if (rows.is(':visible')) {
-        rows.hide();
-        icon.removeClass('fa-chevron-down').addClass('fa-chevron-right');
-    } else {
-        rows.show();
-        icon.removeClass('fa-chevron-right').addClass('fa-chevron-down');
-    }
-});
-</script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+            if (rows.is(':visible')) {
+                rows.hide();
+                icon.removeClass('fa-chevron-down').addClass('fa-chevron-right');
+            } else {
+                rows.show();
+                icon.removeClass('fa-chevron-right').addClass('fa-chevron-down');
+            }
+        });
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <script>
         let csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
         function exportDataTable(tableId, pageTitle, format = "excel") {
             let table = $('#' + tableId).DataTable();
 

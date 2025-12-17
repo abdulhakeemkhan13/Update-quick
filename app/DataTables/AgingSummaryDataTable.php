@@ -25,10 +25,10 @@ class AgingSummaryDataTable extends DataTable
 
         // Track totals
         $currentTotal = 0;
-        $days15Total = 0;
         $days30Total = 0;
-        $days45Total = 0;
-        $daysMore45Total = 0;
+        $days60Total = 0;
+        $days90Total = 0;
+        $daysMore90Total = 0;
         $grandTotal = 0;
 
         if ($entries->count() > 0) {
