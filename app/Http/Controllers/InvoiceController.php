@@ -70,7 +70,19 @@ class InvoiceController extends Controller
             // Calculate invoice summary data for the bars
             $invoiceData = $this->calculateInvoiceSummary($ownerId, $column);
 
-            return view('invoice.index', compact('invoices', 'customer', 'status', 'invoiceData'));
+        return view('invoice.index', compact('invoices', 'customer', 'status', 'invoiceData'));
+        } else {
+            return redirect()->back()->with('error', __('Permission Denied.'));
+        }
+    }
+
+    /**
+     * Display the Sales & Get Paid Overview page.
+     */
+    public function overview()
+    {
+        if (\Auth::user()->can('manage invoice')) {
+            return view('invoice.invoice-overview');
         } else {
             return redirect()->back()->with('error', __('Permission Denied.'));
         }

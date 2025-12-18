@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 @section('page-title')
-    {{__('Manage Expenses')}}
+    {{__('Manage Credit Credit Cards')}}
 @endsection
 @push('script-page')
     <script>
@@ -20,37 +20,17 @@
 @endpush
 @section('breadcrumb')
     <li class="breadcrumb-item"><a href="{{route('dashboard')}}">{{__('Dashboard')}}</a></li>
-    <li class="breadcrumb-item">{{__('Expense')}}</li>
+    <li class="breadcrumb-item">{{__('Credit Credit Card')}}</li>
 @endsection
 
 @section('action-btn')
     <div class="float-end">
         @can('create bill')
-
-            <button class="btn btn-sm btn-primary openChecksModal" data-url="{{ route('expense.create', 0) }}" data-bs-toggle="tooltip" title="{{__('Create Expense')}}">
-                {{ __('Create Expense') }}
-
-           {{-- <a href="#" data-url="{{ route('expense.create',0) }}"  class="btn btn-sm btn-primary"
-                data-ajax-popup="true" data-size="fullscreen"
-                data-bs-toggle="tooltip" title="Create Expense">
-                {{__('Create Expense')}} --}}
-
+            <button class="btn btn-sm btn-primary openChecksModal" data-url="{{ route('creditcreditcard.create', 0) }}" data-bs-toggle="tooltip" title="{{__('Create Credit Credit Card')}}">
+                {{ __('Create Credit Credit Card') }}
                 <i class="ti ti-plus"></i>
             </button>
         @endcan
-        <a href="{{ route('timeActivity.create') }}" class="btn btn-sm btn-primary" data-bs-toggle="tooltip" title="{{__('Create Time Activity')}}">
-            {{__('Create Time Activity')}}
-            <i class="ti ti-plus"></i>
-        </a>
-        <button class="btn btn-sm btn-primary openChecksModal" data-url="{{ route('checks.create') }}" data-bs-toggle="tooltip" title="{{__('Create Checks')}}">
-            {{__('Create Checks')}}
-            <i class="ti ti-plus"></i>
-        </button>
-        <!-- vendor credits -->
-         <button class="btn btn-sm btn-primary openChecksModal" data-url="{{ route('vendor-credit.create') }}" data-bs-toggle="tooltip" title="{{__('Create Vendor Credits')}}">
-            {{__('Create Vendor Credits')}}
-            <i class="ti ti-plus"></i>
-        </button>
     </div>
 @endsection
 
@@ -59,46 +39,20 @@
 {{-- MY APPS Sidebar (Fixed Position) --}}
 @include('partials.admin.allApps-subMenu-Sidebar', [
     'activeSection' => 'expenses',
-    'activeItem' => 'expense_transactions'
+    'activeItem' => 'credit_credit_card'
 ])
 
     {{-- tabs --}}
     @include('expense.expense-tabs')
-        <div class="float-end">
-        @can('create bill')
-
-            <button class="btn btn-sm btn-primary openChecksModal" data-url="{{ route('expense.create', 0) }}" data-bs-toggle="tooltip" title="{{__('Create Expense')}}">
-                {{ __('Create Expense') }}
-
-           {{-- <a href="#" data-url="{{ route('expense.create',0) }}"  class="btn btn-sm btn-primary"
-                data-ajax-popup="true" data-size="fullscreen"
-                data-bs-toggle="tooltip" title="Create Expense">
-                {{__('Create Expense')}} --}}
-
-                <i class="ti ti-plus"></i>
-            </button>
-        @endcan
-        <a href="{{ route('timeActivity.create') }}" class="btn btn-sm btn-primary" data-bs-toggle="tooltip" title="{{__('Create Time Activity')}}">
-            {{__('Create Time Activity')}}
-            <i class="ti ti-plus"></i>
-        </a>
-        <button class="btn btn-sm btn-primary openChecksModal" data-url="{{ route('checks.create') }}" data-bs-toggle="tooltip" title="{{__('Create Checks')}}">
-            {{__('Create Checks')}}
-            <i class="ti ti-plus"></i>
-        </button>
-        <!-- vendor credits -->
-         <button class="btn btn-sm btn-primary openChecksModal" data-url="{{ route('vendor-credit.create') }}" data-bs-toggle="tooltip" title="{{__('Create Vendor Credits')}}">
-            {{__('Create Vendor Credits')}}
-            <i class="ti ti-plus"></i>
-        </button>
-    </div>
+    <button class="btn btn-sm btn-primary openChecksModal" data-url="{{ route('creditcreditcard.create', 0) }}" data-bs-toggle="tooltip" title="{{__('Create Credit Credit Card')}}">
+        {{ __('Create Credit Credit Card') }}
+        <i class="ti ti-plus"></i>
+    </button>
     <div class="modal fade" id="ajaxModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-fullscreen">
             <div class="modal-content">
             </div>
         </div>
-
-
     </div>
 
 @push('script-page')
@@ -133,7 +87,7 @@
     <div class="dropdown-menu p-3" style="min-width: 350px;">
         <div class="card shadow-none border-0">
             <div class="card-body p-0">
-                {{ Form::open(['route' => ['expense.index'], 'method' => 'GET', 'id' => 'frm_submit']) }}
+                {{ Form::open(['route' => ['creditcreditcard.index'], 'method' => 'GET', 'id' => 'frm_submit']) }}
                 <div class="row">
 
                     {{-- Payment Date --}}
@@ -154,7 +108,7 @@
 
                     {{-- Buttons --}}
                     <div class="col-12 d-flex justify-content-between">
-                        <a href="{{ route('expense.index') }}" 
+                        <a href="{{ route('creditcreditcard.index') }}" 
                            class="btn btn-outline-secondary btn-sm"
                            data-bs-toggle="tooltip" 
                            title="{{ __('Reset') }}">
@@ -185,10 +139,9 @@
                         <table class="table datatable">
                             <thead>
                             <tr>
-                                <th class="text-center"> {{__('Expense')}}</th>
-                                <th class="text-center"> {{__('Vendor')}}</th>
-                                <th class="text-center">{{ __('Paid Amount') }}</th>
-                                <th class="text-center">{{ __('Due Amount') }}</th>
+                                <th class="text-center"> {{__('Credit Credit Card')}}</th>
+                                <th class="text-center"> {{__('Payee')}}</th>
+                                <th class="text-center">{{ __('Amount') }}</th>
                                 <th class="text-center"> {{__('Date')}}</th>
                                 <th class="text-center">{{__('Status')}}</th>
                                 @if(Gate::check('edit bill') || Gate::check('delete bill') || Gate::check('show bill'))
@@ -199,24 +152,20 @@
                             <tbody>
                             @foreach ($expenses as $expense)
                                 @php
-                                        // compute amounts using model methods
-                                        $expenseTotal = (float) $expense->getTotal();
-                                        $expenseDue = (float) $expense->getDue();
-                                        $expensePaid = $expenseTotal - $expenseDue - $expense->billTotalDebitNote();
+                                    // compute amounts using model methods
+                                    $expenseTotal = (float) $expense->getTotal();
                                 @endphp
 
                                 <tr>
                                     <td class="Id">
-                                        <a href="{{ route('expense.show',\Crypt::encrypt($expense->id)) }}" class="btn btn-outline-primary">{{ AUth::user()->expenseNumberFormat($expense->bill_id) }}</a>
+                                        <a href="{{ route('creditcreditcard.show',\Crypt::encrypt($expense->id)) }}" class="btn btn-outline-primary">{{ AUth::user()->expenseNumberFormat($expense->bill_id) }}</a>
                                     </td>
                                     <td class="text-center align-middle">
-                                            {{ optional($expense->vender)->name ?? '-' }}
-                                        </td>
-                                    <td class="text-center align-middle">{{ \Auth::user()->priceFormat($expensePaid) }}</td>
-                                    <td class="text-center align-middle">{{ \Auth::user()->priceFormat($expenseDue) }}</td>
+                                        {{ optional($expense->vender)->name ?? '-' }}
+                                    </td>
+                                    <td class="text-center align-middle">{{ \Auth::user()->priceFormat($expenseTotal) }}</td>
                                     <td class="text-center align-middle">{{ Auth::user()->dateFormat($expense->bill_date) }}</td>
                                     <td class="text-center align-middle">
-                                        {{-- //colorful --}}
                                         @if($expense->status == 0)
                                             <span class="status_badge badge bg-secondary p-2 px-3 rounded">{{ __(\App\Models\Invoice::$statues[$expense->status]) }}</span>
                                         @elseif($expense->status == 1)
@@ -238,38 +187,25 @@
                                     @if(Gate::check('edit bill') || Gate::check('delete bill') || Gate::check('show bill'))
                                         <td class="Action text-center align-middle" >
                                             <span>
-                                                {{-- // request for approaval --}}
-                                                @if($expense->status == 0 || $expense->status == 7)
-                                                    <div class="action-btn bg-info ms-2">
-                                                        <a href="{{ route('expense.request.approval', $expense->id) }}" class="mx-3 btn btn-sm align-items-center" data-bs-toggle="tooltip" title="{{__('Send for Approval')}}" data-original-title="{{__('Send for Approval')}}">
-                                                            <i class="ti ti-send text-white"></i>
-                                                        </a>
-                                                    </div>
-                                                @endif
                                                 @can('show bill')
                                                     <div class="action-btn bg-info ms-2">
-                                                        <a href="{{ route('expense.show',\Crypt::encrypt($expense->id)) }}" class="mx-3 btn btn-sm align-items-center" data-bs-toggle="tooltip" title="{{__('Show')}}" data-original-title="{{__('Detail')}}">
+                                                        <a href="{{ route('creditcreditcard.show',\Crypt::encrypt($expense->id)) }}" class="mx-3 btn btn-sm align-items-center" data-bs-toggle="tooltip" title="{{__('Show')}}" data-original-title="{{__('Detail')}}">
                                                             <i class="ti ti-eye text-white"></i>
                                                         </a>
                                                     </div>
                                                 @endcan
                                                 @can('edit bill')
                                                     <div class="action-btn bg-primary ms-2">
-                                                        <a href="#" data-url="{{ route('expense.edit',\Crypt::encrypt($expense->id)) }}"  class="mx-3 btn btn-sm align-items-center"
+                                                        <a href="#" data-url="{{ route('creditcreditcard.edit',\Crypt::encrypt($expense->id)) }}"  class="mx-3 btn btn-sm align-items-center"
                                                             data-ajax-popup="true" data-size="fullscreen"
-                                                            data-bs-toggle="tooltip" title="Edit Expense">
+                                                            data-bs-toggle="tooltip" title="Edit Credit Credit Card">
                                                             <i class="ti ti-pencil text-white"></i>
                                                         </a>
                                                     </div>
-                                                    {{-- <div class="action-btn bg-primary ms-2">
-                                                        <a href="{{ route('expense.edit',\Crypt::encrypt($expense->id)) }}" class="mx-3 btn btn-sm align-items-center" data-bs-toggle="tooltip" title="Edit" data-original-title="{{__('Edit')}}">
-                                                            <i class="ti ti-pencil text-white"></i>
-                                                        </a>
-                                                    </div> --}}
                                                 @endcan
                                                 @can('delete bill')
                                                     <div class="action-btn bg-danger ms-2">
-                                                        {!! Form::open(['method' => 'DELETE', 'route' => ['expense.destroy', $expense->id],'class'=>'delete-form-btn','id'=>'delete-form-'.$expense->id]) !!}
+                                                        {!! Form::open(['method' => 'DELETE', 'route' => ['creditcreditcard.destroy', $expense->id],'class'=>'delete-form-btn','id'=>'delete-form-'.$expense->id]) !!}
                                                         <a href="#" class="mx-3 btn btn-sm align-items-center bs-pass-para" data-bs-toggle="tooltip" title="{{__('Delete')}}" data-original-title="{{__('Delete')}}" data-confirm="{{__('Are You Sure?').'|'.__('This action can not be undone. Do you want to continue?')}}" data-confirm-yes="document.getElementById('delete-form-{{$expense->id}}').submit();">
                                                             <i class="ti ti-trash text-white"></i>
                                                         </a>
@@ -289,4 +225,3 @@
         </div>
     </div>
 @endsection
-

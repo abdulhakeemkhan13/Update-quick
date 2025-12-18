@@ -107,6 +107,7 @@ use App\Http\Controllers\PaytmPaymentController;
 use App\Http\Controllers\PaytrController;
 use App\Http\Controllers\SalesReceipt;
 use App\Http\Controllers\ReceivePaymentController;
+use App\Http\Controllers\ReceiveBillPaymentController;
 use App\Http\Controllers\sync\TrialBalanceController;
 use App\Http\Controllers\sync\VoucherController;
 use App\Http\Controllers\WorkflowController;
@@ -156,6 +157,8 @@ use App\Http\Controllers\TransferController;
 use App\Http\Controllers\TravelController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VenderController;
+use App\Http\Controllers\VendorCreditController;
+use App\Http\Controllers\CreditCreditCardController;
 use App\Http\Controllers\WarehouseController;
 use App\Http\Controllers\WarehouseTransferController;
 use App\Http\Controllers\WarningController;
@@ -644,6 +647,7 @@ Route::group(['middleware' => ['verified']], function () {
             // Customer contact list routes - MUST come before resource('customer') to prevent {customer} from matching
             Route::get('customer/contact-list', [App\Http\Controllers\sync\VoucherController::class, 'customerContactList'])->name('customer.contact.list');
             Route::get('customer/phone-list', [App\Http\Controllers\sync\VoucherController::class, 'customerContactListPhoneNumbers'])->name('customer.contact.list.phone.numbers');
+            Route::get('customer/overview', [CustomerController::class, 'overview'])->name('customer.overview');
             
             Route::get('customer/{id}/show', [CustomerController::class, 'show'])->name('customer.show');
             Route::resource('customer', CustomerController::class);
@@ -711,6 +715,13 @@ Route::group(['middleware' => ['verified']], function () {
     Route::post('receive-payment/outstanding-invoices', [ReceivePaymentController::class, 'getOutstandingInvoices'])->name('receive-payment.outstanding-invoices')->middleware(['auth', 'XSS']);
     Route::post('receive-payment/payment/{invoice_id?}', [ReceivePaymentController::class, 'createPayment'])->name('receive-payment.payment')->middleware(['auth', 'XSS']);
 
+    // Receive Bill Payment routes (Pay vendor bills)
+    Route::resource('receive-bill-payment', ReceiveBillPaymentController::class)->middleware(['auth', 'XSS']);
+    Route::get('receive-bill-payment/create/{vendorId?}', [ReceiveBillPaymentController::class, 'create'])->name('receive-bill-payment.create')->middleware(['auth', 'XSS']);
+    Route::post('receive-bill-payment/outstanding-bills', [ReceiveBillPaymentController::class, 'getOutstandingBills'])->name('receive-bill-payment.outstanding-bills')->middleware(['auth', 'XSS']);
+    Route::post('receive-bill-payment/payment/{bill_id?}', [ReceiveBillPaymentController::class, 'createPayment'])->name('receive-bill-payment.payment')->middleware(['auth', 'XSS']);
+
+
     Route::group(
         [
             'middleware' => [
@@ -727,6 +738,7 @@ Route::group(['middleware' => ['verified']], function () {
             Route::get('invoice/{id}/duplicate', [InvoiceController::class, 'duplicate'])->name('invoice.duplicate');
             Route::get('invoice/{id}/shipping/print', [InvoiceController::class, 'shippingDisplay'])->name('invoice.shipping.print');
             Route::get('invoice/{id}/payment/reminder', [InvoiceController::class, 'paymentReminder'])->name('invoice.payment.reminder');
+            Route::get('invoice/overview', [InvoiceController::class, 'overview'])->name('invoice.overview');
             Route::get('invoice/index', [InvoiceController::class, 'index'])->name('invoice.index');
             Route::post('invoice/product/destroy', [InvoiceController::class, 'productDestroy'])->name('invoice.product.destroy');
             Route::post('invoice/product', [InvoiceController::class, 'product'])->name('invoice.product');
@@ -840,6 +852,50 @@ Route::group(['middleware' => ['verified']], function () {
             Route::get('bill/items', [BillController::class, 'items'])->name('bill.items');
             Route::resource('bill', BillController::class);
             Route::get('bill/create/{cid}', [BillController::class, 'create'])->name('bill.create');
+        }
+    ); 
+
+    // Vendor Credit Routes
+    Route::group(
+        [
+            'middleware' => [
+                'auth',
+                'XSS',
+                'revalidate',
+            ],
+        ],
+        function () {
+            Route::get('vendor-credit/index', [VendorCreditController::class, 'index'])->name('vendor-credit.index');
+            Route::get('vendor-credit/create/{vendorId?}', [VendorCreditController::class, 'create'])->name('vendor-credit.create');
+            Route::post('vendor-credit', [VendorCreditController::class, 'store'])->name('vendor-credit.store');
+            Route::get('vendor-credit/{vendorCredit}/edit', [VendorCreditController::class, 'edit'])->name('vendor-credit.edit');
+            Route::put('vendor-credit/{vendorCredit}', [VendorCreditController::class, 'update'])->name('vendor-credit.update');
+            Route::delete('vendor-credit/{vendorCredit}', [VendorCreditController::class, 'destroy'])->name('vendor-credit.destroy');
+            Route::get('vendor-credit/{vendorCredit}', [VendorCreditController::class, 'show'])->name('vendor-credit.show');
+        }
+    ); 
+
+    // Credit Credit Card Routes
+    Route::group(
+        [
+            'middleware' => [
+                'auth',
+                'XSS',
+                'revalidate',
+            ],
+        ],
+        function () {
+            Route::get('creditcreditcard/index', [CreditCreditCardController::class, 'index'])->name('creditcreditcard.index');
+            Route::get('creditcreditcard/create/{vendorId?}', [CreditCreditCardController::class, 'create'])->name('creditcreditcard.create');
+            Route::post('creditcreditcard', [CreditCreditCardController::class, 'store'])->name('creditcreditcard.store');
+            Route::get('creditcreditcard/{creditCreditCard}/edit', [CreditCreditCardController::class, 'edit'])->name('creditcreditcard.edit');
+            Route::put('creditcreditcard/{creditCreditCard}', [CreditCreditCardController::class, 'update'])->name('creditcreditcard.update');
+            Route::delete('creditcreditcard/{creditCreditCard}', [CreditCreditCardController::class, 'destroy'])->name('creditcreditcard.destroy');
+            Route::get('creditcreditcard/{creditCreditCard}', [CreditCreditCardController::class, 'show'])->name('creditcreditcard.show');
+            Route::post('creditcreditcard/vender', [CreditCreditCardController::class, 'vender'])->name('creditcreditcard.vender');
+            Route::post('creditcreditcard/customer', [CreditCreditCardController::class, 'customer'])->name('creditcreditcard.customer');
+            Route::post('creditcreditcard/employee', [CreditCreditCardController::class, 'employee'])->name('creditcreditcard.employee');
+            Route::post('creditcreditcard/product', [CreditCreditCardController::class, 'product'])->name('creditcreditcard.product');
         }
     ); 
     // Route::get('customer-contact-list', [CustomerController::class, 'contactList'])->name('customercontact.list');
@@ -1281,6 +1337,11 @@ Route::group(['middleware' => ['verified']], function () {
     Route::get('lastlogin', [EmployeeController::class, 'lastLogin'])->name('lastlogin')->middleware(['auth', 'XSS']);
 
     Route::resource('employee', EmployeeController::class)->middleware(['auth', 'XSS']);
+
+    // Employee Profile Edit Pages
+    Route::get('employee/{id}/edit-personal-info', [EmployeeController::class, 'editPersonalInfo'])->name('employee.edit.personal-info')->middleware(['auth', 'XSS']);
+    Route::get('employee/{id}/edit-employment-details', [EmployeeController::class, 'editEmploymentDetails'])->name('employee.edit.employment-details')->middleware(['auth', 'XSS']);
+    Route::get('employee/{id}/edit-emergency-contact', [EmployeeController::class, 'editEmergencyContact'])->name('employee.edit.emergency-contact')->middleware(['auth', 'XSS']);
 
     Route::post('employee/getdepartment', [EmployeeController::class, 'getDepartment'])->name('employee.getdepartment')->middleware(['auth', 'XSS']);
 

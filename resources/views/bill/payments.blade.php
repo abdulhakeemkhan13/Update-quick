@@ -20,6 +20,12 @@
 @endsection
 
 @section('content')
+    {{-- MY APPS Sidebar (Fixed Position) --}}
+    @include('partials.admin.allApps-subMenu-Sidebar', [
+        'activeSection' => 'expenses',
+        'activeItem' => 'bill_payments',
+    ])
+
     @include('expense.expense-tabs')
     <div class="dropdown mt-4 mb-2">
         <button class="btn btn-outline-primary dropdown-toggle d-flex align-items-center" type="button" id="filtersDropdown"

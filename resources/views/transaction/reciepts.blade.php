@@ -54,6 +54,12 @@
 @endsection --}}
 
 @section('content')
+    {{-- MY APPS Left Sidebar --}}
+    @include('partials.admin.allApps-subMenu-Sidebar', [
+        'activeSection' => 'accounting',
+        'activeItem' => 'receipts'
+    ])
+
     {{-- tabs --}}
     @include('transaction.transactions-tabs')
 

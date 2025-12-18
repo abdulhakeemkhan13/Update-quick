@@ -1184,7 +1184,7 @@
     margin-left: var(--qbo-sidebar-width) !important;
     margin-top: var(--qbo-header-height);
     /* Space for fixed header */
-    padding-top: 24px;
+    /* padding-top: 24px; */
     min-height: calc(100vh - var(--qbo-header-height));
 }
 

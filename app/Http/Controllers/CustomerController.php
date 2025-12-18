@@ -119,6 +119,17 @@ class CustomerController extends Controller
         return view('customer.dashboard', $data);
     }
 
+    /**
+     * Display the Customer Hub Overview page.
+     */
+    public function overview()
+    {
+        if (\Auth::user()->can('manage customer')) {
+            return view('customer.customer-overview');
+        }
+        return redirect()->back()->with('error', __('Permission denied.'));
+    }
+
     public function index()
     {
         if (\Auth::user()->can('manage customer')) {

@@ -6247,9 +6247,12 @@ class Utility extends Model
         // }
 
         $types = ChartOfAccountType::where('created_by', '=', $data['created_by'])->where('name', 'Assets')->first();
+        $account = null;
         if ($types) {
             $sub_type = ChartOfAccountSubType::where('type', $types->id)->where('name', 'Current Asset')->first();
-            $account = ChartOfAccount::where('type', $types->id)->where('sub_type', $sub_type->id)->where('name', 'Account Receivables')->first();
+            if ($sub_type) {
+                $account = ChartOfAccount::where('type', $types->id)->where('sub_type', $sub_type->id)->where('name', 'Account Receivables')->first();
+            }
         }
         if ($account) {
             $journalItem = new JournalItem();
@@ -6373,9 +6376,12 @@ class Utility extends Model
         // }
 
         $types = ChartOfAccountType::where('created_by', '=', $data['created_by'])->where('name', 'Assets')->first();
+        $account = null;
         if ($types) {
             $sub_type = ChartOfAccountSubType::where('type', $types->id)->where('name', 'Current Asset')->first();
-            $account = ChartOfAccount::where('type', $types->id)->where('sub_type', $sub_type->id)->where('name', 'Account Receivables')->first();
+            if ($sub_type) {
+                $account = ChartOfAccount::where('type', $types->id)->where('sub_type', $sub_type->id)->where('name', 'Account Receivables')->first();
+            }
         }
         if ($account) {
             $journalItem = new JournalItem();

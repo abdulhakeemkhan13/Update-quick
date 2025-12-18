@@ -71,6 +71,12 @@
     </div>
 @endsection
 @section('content')
+    {{-- MY APPS Left Sidebar --}}
+    @include('partials.admin.allApps-subMenu-Sidebar', [
+        'activeSection' => 'accounting',
+        'activeItem' => 'chart_of_accounts'
+    ])
+
     {{-- tabs --}}
     @include('transaction.transactions-tabs')
 

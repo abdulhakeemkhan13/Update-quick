@@ -69,6 +69,11 @@
 @endsection
 
 @section('content')
+{{-- MY APPS Sidebar (Fixed Position) --}}
+@include('partials.admin.allApps-subMenu-Sidebar', [
+    'activeSection' => 'expenses',
+    'activeItem' => 'vendors'
+])
 
 <!-- Style -->
      <style>
