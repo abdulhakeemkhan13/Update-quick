@@ -39,18 +39,20 @@ class EmployeeController extends Controller
      *
      * @return \Illuminate\Http\Response
      */
-    public function index()
+    public function index(\App\DataTables\QboEmployeesDataTable $dataTable)
     {
         if (\Auth::user()->can('manage employee')) {
-            if (Auth::user()->type == 'Employee') {
-                $employees = Employee::where('user_id', '=', Auth::user()->id)->with(['designation', 'branch', 'department'])->get();
-            } else if (Auth::user()->type == 'company') {
-                $employees = Employee::where('created_by', \Auth::user()->creatorId())->with(['designation', 'branch', 'department'])->get();
-            } else {
-                $employees = Employee::where('owned_by', Auth::user()->ownedId())->with(['designation', 'branch', 'department'])->get();
+            // Get status filter from request
+            $status = request()->get('status', 'Active');
+            $dataTable->setStatus($status);
+            
+            // For AJAX requests, return DataTable JSON
+            if (request()->ajax()) {
+                return $dataTable->render('employee.index');
             }
-
-            return view('employee.index', compact('employees'));
+            
+            // For regular requests, pass to view with DataTable
+            return $dataTable->render('employee.index');
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
@@ -89,6 +91,52 @@ class EmployeeController extends Controller
         \DB::beginTransaction();
         try {
         if (\Auth::user()->can('create employee')) {
+            
+            // Check if this is from the QBO modal (simplified form)
+            $isQboForm = $request->has('first_name') && !$request->has('name');
+            
+            if ($isQboForm) {
+                // QBO Modal - simplified validation
+                $validator = \Validator::make(
+                    $request->all(),
+                    [
+                        'first_name' => 'required|string|max:100',
+                        'last_name' => 'required|string|max:100',
+                        'email' => 'nullable|email|unique:employees,email',
+                    ]
+                );
+                
+                if ($validator->fails()) {
+                    $messages = $validator->getMessageBag();
+                    return response()->json(['message' => $messages->first()], 422);
+                }
+                
+                // Build full name from parts
+                $fullName = trim($request->first_name . ' ' . ($request->middle_initial ? $request->middle_initial . '. ' : '') . $request->last_name);
+                
+                // Create employee with QBO fields
+                $employee = Employee::create([
+                    'first_name' => $request->first_name,
+                    'middle_initial' => $request->middle_initial,
+                    'last_name' => $request->last_name,
+                    'name' => $fullName,
+                    'display_name' => $fullName,
+                    'email' => $request->email,
+                    'hire_date' => $request->hire_date,
+                    'status' => 'Active',
+                    'is_active' => 1,
+                    'employee_id' => $this->employeeNumber(),
+                    'created_by' => \Auth::user()->creatorId(),
+                    'owned_by' => \Auth::user()->ownedId(),
+                ]);
+                
+                Utility::makeActivityLog(\Auth::user()->id, 'Employee', $employee->id, 'Create Employee', $employee->name);
+                \DB::commit();
+                
+                return response()->json(['success' => true, 'message' => __('Employee successfully created.')]);
+            }
+            
+            // Original full form validation
             $validator = \Validator::make(
                 $request->all(),
                 [
@@ -361,6 +409,77 @@ class EmployeeController extends Controller
     public function update(Request $request, $id)
     {
         if (\Auth::user()->can('edit employee')) {
+            // Handle QBO profile modal form types
+            $formType = $request->input('form_type');
+            
+            if (in_array($formType, ['personal_info', 'employment_details', 'emergency_contact'])) {
+                try {
+                    $empId = Crypt::decrypt($id);
+                } catch (\Throwable $th) {
+                    return redirect()->back()->with('error', __('Employee Not Found.'));
+                }
+                
+                $employee = Employee::findOrFail($empId);
+                
+                if ($formType === 'personal_info') {
+                    // Update personal info fields
+                    $employee->update([
+                        'title' => $request->title,
+                        'first_name' => $request->first_name,
+                        'middle_initial' => $request->middle_initial,
+                        'last_name' => $request->last_name,
+                        'preferred_first_name' => $request->preferred_first_name,
+                        'display_name' => trim($request->first_name . ' ' . ($request->middle_initial ? $request->middle_initial . '. ' : '') . $request->last_name),
+                        'name' => trim($request->first_name . ' ' . ($request->middle_initial ? $request->middle_initial . '. ' : '') . $request->last_name),
+                        'email' => $request->email,
+                        'home_phone' => $request->home_phone,
+                        'home_phone_ext' => $request->home_phone_ext,
+                        'work_phone' => $request->work_phone,
+                        'work_phone_ext' => $request->work_phone_ext,
+                        'mobile_phone' => $request->mobile_phone,
+                        'phone' => $request->mobile_phone ?? $request->home_phone ?? $request->work_phone,
+                        'address' => $request->address,
+                        'city' => $request->city,
+                        'state' => $request->state,
+                        'zip' => $request->zip,
+                        'mailing_address_same' => $request->has('mailing_address_same') ? 1 : 0,
+                        'birth_date' => $request->birth_date,
+                        'dob' => $request->birth_date,
+                        'gender' => $request->gender,
+                        'ssn' => $request->ssn,
+                    ]);
+                } elseif ($formType === 'employment_details') {
+                    // Update employment details fields
+                    $employee->update([
+                        'status' => $request->status,
+                        'is_active' => $request->status === 'Active' ? 1 : 0,
+                        'hire_date' => $request->hire_date,
+                        'company_doj' => $request->hire_date,
+                        'manager_id' => $request->manager_id,
+                        'department_name' => $request->department_name,
+                        'job_title' => $request->job_title,
+                        'employee_id' => $request->employee_id,
+                        'name_on_checks' => $request->name_on_checks,
+                        'billing_rate' => $request->billing_rate,
+                        'billable_by_default' => $request->has('billable_by_default') ? 1 : 0,
+                    ]);
+                } elseif ($formType === 'emergency_contact') {
+                    // Update emergency contact fields
+                    $employee->update([
+                        'emergency_first_name' => $request->emergency_first_name,
+                        'emergency_last_name' => $request->emergency_last_name,
+                        'emergency_relationship' => $request->emergency_relationship,
+                        'emergency_phone' => $request->emergency_phone,
+                        'emergency_email' => $request->emergency_email,
+                    ]);
+                }
+                
+                Utility::makeActivityLog(\Auth::user()->id, 'Employee', $employee->id, 'Update Employee', $employee->name);
+                
+                return redirect()->back()->with('success', __('Employee updated successfully.'));
+            }
+            
+            // Original full form validation for legacy edit page
             $validator = \Validator::make(
                 $request->all(),
                 [
@@ -505,7 +624,78 @@ class EmployeeController extends Controller
             $employeesId = \Auth::user()->employeeIdFormat(!empty($employee) ? $employee->employee_id : '');
 
 
-            return view('employee.show', compact('employee', 'employeesId', 'branches', 'departments', 'designations', 'documents'));
+            return view('employee.employeeProfile', compact('employee', 'employeesId', 'branches', 'departments', 'designations', 'documents'));
+        } else {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+    }
+
+    /**
+     * Show the Edit Personal Info page
+     */
+    public function editPersonalInfo($id)
+    {
+        if (\Auth::user()->can('edit employee')) {
+            try {
+                $empId = Crypt::decrypt($id);
+            } catch (\Throwable $th) {
+                return redirect()->back()->with('error', __('Employee Not Found.'));
+            }
+
+            $employee = Employee::where('id', $empId)->first();
+            if (!$employee) {
+                return redirect()->back()->with('error', __('Employee Not Found.'));
+            }
+
+            return view('employee.edit_personal_info', compact('employee'));
+        } else {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+    }
+
+    /**
+     * Show the Edit Employment Details page
+     */
+    public function editEmploymentDetails($id)
+    {
+        if (\Auth::user()->can('edit employee')) {
+            try {
+                $empId = Crypt::decrypt($id);
+            } catch (\Throwable $th) {
+                return redirect()->back()->with('error', __('Employee Not Found.'));
+            }
+
+            $employee = Employee::where('id', $empId)->first();
+            if (!$employee) {
+                return redirect()->back()->with('error', __('Employee Not Found.'));
+            }
+
+            $departments = Department::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
+
+            return view('employee.edit_employment_details', compact('employee', 'departments'));
+        } else {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+    }
+
+    /**
+     * Show the Edit Emergency Contact page
+     */
+    public function editEmergencyContact($id)
+    {
+        if (\Auth::user()->can('edit employee')) {
+            try {
+                $empId = Crypt::decrypt($id);
+            } catch (\Throwable $th) {
+                return redirect()->back()->with('error', __('Employee Not Found.'));
+            }
+
+            $employee = Employee::where('id', $empId)->first();
+            if (!$employee) {
+                return redirect()->back()->with('error', __('Employee Not Found.'));
+            }
+
+            return view('employee.edit_emergency_contact', compact('employee'));
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
         }

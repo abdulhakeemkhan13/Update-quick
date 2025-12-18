@@ -29,6 +29,12 @@
 @push('script-page')
 @endpush
 @section('content')
+    {{-- MY APPS Sidebar --}}
+    @include('partials.admin.allApps-subMenu-Sidebar', [
+        'activeSection' => 'customers',
+        'activeItem' => 'estimates'
+    ])
+
     {{-- Include Sales Tabs --}}
     @include('transaction.sales-tabs')
 

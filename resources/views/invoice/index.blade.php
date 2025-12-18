@@ -301,6 +301,12 @@
 
 
 @section('content')
+{{-- MY APPS Sidebar (Fixed Position) --}}
+@include('partials.admin.allApps-subMenu-Sidebar', [
+    'activeSection' => 'sales',
+    'activeItem' => 'invoices'
+])
+
     {{-- Include Sales Tabs --}}
     @include('transaction.sales-tabs')
 

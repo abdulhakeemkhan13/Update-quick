@@ -18975,14 +18975,14 @@ body:not(.minimenu) .dash-sidebar .dash-submenu .dash-submenu .dash-submenu > .d
 
 .dash-container {
     position: relative;
-    top: 70px;
+    /* top: 70px; */
     margin-left: 255px;
     min-height: calc(100vh - 70px);
 }
 
 .dash-container .dash-content {
-    /* padding-left: 30px; */
-    padding-right: 30px;
+    padding-left: 20px;
+    padding-right: 20px;
     /* padding-top: 30px; */
     padding-top: 10px;
 }

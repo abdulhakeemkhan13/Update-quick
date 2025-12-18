@@ -21,6 +21,12 @@
 @endpush
 
 @section('content')
+    {{-- MY APPS Left Sidebar --}}
+    @include('partials.admin.allApps-subMenu-Sidebar', [
+        'activeSection' => 'accounting',
+        'activeItem' => 'recurring_transactions'
+    ])
+
     {{-- tabs --}}
     @include('transaction.transactions-tabs')
 

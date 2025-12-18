@@ -114,6 +114,12 @@
 @endsection
 
 @section('content')
+    {{-- MY APPS Sidebar --}}
+    @include('partials.admin.allApps-subMenu-Sidebar', [
+        'activeSection' => 'customers',
+        'activeItem' => 'customers'
+    ])
+
     {{-- Include Sales Tabs --}}
     @include('transaction.sales-tabs')
 

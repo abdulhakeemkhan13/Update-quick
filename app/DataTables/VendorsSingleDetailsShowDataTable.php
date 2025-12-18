@@ -243,6 +243,7 @@ class VendorsSingleDetailsShowDataTable extends DataTable
                     'url' => '#',
                     'edit_url' => null,
                 ]);
+
             }
         }
 
@@ -274,6 +275,7 @@ class VendorsSingleDetailsShowDataTable extends DataTable
         }
 
         // --------------------------------------------------------
+
         // 5) VENDOR CREDITS - OPTIMIZED totals
         // --------------------------------------------------------
         if (empty($transactionType) || $transactionType === 'vendor_credit') {
@@ -321,6 +323,7 @@ class VendorsSingleDetailsShowDataTable extends DataTable
             }
         }
 
+
         // --------------------------------------------------------
         // 5b) UNAPPLIED PAYMENTS
         // --------------------------------------------------------
@@ -361,11 +364,13 @@ class VendorsSingleDetailsShowDataTable extends DataTable
                 ->when($dateFrom, fn($q) => $q->whereDate('date', '>=', $dateFrom))
                 ->when($dateTo, fn($q) => $q->whereDate('date', '<=', $dateTo));
 
+
             if ($transactionType === 'expense') {
                 $transQuery->where('category', 'Bill');
             } elseif ($transactionType === 'check') {
                 $transQuery->where('type', 'check');
             }
+
 
             foreach ($transQuery->get() as $t) {
                 $type = ucfirst($t->type ?? 'Expense');
@@ -383,6 +388,7 @@ class VendorsSingleDetailsShowDataTable extends DataTable
                     'edit_url' => null,
                 ]);
             }
+
         }
 
         // --------------------------------------------------------
@@ -411,12 +417,56 @@ class VendorsSingleDetailsShowDataTable extends DataTable
             }
         }
 
+
+    // --------------------------------------------------------
+    // 6. GENERAL TRANSACTIONS (Checks/Others)
+    // --------------------------------------------------------
+    if (empty($transactionType) || $transactionType == 'expense' || $transactionType == 'check') {
+        $transQuery = Transaction::where('user_id', $vendorId)
+            ->where('user_type', 'Vender')
+            ->where('created_by', $creatorId);
+
+        if ($transactionType == 'expense') {
+            $transQuery->where('category', 'Bill');
+        } elseif ($transactionType == 'check') {
+            $transQuery->where('type', 'check');
+
+        }
+
+        // --------------------------------------------------------
+        // 7) RECENTLY PAID
+        // --------------------------------------------------------
+        if ($transactionType === 'recently_paid') {
+            $recentBills = Bill::with('category')
+                ->where('vender_id', $vendorId)
+                ->where('created_by', $creatorId)
+                ->where('status', 4) // Paid
+                ->where('updated_at', '>=', now()->subDays(30))
+                ->get();
+
+            foreach ($recentBills as $bill) {
+                $transactions->push([
+                    'id' => 'bill_' . $bill->id,
+                    'date' => $bill->bill_date,
+                    'type' => 'Bill',
+                    'number' => '#' . Auth::user()->billNumberFormat($bill->bill_id),
+                    'payee' => $vendorName,
+                    'category' => optional($bill->category)->name ?? '-',
+                    'total' => $bill->getTotal(),
+                    'url' => route('bill.show', Crypt::encrypt($bill->id)),
+                    'edit_url' => route('bill.edit', Crypt::encrypt($bill->id)),
+                ]);
+            }
+        }
+
+
         return $transactions->sortByDesc('date')->values();
     }
 
     public function html()
     {
         return $this->builder()
+
             ->setTableId('vendor-transactions-table')
             ->columns($this->getColumns())
             ->minifiedAjax() // ✅ IMPORTANT: uses current URL (/vender/{encrypted})
@@ -429,6 +479,7 @@ class VendorsSingleDetailsShowDataTable extends DataTable
                 'autoWidth' => false,
                 "dom" => "<'row'<'col-sm-12'tr>>",
             ]);
+
     }
 
     protected function getColumns()

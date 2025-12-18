@@ -2831,7 +2831,7 @@ public function index(Request $request)
             }
         } catch (\Exception $e) {
             \DB::rollback();
-            return redirect()->back()->with('error', $e);
+            return redirect()->back()->with('error', $e->getMessage());
         }
     }
 

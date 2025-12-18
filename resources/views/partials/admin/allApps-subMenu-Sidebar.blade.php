@@ -35,7 +35,7 @@
                 ['key' => 'expense_transactions', 'label' => 'Expense transactions', 'route' => 'expense.index'],
                 ['key' => 'vendors', 'label' => 'Vendors', 'route' => 'vender.index'],
                 ['key' => 'bills', 'label' => 'Bills', 'route' => 'bill.index'],
-                ['key' => 'bill_payments', 'label' => 'Bill payments', 'route' => ''],
+                ['key' => 'bill_payments', 'label' => 'Bill payments', 'route' => 'bill.payments'],
                 ['key' => 'mileage', 'label' => 'Mileage', 'route' => ''],
                 ['key' => 'contractors', 'label' => 'Contractors', 'route' => ''],
             ]
@@ -44,7 +44,7 @@
             'label' => 'Sales & Get Paid',
             'icon' => 'https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/sales-payments/1/0/0/sales-payments.svg',
             'items' => [
-                ['key' => 'overview', 'label' => 'Overview', 'route' => ''],
+                ['key' => 'overview', 'label' => 'Overview', 'route' => 'invoice.overview'],
                 ['key' => 'sales_transactions', 'label' => 'Sales transactions', 'route' => ''],
                 ['key' => 'invoices', 'label' => 'Invoices', 'route' => 'invoice.index'],
                 ['key' => 'recurring_payments', 'label' => 'Recurring payments', 'route' => ''],
@@ -56,7 +56,7 @@
             'label' => 'Customer Hub',
             'icon' => 'https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/customers/1/0/0/customers.svg',
             'items' => [
-                ['key' => 'customers_overview', 'label' => 'Overview', 'route' => ''],
+                ['key' => 'overview', 'label' => 'Overview', 'route' => 'customer.overview'],
                 ['key' => 'customers', 'label' => 'Customers', 'route' => 'customer.index'],
                 ['key' => 'estimates', 'label' => 'Estimates', 'route' => 'proposal.index'],
             ]
