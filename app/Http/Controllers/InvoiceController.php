@@ -524,7 +524,7 @@ class InvoiceController extends Controller
 
     public function store(Request $request)
     {
-        dd($request->all());
+        // dd($request->all());
         \DB::beginTransaction();
         try {
             if (\Auth::user()->can('create invoice')) {

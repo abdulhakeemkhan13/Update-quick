@@ -238,7 +238,8 @@
             text-align: right;
         }
 
-        .total-row {
+        .total-row,
+        .summary-total {
             background: #f8f9fa !important;
             font-weight: 700;
         }
@@ -705,6 +706,16 @@
                             <option value="custom">Custom</option>
                         </select>
                     </div>
+                    <div class="filter-item">
+                        <label class="filter-label">From</label>
+                        <input type="date" class="form-control" id="header-start-date"
+                            value="{{ $filter['startDateRange'] ?? '' }}">
+                    </div>
+                    <div class="filter-item">
+                        <label class="filter-label">To</label>
+                        <input type="date" class="form-control" id="header-end-date"
+                            value="{{ $filter['endDateRange'] ?? '' }}">
+                    </div>
                     <button class="btn btn-qb-option mt-4" style="border-left: 2px solid #d1d5db" id="view-options-btn"><i
                             class="fa fa-eye"></i> View options</button>
                 </div>
@@ -740,23 +751,7 @@
             </div>
 
             <!-- TOTAL row -->
-            <div style="background:#fff;">
-                <table class="table sales-by-product-service-table" style="margin-bottom:0;border-top:2px solid #dee2e6;">
-                    <tbody>
-                        <tr class="total-row">
-                            <td style="padding:12px 16px;border-bottom:none;">TOTAL</td>
-                            <td class="text-right" style="border-bottom:none;" id="total-quantity-display">0</td>
-                            <td class="text-right" style="border-bottom:none;" id="total-amount-display">$ 0.00</td>
-                            <td class="text-right" style="border-bottom:none;" id="total-percent-display">100.0%</td>
-                            <td class="text-right" style="border-bottom:none;" id="total-avg-price-display">$ 0.00</td>
-                            <td class="text-right" style="border-bottom:none;" id="total-cogs-display">$ 0.00</td>
-                            <td class="text-right" style="border-bottom:none;" id="total-avg-cogs-display">$ 0.00</td>
-                            <td class="text-right" style="border-bottom:none;" id="total-gm-display">$ 0.00</td>
-                            <td class="text-right" style="border-bottom:none;" id="total-gm-percent-display">0.0%</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+
 
             <div class="report-footer"></div>
         </div>
@@ -1082,7 +1077,14 @@
                 return neg ? -Math.abs(n) : n;
             }
 
+            const CURRENCY_SYMBOL = "{{ \Auth::user()->currencySymbol() }}";
+
             function formatAmount(raw, isMoney = true) {
+                // Pass through non-numeric placeholders
+                if (typeof raw === 'string' && raw.trim() === '-') {
+                    return { html: '-', classes: '' };
+                }
+
                 const o = window.reportOptions || {};
                 let val = parseNum(raw);
                 if (o.divideBy1000) val /= 1000;
@@ -1105,19 +1107,20 @@
                 }
                 let html = core;
                 if (isMoney) {
-                    if (isNeg && negFmt === '(100)') html = `($ ${absText})`;
-                    else if (isNeg && negFmt === '100-') html = `$ ${absText}-`;
-                    else if (isNeg && negFmt === '-100') html = `-$ ${absText}`;
-                    else html = `$ ${absText}`;
+                    if (isNeg && negFmt === '(100)') html = `(${CURRENCY_SYMBOL} ${absText})`;
+                    else if (isNeg && negFmt === '100-') html = `${CURRENCY_SYMBOL} ${absText}-`;
+                    else if (isNeg && negFmt === '-100') html = `-${CURRENCY_SYMBOL} ${absText}`;
+                    else html = `${CURRENCY_SYMBOL} ${absText}`;
                 }
                 return {
                     html,
                     classes: (isNeg && o.showInRed) ? 'negative-amount' : ''
                 };
+
             }
 
             function nf2(x) {
-                return '$ ' + (Number(x || 0)).toLocaleString('en-US', {
+                return CURRENCY_SYMBOL + ' ' + (Number(x || 0)).toLocaleString('en-US', {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2
                 });
@@ -1413,12 +1416,15 @@
                 }
                 $('#start-date').val(s);
                 $('#end-date').val(e);
+                $('#header-start-date').val(s);
+                $('#header-end-date').val(e);
                 updateHeaderDate();
                 reloadWithParams();
             }
             $('#report-period').on('change', function() {
                 if ($(this).val() === 'custom') {
-                    openOvr('#filter-overlay');
+                    // removing overlay open, just focus start date
+                    $('#header-start-date').focus();
                 } else {
                     setPeriod($(this).val());
                 }
@@ -1448,6 +1454,24 @@
                 updateHeaderDate();
                 reloadWithParams();
             });
+
+            // Sync Header filters
+            $('#header-start-date').on('change', function() {
+                $('#start-date').val($(this).val());
+                $('#report-period').val('custom'); // switch to custom if manually changed
+                updateHeaderDate();
+                reloadWithParams();
+            });
+            $('#header-end-date').on('change', function() {
+                $('#end-date').val($(this).val());
+                $('#report-period').val('custom');
+                updateHeaderDate();
+                reloadWithParams();
+            });
+
+            // Sync from Drawer to Header
+            $('#start-date').on('change', function() { $('#header-start-date').val($(this).val()); });
+            $('#end-date').on('change', function() { $('#header-end-date').val($(this).val()); });
 
             /* ========= Columns (drag + show/hide) ========= */
             if (document.getElementById('qb-columns-list')) {

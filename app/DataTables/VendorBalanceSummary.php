@@ -65,74 +65,141 @@ class VendorBalanceSummary extends DataTable
             ->rawColumns(['name', 'total']);
     }
 
-    public function query(Bill $model)
-    {
-        ini_set('memory_limit', '512M');
-        set_time_limit(600);
-        $userId = \Auth::user()->creatorId();
-        $end = request()->get('end_date') ?? request()->get('endDate') ?? Carbon::now()->endOfDay()->format('Y-m-d');
-        // 1. Bills - Open Balance 
-        // FIX: We added "AND date <= '$end'" to payments and debit notes subqueries
-        // FIX: Use COALESCE with bills.total for Check/Expense types
-        $bills = DB::table('bills')
-            ->select(
-                'venders.name as vendor_name',
-                DB::raw('(
-                    COALESCE(
-                        NULLIF(
-                            (SELECT IFNULL(SUM(bp.price * bp.quantity - IFNULL(bp.discount, 0)), 0) FROM bill_products bp WHERE bp.bill_id = bills.id)
-                            + (SELECT IFNULL(SUM(ba.price), 0) FROM bill_accounts ba WHERE ba.ref_id = bills.id),
-                            0
-                        ),
-                        bills.total
-                    ) - (
-                        SELECT IFNULL(SUM(amount), 0) FROM bill_payments 
-                        WHERE bill_payments.bill_id = bills.id 
-                        AND bill_payments.date <= "' . $end . '"  
-                    ) - (
-                        SELECT IFNULL(SUM(debit_notes.amount), 0) FROM debit_notes 
-                        WHERE debit_notes.bill = bills.id 
-                        AND debit_notes.date <= "' . $end . '"
-                    )
-                ) as open_balance')
-            )
-            ->join('venders', 'venders.id', '=', 'bills.vender_id')
-            // ->where('venders.is_active', '1') // Temporarily disabled for debugging
-            ->where('bills.created_by', $userId)
-            ->whereRaw('LOWER(bills.type) IN (?, ?, ?)', ['bill', 'check', 'expense'])
-            ->where('bills.bill_date', '<=', $end); // Bill must exist before this date
+public function query(Bill $model)
+{
+    ini_set('memory_limit', '512M');
+    set_time_limit(600);
 
-        // 2. Vendor Credits
-        // FIX: Ensure we only count credits created before the end date
-        $vendorCredits = DB::table('vendor_credits')
-            ->select(
-                'venders.name as vendor_name',
-                DB::raw('-1 * (
-                    (SELECT IFNULL(SUM(vcp.price * vcp.quantity), 0) FROM vendor_credit_products vcp WHERE vcp.vendor_credit_id = vendor_credits.id)
-                    + (SELECT IFNULL(SUM(vca.price), 0) FROM vendor_credit_accounts vca WHERE vca.vendor_credit_id = vendor_credits.id)
-                ) as open_balance')
-            )
-            ->join('venders', 'venders.id', '=', 'vendor_credits.vender_id')
-            ->where('venders.is_active', '1')
-            ->where('vendor_credits.created_by', $userId)
-            ->where('vendor_credits.date', '<=', $end);
+    $userId = \Auth::user()->creatorId();
+    $end = request()->get('end_date')
+        ?? request()->get('endDate')
+        ?? Carbon::now()->endOfDay()->format('Y-m-d');
 
-        // 3. Unapplied Payments - Negative balance (money paid but not applied to bills)
-        $unappliedPayments = DB::table('unapplied_payments')
-            ->select(
-                'venders.name as vendor_name',
-                DB::raw('-1 * unapplied_payments.unapplied_amount as open_balance')
-            )
-            ->join('venders', 'venders.id', '=', 'unapplied_payments.vendor_id')
-            ->where('venders.is_active', '1')
-            ->where('unapplied_payments.created_by', $userId)
-            // ->where('unapplied_payments.txn_date', '<=', $end)
-            ->where('unapplied_payments.unapplied_amount', '>', 0);
+    /* -------------------------------------------------
+     | Aggregates
+     |--------------------------------------------------*/
 
-        $combined = $bills->unionAll($vendorCredits)->unionAll($unappliedPayments);
-        return DB::query()->fromSub($combined, 'balances')
-            ->orderBy('vendor_name', 'asc');
-    }
+    // Bill products + accounts total
+    $billAmounts = DB::table('bills as b')
+        ->leftJoin('bill_products as bp', 'bp.bill_id', '=', 'b.id')
+        ->leftJoin('bill_accounts as ba', 'ba.ref_id', '=', 'b.id')
+        ->select(
+            'b.id',
+            DB::raw('
+                SUM(
+                    IFNULL(bp.price * bp.quantity - IFNULL(bp.discount,0),0)
+                ) + SUM(IFNULL(ba.price,0)) as bill_amount
+            ')
+        )
+        ->groupBy('b.id');
+
+    // Payments till end date
+    $billPayments = DB::table('bill_payments')
+        ->select(
+            'bill_id',
+            DB::raw('SUM(amount) as paid_amount')
+        )
+        ->where('date', '<=', $end)
+        ->groupBy('bill_id');
+
+    // Debit notes till end date
+    $debitNotes = DB::table('debit_notes')
+        ->select(
+            'bill',
+            DB::raw('SUM(amount) as debit_amount')
+        )
+        ->where('date', '<=', $end)
+        ->groupBy('bill');
+
+    /* -------------------------------------------------
+     | 1. Bills / Checks / Expenses
+     |--------------------------------------------------*/
+    $bills = DB::table('bills as b')
+        ->join('venders as v', 'v.id', '=', 'b.vender_id')
+        ->leftJoinSub($billAmounts, 'ba', 'ba.id', '=', 'b.id')
+        ->leftJoinSub($billPayments, 'bp', 'bp.bill_id', '=', 'b.id')
+        ->leftJoinSub($debitNotes, 'dn', 'dn.bill', '=', 'b.id')
+        ->select(
+            'v.name as vendor_name',
+            DB::raw('
+                (
+                    COALESCE(NULLIF(ba.bill_amount,0), b.total)
+                    - IFNULL(bp.paid_amount,0)
+                    - IFNULL(dn.debit_amount,0)
+                ) as open_balance
+            ')
+        )
+        ->where('b.created_by', $userId)
+        ->whereIn(DB::raw('LOWER(b.type)'), ['bill', 'check', 'expense'])
+        ->where('b.bill_date', '<=', $end);
+
+    /* -------------------------------------------------
+     | 2. Vendor Credits
+     |--------------------------------------------------*/
+    $vendorCredits = DB::table('vendor_credits as vc')
+        ->join('venders as v', 'v.id', '=', 'vc.vender_id')
+        ->leftJoin('vendor_credit_products as vcp', 'vcp.vendor_credit_id', '=', 'vc.id')
+        ->leftJoin('vendor_credit_accounts as vca', 'vca.vendor_credit_id', '=', 'vc.id')
+        ->select(
+            'v.name as vendor_name',
+            DB::raw('
+                -1 * (
+                    SUM(IFNULL(vcp.price * vcp.quantity,0))
+                    + SUM(IFNULL(vca.price,0))
+                ) as open_balance
+            ')
+        )
+        ->where('vc.created_by', $userId)
+        ->where('vc.date', '<=', $end)
+        ->where('v.is_active', 1)
+        ->groupBy('vc.id', 'v.name');
+
+    /* -------------------------------------------------
+     | 3. Unapplied Payments
+     |--------------------------------------------------*/
+    $unappliedPayments = DB::table('unapplied_payments as up')
+        ->join('venders as v', 'v.id', '=', 'up.vendor_id')
+        ->select(
+            'v.name as vendor_name',
+            DB::raw('-1 * up.unapplied_amount as open_balance')
+        )
+        ->where('up.created_by', $userId)
+        ->where('up.unapplied_amount', '>', 0)
+        ->where('v.is_active', 1);
+
+    /* -------------------------------------------------
+     | 4. Vendor Credit Transactions (from transactions table)
+     |    Grouped by payment_id where category = 'Vendor Credit'
+     |--------------------------------------------------*/
+    $vendorCreditTransactions = DB::table('transactions as t')
+        ->join('venders as v', function ($join) {
+            $join->on('v.id', '=', 't.user_id')
+                 ->where('t.user_type', '=', 'Vender');
+        })
+        ->select(
+            'v.name as vendor_name',
+            DB::raw('-1 * SUM(t.amount) as open_balance')
+        )
+        ->where('t.created_by', $userId)
+        ->where('t.category', 'Vendor Credit')
+        ->where('t.date', '<=', $end)
+        ->where('v.is_active', 1)
+        ->groupBy('t.payment_id', 'v.name');
+
+    /* -------------------------------------------------
+     | Combine & Filter
+     |--------------------------------------------------*/
+    $combined = $bills
+        ->unionAll($vendorCredits)
+        ->unionAll($unappliedPayments)
+        ->unionAll($vendorCreditTransactions);
+
+    return DB::query()
+        ->fromSub($combined, 'balances')
+        ->whereRaw('ROUND(open_balance,2) <> 0')
+        ->orderBy('vendor_name', 'asc');
+}
+
 
     public function html()
     {

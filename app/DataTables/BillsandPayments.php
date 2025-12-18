@@ -41,7 +41,7 @@ class BillsandPayments extends DataTable
             // QuickBooks-style sorting: First sort by bill ID (ids), then by transaction type
             // This ensures: Bills appear first, then their related payments
             $sortedRows = $rows->sortBy([
-                ['ids', 'asc'],  // Group by bill ID
+                ['ids', 'desc'],  // Group by bill ID
                 ['transaction_type', 'asc'],  // Bill comes before "Bill Payment" alphabetically
                 ['transaction_date', 'asc'],  // Then by date
             ]);

@@ -687,7 +687,7 @@ class VoucherController extends Controller
             return $dataTable->ajax();
         }
 
-        return $dataTable->render('sync.customerbalance.index', [ // ✅ keep same view, or create vendorbalance.index
+        return $dataTable->render('sync.agingdetails.index', [
             'pageTitle' => $this->pageTitle,
             'startDate' => $request->get('start_date', date('Y-01-01')),
             'endDate' => $request->get('end_date', date('Y-m-d', strtotime('+1 day')))
