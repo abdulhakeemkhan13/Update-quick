@@ -139,269 +139,266 @@ class VenderController extends Controller
     }
 
 
-public function store(Request $request)
-{
-    \DB::beginTransaction();
-    try {
-        if (!\Auth::user()->can('create vender')) {
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json(['message' => __('Permission denied.')], 403);
+    public function store(Request $request)
+    {
+        \DB::beginTransaction();
+        try {
+            if (!\Auth::user()->can('create vender')) {
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json(['message' => __('Permission denied.')], 403);
+                }
+                return redirect()->back()->with('error', __('Permission denied.'));
             }
-            return redirect()->back()->with('error', __('Permission denied.'));
-        }
 
-        $rules = [
-            'name' => 'required',
-            'contact' => 'required|regex:/^([0-9\s\-\+\(\)]*)$/',
-            'email' => [
-                'required',
-                Rule::unique('venders')->where(function ($query) {
-                    return $query->where('created_by', \Auth::user()->id);
-                }),
-            ],
-        ];
+            $rules = [
+                'name' => 'required',
+                'contact' => 'required|regex:/^([0-9\s\-\+\(\)]*)$/',
+                'email' => [
+                    'required',
+                    Rule::unique('venders')->where(function ($query) {
+                        return $query->where('created_by', \Auth::user()->id);
+                    }),
+                ],
+            ];
 
-        $validator = \Validator::make($request->all(), $rules);
+            $validator = \Validator::make($request->all(), $rules);
 
-        if ($validator->fails()) {
-            $messages = $validator->getMessageBag();
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json([
-                    'message' => 'Validation error',
-                    'errors'  => $validator->errors(),
-                ], 422);
+            if ($validator->fails()) {
+                $messages = $validator->getMessageBag();
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json([
+                        'message' => 'Validation error',
+                        'errors'  => $validator->errors(),
+                    ], 422);
+                }
+                return redirect()->route('vender.index')->with('error', $messages->first());
             }
-            return redirect()->route('vender.index')->with('error', $messages->first());
-        }
 
-        $objVendor        = \Auth::user();
-        $creator          = User::find($objVendor->creatorId());
-        $total_vendor     = $objVendor->countVenders();
-        $plan             = Plan::find($creator->plan);
-        $default_language = DB::table('settings')->select('value')->where('name', 'default_language')->first();
+            $objVendor        = \Auth::user();
+            $creator          = User::find($objVendor->creatorId());
+            $total_vendor     = $objVendor->countVenders();
+            $plan             = Plan::find($creator->plan);
+            $default_language = DB::table('settings')->select('value')->where('name', 'default_language')->first();
 
-        if ($total_vendor < $plan->max_venders || $plan->max_venders == -1) {
-            $vender                   = new Vender();
-            $vender->vender_id        = $this->venderNumber();
-            $fullName = implode(' ', array_filter([$request->first_name, $request->middle_name, $request->last_name]));
-            $vender->name             = !empty($fullName) ? $fullName : $request->name;
-            $vender->contact          = $request->contact;
-            $vender->email            = $request->email;
-            $vender->tax_number       = $request->tax_number;
-            $vender->created_by       = \Auth::user()->creatorId();
-            $vender->owned_by         = \Auth::user()->ownedId();
-            $vender->billing_name     = $request->billing_name;
-            $vender->billing_country  = $request->billing_country;
-            $vender->billing_state    = $request->billing_state;
-            $vender->billing_city     = $request->billing_city;
-            $vender->billing_phone    = $request->billing_phone;
-            $vender->billing_zip      = $request->billing_zip;
-            $vender->billing_address  = $request->billing_address;
-            $vender->shipping_name    = $request->shipping_name;
-            $vender->shipping_country = $request->shipping_country;
-            $vender->shipping_state   = $request->shipping_state;
-            $vender->shipping_city    = $request->shipping_city;
-            $vender->shipping_phone   = $request->shipping_phone;
-            $vender->shipping_zip     = $request->shipping_zip;
-            $vender->shipping_address = $request->shipping_address;
-            $vender->company_name     = $request->company_name;
-            $vender->title            = $request->title;
-            $vender->first_name       = $request->first_name;
-            $vender->middle_name      = $request->middle_name;
-            $vender->last_name        = $request->last_name;
-            $vender->suffix           = $request->suffix;
-            $vender->mobile           = $request->mobile;
-            $vender->fax              = $request->fax;
-            $vender->other            = $request->other;
-            $vender->website          = $request->website;
-            $vender->print_on_check_name = $request->print_on_check_name;
-            $vender->billing_address_2 = $request->billing_address_2;
-            $vender->notes            = $request->notes;
-            $vender->bank_account_number = $request->bank_account_number;
-            $vender->routing_number   = $request->routing_number;
-            $vender->business_id_no   = $request->business_id_no;
-            $vender->track_payments_1099 = $request->has('track_payments_1099') ? 1 : 0;
-            $vender->billing_rate     = $request->billing_rate;
-            $vender->terms            = $request->terms;
-            $vender->account_no       = $request->account_no;
-            $vender->default_expense_category = $request->default_expense_category;
-            $vender->opening_balance  = $request->opening_balance;
-            $vender->opening_balance_as_of = $request->opening_balance_as_of;
-            $vender->lang             = !empty($default_language) ? $default_language->value : '';
-            $vender->save();
+            if ($total_vendor < $plan->max_venders || $plan->max_venders == -1) {
+                $vender                   = new Vender();
+                $vender->vender_id        = $this->venderNumber();
+                $fullName = implode(' ', array_filter([$request->first_name, $request->middle_name, $request->last_name]));
+                $vender->name             = !empty($fullName) ? $fullName : $request->name;
+                $vender->contact          = $request->contact;
+                $vender->email            = $request->email;
+                $vender->tax_number       = $request->tax_number;
+                $vender->created_by       = \Auth::user()->creatorId();
+                $vender->owned_by         = \Auth::user()->ownedId();
+                $vender->billing_name     = $request->billing_name;
+                $vender->billing_country  = $request->billing_country;
+                $vender->billing_state    = $request->billing_state;
+                $vender->billing_city     = $request->billing_city;
+                $vender->billing_phone    = $request->billing_phone;
+                $vender->billing_zip      = $request->billing_zip;
+                $vender->billing_address  = $request->billing_address;
+                $vender->shipping_name    = $request->shipping_name;
+                $vender->shipping_country = $request->shipping_country;
+                $vender->shipping_state   = $request->shipping_state;
+                $vender->shipping_city    = $request->shipping_city;
+                $vender->shipping_phone   = $request->shipping_phone;
+                $vender->shipping_zip     = $request->shipping_zip;
+                $vender->shipping_address = $request->shipping_address;
+                $vender->company_name     = $request->company_name;
+                $vender->title            = $request->title;
+                $vender->first_name       = $request->first_name;
+                $vender->middle_name      = $request->middle_name;
+                $vender->last_name        = $request->last_name;
+                $vender->suffix           = $request->suffix;
+                $vender->mobile           = $request->mobile;
+                $vender->fax              = $request->fax;
+                $vender->other            = $request->other;
+                $vender->website          = $request->website;
+                $vender->print_on_check_name = $request->print_on_check_name;
+                $vender->billing_address_2 = $request->billing_address_2;
+                $vender->notes            = $request->notes;
+                $vender->bank_account_number = $request->bank_account_number;
+                $vender->routing_number   = $request->routing_number;
+                $vender->business_id_no   = $request->business_id_no;
+                $vender->track_payments_1099 = $request->has('track_payments_1099') ? 1 : 0;
+                $vender->billing_rate     = $request->billing_rate;
+                $vender->terms            = $request->terms;
+                $vender->account_no       = $request->account_no;
+                $vender->default_expense_category = $request->default_expense_category;
+                $vender->opening_balance  = $request->opening_balance;
+                $vender->opening_balance_as_of = $request->opening_balance_as_of;
+                $vender->lang             = !empty($default_language) ? $default_language->value : '';
+                $vender->save();
 
-            CustomField::saveData($vender, $request->customField);
-        } else {
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json(['message' => __('Your user limit is over, Please upgrade plan.')], 402);
+                CustomField::saveData($vender, $request->customField);
+            } else {
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json(['message' => __('Your user limit is over, Please upgrade plan.')], 402);
+                }
+                return redirect()->back()->with('error', __('Your user limit is over, Please upgrade plan.'));
             }
-            return redirect()->back()->with('error', __('Your user limit is over, Please upgrade plan.'));
-        }
 
-        $role_r = Role::where('name', '=', 'vender')->firstOrFail();
-        $vender->assignRole($role_r); //Assigning role to user
-        $vender->type = 'Vender';
+            $role_r = Role::where('name', '=', 'vender')->firstOrFail();
+            $vender->assignRole($role_r); //Assigning role to user
+            $vender->type = 'Vender';
 
-        // // WorkFlow get which is active
-        $us_mail = 'false';
-        $us_notify = 'false';
-        $us_approve = 'false';
-        $usr_Notification = [];
-        $workflow = WorkFlow::where('created_by', '=', \Auth::user()->creatorId())->where('module', '=', 'accounts')->where('status', 1)->first();
-        if ($workflow) {
-            $workflowaction = WorkFlowAction::where('workflow_id', $workflow->id)->where('status', 1)->get();
-            foreach ($workflowaction as $action) {
-                $useraction = json_decode($action->assigned_users);
-                if (strtolower('add-supplier') == $action->node_id) {
-                    if (@$useraction != '') {
-                        $useraction = json_decode($useraction);
-                        foreach ($useraction as $anyaction) {
-                            if ($anyaction->type == 'user') {
-                                $usr_Notification[] = $anyaction->id;
-                            }
-                        }
-                    }
-                    $raw_json = trim($action->applied_conditions, '"');
-                    $cleaned_json = stripslashes($raw_json);
-                    $applied_conditions = json_decode($cleaned_json, true);
-
-                    if (isset($applied_conditions['conditions']) && is_array($applied_conditions['conditions'])) {
-                        $arr = [
-                            'name' => 'name',
-                            'email' => 'email',
-                            'contact' => 'contact',
-                        ];
-                        $relate = [];
-                        foreach ($applied_conditions['conditions'] as $conditionGroup) {
-                            if (in_array($conditionGroup['action'], ['send_email', 'send_notification', 'send_approval'])) {
-                                $query = Vender::where('id', $vender->id);
-                                foreach ($conditionGroup['conditions'] as $condition) {
-                                    $field = $condition['field'];
-                                    $operator = $condition['operator'];
-                                    $value = $condition['value'];
-                                    if (isset($arr[$field], $relate[$arr[$field]])) {
-                                        $relatedField = strpos($arr[$field], '_') !== false ? explode('_', $arr[$field], 2)[1] : $arr[$field];
-                                        $relation = $relate[$arr[$field]];
-                                        $query->whereHas($relation, function ($relatedQuery) use ($relatedField, $operator, $value) {
-                                            $relatedQuery->where($relatedField, $operator, $value);
-                                        });
-                                    } else {
-                                        $query->where($arr[$field], $operator, $value);
-                                    }
-                                }
-                                $result = $query->first();
-
-                                if (!empty($result)) {
-                                    if ($conditionGroup['action'] === 'send_email') {
-                                        $us_mail = 'true';
-                                    } elseif ($conditionGroup['action'] === 'send_notification') {
-                                        $us_notify = 'true';
-                                    } elseif ($conditionGroup['action'] === 'send_approval') {
-                                        $us_approve = 'true';
-                                    }
+            // // WorkFlow get which is active
+            $us_mail = 'false';
+            $us_notify = 'false';
+            $us_approve = 'false';
+            $usr_Notification = [];
+            $workflow = WorkFlow::where('created_by', '=', \Auth::user()->creatorId())->where('module', '=', 'accounts')->where('status', 1)->first();
+            if ($workflow) {
+                $workflowaction = WorkFlowAction::where('workflow_id', $workflow->id)->where('status', 1)->get();
+                foreach ($workflowaction as $action) {
+                    $useraction = json_decode($action->assigned_users);
+                    if (strtolower('add-supplier') == $action->node_id) {
+                        if (@$useraction != '') {
+                            $useraction = json_decode($useraction);
+                            foreach ($useraction as $anyaction) {
+                                if ($anyaction->type == 'user') {
+                                    $usr_Notification[] = $anyaction->id;
                                 }
                             }
                         }
-                    }
-                    if ($us_mail == 'true') {
-                        // email send
-                    }
-                    if ($us_notify == 'true' || $us_approve == 'true') {
-                        if (count($usr_Notification) > 0) {
-                            $usr_Notification[] = Auth::user()->creatorId();
-                            foreach ($usr_Notification as $usrLead) {
-                                $data = [
-                                    "updated_by" => Auth::user()->id,
-                                    "data_id" => $vender->id,
-                                    "name" => @$vender->name,
-                                ];
-                                if ($us_notify == 'true') {
-                                    Utility::makeNotification($usrLead, 'create_supplier', $data, $vender->id, 'create Supplier');
-                                } elseif ($us_approve == 'true') {
-                                    Utility::makeNotification($usrLead, 'approve_supplier', $data, $vender->id, 'For Approval Credit Note');
+                        $raw_json = trim($action->applied_conditions, '"');
+                        $cleaned_json = stripslashes($raw_json);
+                        $applied_conditions = json_decode($cleaned_json, true);
+
+                        if (isset($applied_conditions['conditions']) && is_array($applied_conditions['conditions'])) {
+                            $arr = [
+                                'name' => 'name',
+                                'email' => 'email',
+                                'contact' => 'contact',
+                            ];
+                            $relate = [];
+                            foreach ($applied_conditions['conditions'] as $conditionGroup) {
+                                if (in_array($conditionGroup['action'], ['send_email', 'send_notification', 'send_approval'])) {
+                                    $query = Vender::where('id', $vender->id);
+                                    foreach ($conditionGroup['conditions'] as $condition) {
+                                        $field = $condition['field'];
+                                        $operator = $condition['operator'];
+                                        $value = $condition['value'];
+                                        if (isset($arr[$field], $relate[$arr[$field]])) {
+                                            $relatedField = strpos($arr[$field], '_') !== false ? explode('_', $arr[$field], 2)[1] : $arr[$field];
+                                            $relation = $relate[$arr[$field]];
+                                            $query->whereHas($relation, function ($relatedQuery) use ($relatedField, $operator, $value) {
+                                                $relatedQuery->where($relatedField, $operator, $value);
+                                            });
+                                        } else {
+                                            $query->where($arr[$field], $operator, $value);
+                                        }
+                                    }
+                                    $result = $query->first();
+
+                                    if (!empty($result)) {
+                                        if ($conditionGroup['action'] === 'send_email') {
+                                            $us_mail = 'true';
+                                        } elseif ($conditionGroup['action'] === 'send_notification') {
+                                            $us_notify = 'true';
+                                        } elseif ($conditionGroup['action'] === 'send_approval') {
+                                            $us_approve = 'true';
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if ($us_mail == 'true') {
+                            // email send
+                        }
+                        if ($us_notify == 'true' || $us_approve == 'true') {
+                            if (count($usr_Notification) > 0) {
+                                $usr_Notification[] = Auth::user()->creatorId();
+                                foreach ($usr_Notification as $usrLead) {
+                                    $data = [
+                                        "updated_by" => Auth::user()->id,
+                                        "data_id" => $vender->id,
+                                        "name" => @$vender->name,
+                                    ];
+                                    if ($us_notify == 'true') {
+                                        Utility::makeNotification($usrLead, 'create_supplier', $data, $vender->id, 'create Supplier');
+                                    } elseif ($us_approve == 'true') {
+                                        Utility::makeNotification($usrLead, 'approve_supplier', $data, $vender->id, 'For Approval Credit Note');
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+
+            //For Notification
+            $setting  = Utility::settings(\Auth::user()->creatorId());
+            $vendorNotificationArr = [
+                'user_name'    => \Auth::user()->name,
+                'vendor_name'  => $vender->name,
+                'vendor_email' => $vender->email,
+            ];
+
+            //Twilio Notification
+            if (isset($setting['twilio_vender_notification']) && $setting['twilio_vender_notification'] == 1) {
+                Utility::send_twilio_msg($request->contact, 'new_vendor', $vendorNotificationArr);
+            }
+            Utility::makeActivityLog(\Auth::user()->id, 'Vender', $vender->id, 'Create Vender', $vender->name);
+            \DB::commit();
+
+            // AJAX: return JSON for your modal to append/select without refresh
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'id'   => $vender->id,
+                    'name' => $vender->name,
+                    'data' => $vender,
+                    'success' => true
+                ], 201);
+            }
+
+            // Normal request: keep your redirect
+            return redirect()->route('vender.index')->with('success', __('Vendor successfully created.'));
+
+        } catch (\Exception $e) {
+            \DB::rollback();
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json(['message' => $e->getMessage()], 500);
+            }
+            return redirect()->back()->with('error', $e);
         }
-
-        //For Notification
-        $setting  = Utility::settings(\Auth::user()->creatorId());
-        $vendorNotificationArr = [
-            'user_name'    => \Auth::user()->name,
-            'vendor_name'  => $vender->name,
-            'vendor_email' => $vender->email,
-        ];
-
-        //Twilio Notification
-        if (isset($setting['twilio_vender_notification']) && $setting['twilio_vender_notification'] == 1) {
-            Utility::send_twilio_msg($request->contact, 'new_vendor', $vendorNotificationArr);
-        }
-        Utility::makeActivityLog(\Auth::user()->id, 'Vender', $vender->id, 'Create Vender', $vender->name);
-        \DB::commit();
-
-        // AJAX: return JSON for your modal to append/select without refresh
-        if ($request->ajax() || $request->wantsJson()) {
-            return response()->json([
-                'id'   => $vender->id,
-                'name' => $vender->name,
-                'data' => $vender,
-                'success' => true
-            ], 201);
-        }
-
-        // Normal request: keep your redirect
-        return redirect()->route('vender.index')->with('success', __('Vendor successfully created.'));
-
-    } catch (\Exception $e) {
-        \DB::rollback();
-        if ($request->ajax() || $request->wantsJson()) {
-            return response()->json(['message' => $e->getMessage()], 500);
-        }
-        return redirect()->back()->with('error', $e);
     }
-}
 
 
 
-    public function show($ids)
+    public function show($ids, \App\DataTables\VendorsSingleDetailsShowDataTable $dataTable)
     {
+        if (!\Auth::user()->can('show vender')) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
         try {
-            $id = Crypt::decrypt($ids);
+            $id = \Crypt::decrypt($ids);
         } catch (\Throwable $th) {
             return redirect()->back()->with('error', __('Vendor Not Found.'));
         }
 
-        $id = \Crypt::decrypt($ids);
-        $vendor = Vender::find($id);
-
+        $vendor = Vender::where('id', $id)->first();
         if (!$vendor) {
             return redirect()->back()->with('error', __('Vendor Not Found.'));
         }
 
-        if(\Auth::user()->can('show vender'))
-        {
-            $dataTable = new \App\DataTables\VendorsSingleDetailsShowDataTable($id); // Pass vendor ID to DataTable
-            
-            // Fetch all vendors for the sidebar list, sorted by name
-            $vendors = Vender::where('created_by', '=', \Auth::user()->creatorId())
-                        ->orderBy('name')
-                        ->get();
-            
-            // Fetch categories for the filter dropdown
-            $categories = \App\Models\ProductServiceCategory::where('created_by', '=', \Auth::user()->creatorId())
-                        ->where('type', '=', 1) // Expense categories
-                        ->orderBy('name')
-                        ->get();
+        // ✅ VERY IMPORTANT: For ajax requests, don't load sidebar/vendors/categories view data
+        // Just return the DataTable JSON response quickly.
+        if (request()->ajax()) {
+            return $dataTable->ajax();
+        }
 
-            return $dataTable->render('vender.show', compact('vendor', 'vendors', 'categories'));
-        }
-        else
-        {
-            return redirect()->back()->with('error', __('Permission denied.'));
-        }
+        $vendors = Vender::where('created_by', \Auth::user()->creatorId())
+            ->orderBy('name')
+            ->get();
+
+        $categories = \App\Models\ProductServiceCategory::where('created_by', \Auth::user()->creatorId())
+            ->where('type', 1)
+            ->orderBy('name')
+            ->get();
+
+        return $dataTable->render('vender.show', compact('vendor', 'vendors', 'categories'));
     }
 
 

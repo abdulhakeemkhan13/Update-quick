@@ -197,7 +197,6 @@ class ReceivePaymentController extends Controller
      */
     public function store(Request $request)
     {
-        dd('stoew');
         if (!Auth::user()->can('create payment invoice')) {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
@@ -328,7 +327,7 @@ class ReceivePaymentController extends Controller
      */
     public function createPayment(Request $request, $invoice_id = null)
     {
-        // dd($request->all());
+        \Log::info('createPayment started', ['request' => $request->all()]);
         \DB::beginTransaction();
         try {
             if (Auth::user()->can('create payment invoice')) {
@@ -475,53 +474,72 @@ class ReceivePaymentController extends Controller
                     $totalApplied = 0;
 
                     if (!empty($payments)) {
-                        // Bulk payment processing
+                        // Bulk payment processing - QBO style
+                        // Step 1: Calculate total applied and update invoice statuses
+                        $firstInvoiceId = null;
+                        $firstInvoice = null;
+                        $customerId = null;
+                        
                         foreach ($payments as $invId => $amount) {
                             if ($amount > 0) {
                                 $invoice = Invoice::find($invId);
-
-                                // Create invoice payment
-                                $invoicePayment = new InvoicePayment();
-                                $invoicePayment->invoice_id = $invId;
-                                $invoicePayment->date = $request->payment_date;
-                                $invoicePayment->amount = $amount;
-                                $invoicePayment->account_id = $request->deposit_to;
-                                $invoicePayment->payment_method = $request->payment_method;
-                                $invoicePayment->reference = $request->reference_no ?? null;
-                                $invoicePayment->description = $request->memo;
-                                $invoicePayment->save();
-
+                                if (!$invoice) continue;
+                                
+                                // Track first invoice for the combined payment entry
+                                if ($firstInvoiceId === null) {
+                                    $firstInvoiceId = $invId;
+                                    $firstInvoice = $invoice;
+                                    $customerId = $invoice->customer_id;
+                                }
+                                
                                 // Update invoice status
                                 $due = $invoice->getDue();
                                 if ($invoice->status == 0) {
                                     $invoice->send_date = date('Y-m-d');
-                                    $invoice->save();
                                 }
-
+                                
                                 if ($due <= $amount) {
                                     $invoice->status = 4; // Paid
                                 } else {
                                     $invoice->status = 3; // Partial
                                 }
                                 $invoice->save();
-
-                                $invoicePayment->user_id = $invoice->customer_id;
-                                $invoicePayment->user_type = 'Customer';
-                                $invoicePayment->type = 'Partial';
-                                $invoicePayment->created_by = Auth::user()->id;
-                                $invoicePayment->owned_by = Auth::user()->ownedId();
-                                $invoicePayment->payment_id = $invoicePayment->id;
-                                $invoicePayment->category = 'Invoice';
-                                $invoicePayment->account = $request->deposit_to;
-                                $invoicePayment->payment_no = $paymentNo;
-       
-                                Transaction::addTransaction($invoicePayment);
-
+                                
                                 // Update customer balance (credit the payment amount)
                                 Utility::updateUserBalance('customer', $invoice->customer_id, $amount, 'credit');
-
+                                
                                 $totalApplied += $amount;
                             }
+                        }
+                        
+                        // Step 2: Create ONE invoice_payment entry with total applied amount
+                        if ($totalApplied > 0 && $firstInvoiceId) {
+                            $invoicePayment = new InvoicePayment();
+                            $invoicePayment->invoice_id = $firstInvoiceId;
+                            $invoicePayment->date = $request->payment_date;
+                            $invoicePayment->amount = $totalApplied;
+                            $invoicePayment->account_id = $request->deposit_to;
+                            $invoicePayment->payment_method = $request->payment_method;
+                            $invoicePayment->reference = $request->reference_no ?? null;
+                            $invoicePayment->description = $request->memo;
+                            $invoicePayment->txn_id = $paymentNo; // Store payment_no for reference
+                            $invoicePayment->save();
+                            
+                            // Step 3: Create Invoice transaction for applied amount
+                            $invoicePayment->user_id = $customerId;
+                            $invoicePayment->user_type = 'Customer';
+                            $invoicePayment->type = 'Payment';
+                            $invoicePayment->created_by = Auth::user()->id;
+                            $invoicePayment->owned_by = Auth::user()->ownedId();
+                            $invoicePayment->payment_id = $invoicePayment->id;
+                            $invoicePayment->category = 'Invoice';
+                            $invoicePayment->account = $request->deposit_to;
+                            $invoicePayment->payment_no = $paymentNo;
+                            
+                            Transaction::addTransaction($invoicePayment);
+                            
+                            // Set customer variable for later use
+                            $customer = Customer::find($customerId);
                         }
                     } else {
                         // Single invoice payment processing
@@ -534,6 +552,7 @@ class ReceivePaymentController extends Controller
                         $invoicePayment->payment_method = $request->payment_method;
                         $invoicePayment->reference = $request->reference ?? null;
                         $invoicePayment->description = $request->description;
+                        $invoicePayment->txn_id = $paymentNo; // Store payment_no for reference
 
                         if (!empty($request->add_receipt)) {
                             $image_size = $request->file('add_receipt')->getSize();
@@ -571,6 +590,7 @@ class ReceivePaymentController extends Controller
                         $invoicePayment->payment_id = $invoicePayment->id;
                         $invoicePayment->category = 'Invoice';
                         $invoicePayment->account = $request->deposit_to;
+                        $invoicePayment->payment_no = $paymentNo;
 
                         Transaction::addTransaction($invoicePayment);
                         $customer = Customer::where('id', $invoice->customer_id)->first();
@@ -597,7 +617,8 @@ class ReceivePaymentController extends Controller
                         $creditTransaction->amount = $creditAmount;
                         $creditTransaction->date = $request->payment_date;
                         $creditTransaction->created_by = Auth::user()->id;
-                        $creditTransaction->payment_id = 0;
+                        // Use same payment_id as the Invoice transaction for grouping
+                        $creditTransaction->payment_id = isset($invoicePayment) ? $invoicePayment->id : 0;
                         $creditTransaction->category = 'Customer Credit';
                         $creditTransaction->description = $request->memo ?? 'Excess payment credit';
                         $creditTransaction->payment_no = $paymentNo;
@@ -606,12 +627,11 @@ class ReceivePaymentController extends Controller
                         Utility::makeActivityLog(Auth::user()->id, 'Customer Credit', $request->customer_id, 'Excess Payment Credit', 'Amount: ' . $creditAmount);
                     }
 
-                    // Create voucher entry for the total payment received
                     $bankAccount = BankAccount::find($request->deposit_to);
-                    if (($bankAccount && $bankAccount->chart_account_id != 0) || $bankAccount->chart_account_id != null) {
+                    if ($bankAccount && ($bankAccount->chart_account_id != 0 || $bankAccount->chart_account_id != null)) {
                         $data = [
                             'id' => !empty($payments) ? array_key_first($payments) : $invoice_id, // Use first invoice ID for bulk payments
-                            'no' => !empty($payments) ? 'BULK-' . date('YmdHis') : $invoice->invoice_id,
+                            'no' => !empty($payments) ? ($firstInvoice ? $firstInvoice->invoice_id : 'BULK-' . date('YmdHis')) : ($invoice ? $invoice->invoice_id : 'PAYMENT-' . date('YmdHis')),
                             'date' => $request->payment_date,
                             'reference' => $request->reference_no,
                             'description' => $request->memo,
@@ -630,22 +650,9 @@ class ReceivePaymentController extends Controller
                             $voucherId = Utility::brv_entry($data);
                         }
 
-                        // Update voucher_id for all payments in this bulk transaction
-                        if (!empty($payments)) {
-                            foreach ($payments as $invId => $amount) {
-                                if ($amount > 0) {
-                                    $paymentRecord = InvoicePayment::where('invoice_id', $invId)
-                                        ->where('date', $request->payment_date)
-                                        ->where('amount', $amount)
-                                        ->latest()
-                                        ->first();
-                                    if ($paymentRecord) {
-                                        $paymentRecord->voucher_id = $voucherId;
-                                        $paymentRecord->save();
-                                    }
-                                }
-                            }
-                        } else {
+                        // Update voucher_id for the invoice_payment entry using direct query
+                        // (avoiding model save() which would try to save transaction properties)
+                        if (isset($invoicePayment) && $invoicePayment->id) {
                             InvoicePayment::where('id', $invoicePayment->id)->update([
                                 'voucher_id' => $voucherId,
                             ]);
@@ -656,16 +663,18 @@ class ReceivePaymentController extends Controller
 
                     // Send Email notifications for each payment
                     $setings = Utility::settings();
-                    if ($setings['new_invoice_payment'] == 1) {
-                        $customer = Customer::where('id', $request->customer_id)->first();
-                        $invoicePaymentArr = [
-                            'invoice_payment_name' => $customer->name,
-                            'invoice_payment_amount' => Auth::user()->priceFormat($totalApplied),
-                            'invoice_payment_date' => Auth::user()->dateFormat($request->payment_date),
-                            'payment_dueAmount' => Auth::user()->priceFormat($customer->balance ?? 0),
-                        ];
+                    if (isset($setings['new_invoice_payment']) && $setings['new_invoice_payment'] == 1) {
+                        $customer = $customer ?? Customer::find($request->customer_id);
+                        if ($customer) {
+                            $invoicePaymentArr = [
+                                'invoice_payment_name' => $customer->name,
+                                'invoice_payment_amount' => Auth::user()->priceFormat($totalApplied),
+                                'invoice_payment_date' => Auth::user()->dateFormat($request->payment_date),
+                                'payment_dueAmount' => Auth::user()->priceFormat($customer->balance ?? 0),
+                            ];
 
-                        $resp = Utility::sendEmailTemplate('new_invoice_payment', [$customer->id => $customer->email], $invoicePaymentArr);
+                            $resp = Utility::sendEmailTemplate('new_invoice_payment', [$customer->id => $customer->email], $invoicePaymentArr);
+                        }
                     }
 
                     //webhook
@@ -681,7 +690,8 @@ class ReceivePaymentController extends Controller
                     }
 
                     //activity log
-                    Utility::makeActivityLog(Auth::user()->id, 'Invoice Payment', 0, 'Create Bulk Invoice Payment', 'Customer: ' . $customer->name . ', Total Amount: ' . $totalApplied);
+                    $customer = $customer ?? Customer::find($request->customer_id);
+                    Utility::makeActivityLog(Auth::user()->id, 'Invoice Payment', 0, 'Create Bulk Invoice Payment', 'Customer: ' . ($customer ? $customer->name : 'Unknown') . ', Total Amount: ' . $totalApplied);
 
                     \DB::commit();
                     return redirect()->back()->with('success', __('Payment successfully recorded.'));
@@ -694,17 +704,25 @@ class ReceivePaymentController extends Controller
             return redirect()->back()->with('error', __($e->getMessage()));
         }
     }
-     public function paymentNumber()
+    public function paymentNumber()
     {
         $user = \Auth::user();
         $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
         $column = $user->type == 'company' ? 'created_by' : 'owned_by';
-        $latest = Transaction::where($column, '=', $ownerId)->latest()->first();
+        
+        // Get the latest payment_no with 'pay-' prefix to avoid conflicts with QBO imports
+        $latest = Transaction::where($column, '=', $ownerId)
+            ->where('payment_no', 'LIKE', 'pay-%')
+            ->latest()
+            ->first();
+        
         if (!$latest) {
-            return 1;
+            return 'pay-1';
         }
 
-        return $latest->payment_no + 1;
+        // Extract numeric part from 'pay-XXXX' format
+        $numericPart = (int) str_replace('pay-', '', $latest->payment_no);
+        return 'pay-' . ($numericPart + 1);
     }
     /**
      * Remove the specified payment from storage.

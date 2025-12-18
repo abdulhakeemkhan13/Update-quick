@@ -24,11 +24,11 @@
                         <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #1E88E5, #1565C0);"><img src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/accounting/1/0/0/accounting.svg" class="chip-icon" alt="" style="width: 28px;"></span>
                         <span>{{ __('Accounting') }}</span>
                     </a>
-                    <a href="#" class="qbo-nav-chip">
+                    <a href="{{ route('expense.index') }}" class="qbo-nav-chip">
                         <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #43A047, #2E7D32);"><img style="width: 28px;" src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/expenses/1/0/0/expenses.svg" class="chip-icon" alt=""></span>
                         <span>{{ __('Expenses & Pay Bills') }}</span>
                     </a>
-                    <a href="#" class="qbo-nav-chip">
+                    <a href="{{ route('invoice.overview') }}" class="qbo-nav-chip">
                         <span class="qbo-nav-icon" style="background: linear-gradient(135deg, #00897B, #00695C);"><img style="width: 28px;" src="https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/sales-payments/1/0/0/sales-payments.svg" class="chip-icon" alt=""></span>
                         <span>{{ __('Sales & Get Paid') }}</span>
                     </a>

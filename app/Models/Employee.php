@@ -9,18 +9,43 @@ class Employee extends Model
     protected $fillable = [
         'user_id',
         'name',
+        'title',
+        'first_name',
+        'middle_initial',
+        'last_name',
+        'preferred_first_name',
+        'display_name',
         'dob',
+        'birth_date',
         'gender',
+        'ssn',
         'phone',
+        'home_phone',
+        'home_phone_ext',
+        'work_phone',
+        'work_phone_ext',
+        'mobile_phone',
         'address',
+        'city',
+        'state',
+        'zip',
+        'mailing_address_same',
         'email',
         'password',
         'employee_id',
         'branch_id',
         'department_id',
+        'department_name',
         'designation_id',
+        'job_title',
         'report_to',
+        'manager_id',
         'company_doj',
+        'hire_date',
+        'status',
+        'name_on_checks',
+        'billing_rate',
+        'billable_by_default',
         'documents',
         'account_holder_name',
         'account_number',
@@ -32,6 +57,12 @@ class Employee extends Model
         'biometric_emp_id',
         'account',
         'salary',
+        'is_active',
+        'emergency_first_name',
+        'emergency_last_name',
+        'emergency_relationship',
+        'emergency_phone',
+        'emergency_email',
         'created_by',
         'owned_by',
     ];
@@ -379,7 +410,43 @@ class Employee extends Model
     }
 
 
+    /**
+     * Get the manager (QBO style)
+     */
+    public function manager()
+    {
+        return $this->belongsTo(Employee::class, 'manager_id');
+    }
 
+    /**
+     * Get the display name for QBO style
+     */
+    public function getDisplayNameAttribute($value)
+    {
+        if (!empty($value)) {
+            return $value;
+        }
+        
+        // Build display name from first, middle initial, last
+        $parts = [];
+        if (!empty($this->first_name)) {
+            $parts[] = $this->first_name;
+        }
+        if (!empty($this->middle_initial)) {
+            $parts[] = $this->middle_initial . '.';
+        }
+        if (!empty($this->last_name)) {
+            $parts[] = $this->last_name;
+        }
+        
+        return !empty($parts) ? implode(' ', $parts) : $this->name;
+    }
 
-
+    /**
+     * Get the full phone number (primary)
+     */
+    public function getPrimaryPhoneAttribute()
+    {
+        return $this->mobile_phone ?? $this->work_phone ?? $this->home_phone ?? $this->phone;
+    }
 }

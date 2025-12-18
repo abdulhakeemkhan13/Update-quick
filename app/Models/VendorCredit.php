@@ -27,6 +27,22 @@ class VendorCredit extends Model
     }
 
     /**
+     * Get the account-based expense lines for this credit
+     */
+    public function accounts()
+    {
+        return $this->hasMany(VendorCreditAccount::class, 'vendor_credit_id');
+    }
+
+    /**
+     * Get the product-based expense lines for this credit
+     */
+    public function products()
+    {
+        return $this->hasMany(VendorCreditProduct::class, 'vendor_credit_id');
+    }
+
+    /**
      * Get the bills this credit has been applied to
      */
     public function bills()

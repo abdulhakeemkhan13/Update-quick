@@ -12,6 +12,8 @@ use App\Models\UnappliedPayment;
 use App\Models\Purchase;
 use App\Models\CreditNoteProduct;
 use App\Models\CreditNote;
+use App\Models\CreditNoteProduct;
+use App\Models\CreditNote;
 use App\Models\PurchaseOrderAccount;
 use App\Models\TimeActivity;
 use App\Models\User;
@@ -1319,11 +1321,16 @@ class QuickBooksImportController extends Controller
     }
 
 
+
     /**
      * Map invoices with their payments using LINE-LEVEL amounts from QBO
      * This ensures accurate allocation - each payment line specifies exactly how much goes to each invoice
      */
     private function mapInvoicesWithPayments($allInvoices, $allPayments)
+{
+    $invoicesMap = [];
+    $paymentsMap = [];
+    $allocations = [];
 {
     $invoicesMap = [];
     $paymentsMap = [];
@@ -1339,7 +1346,33 @@ class QuickBooksImportController extends Controller
         if (!$invoiceId) {
             continue;
         }
+    // ---------------------------------------------------------
+    // 1. Build invoice map
+    // ---------------------------------------------------------
+    foreach ($allInvoices as $invoice) {
+        $invoiceId   = (string)($invoice['Id'] ?? null);
+        $totalAmount = (float)($invoice['TotalAmt'] ?? 0);
 
+        if (!$invoiceId) {
+            continue;
+        }
+
+        $invoicesMap[$invoiceId] = [
+            'invoice_id'        => $invoiceId,
+            'doc_number'        => $invoice['DocNumber'] ?? null,
+            'customer_id'       => $invoice['CustomerRef']['value'] ?? null,
+            'customer_name'     => $invoice['CustomerRef']['name'] ?? null,
+            'txn_date'          => $invoice['TxnDate'] ?? null,
+            'due_date'          => $invoice['DueDate'] ?? null,
+            'total_amount'      => $totalAmount,
+            'currency'          => $invoice['CurrencyRef']['name'] ?? 'USD',
+            'raw_data'          => $invoice,
+            'allocated_amount'  => 0.0,
+            'status'            => 'unpaid',
+            'allocations'       => [],
+            'remaining_balance' => $totalAmount,
+        ];
+    }
         $invoicesMap[$invoiceId] = [
             'invoice_id'        => $invoiceId,
             'doc_number'        => $invoice['DocNumber'] ?? null,
@@ -1482,10 +1515,27 @@ class QuickBooksImportController extends Controller
         } else {
             $invoice['status'] = 'partially_paid';
         }
+        if ($alloc <= 0.01) {
+            $invoice['status'] = 'unpaid';
+        } elseif ($alloc >= $total - 0.01) {
+            $invoice['status'] = 'fully_paid';
+        } else {
+            $invoice['status'] = 'partially_paid';
+        }
 
         $invoice['remaining_balance'] = max(0, $total - $alloc);
     }
     unset($invoice);
+        $invoice['remaining_balance'] = max(0, $total - $alloc);
+    }
+    unset($invoice);
+
+    return [
+        'invoices'   => array_values($invoicesMap),
+        'payments'   => array_values($paymentsMap),
+        'allocations'=> $allocations,
+    ];
+}
 
     return [
         'invoices'   => array_values($invoicesMap),
@@ -2081,6 +2131,7 @@ class QuickBooksImportController extends Controller
         ini_set('memory_limit', '512M');
         set_time_limit(600);
 
+
         try {
             \Log::info("==========================================");
             \Log::info("STARTING QBO IMPORT PROCESS");
@@ -2230,6 +2281,7 @@ class QuickBooksImportController extends Controller
                     \Log::error("Credit Memo Import Fail {$qbCredit['Id']}: " . $e->getMessage());
                 }
             }
+
 
             // =================================================================
             // STEP 3: ESTIMATES (unchanged)
@@ -2433,6 +2485,7 @@ class QuickBooksImportController extends Controller
                     return ['id' => 0, 'rate' => 0];
                 }
 
+
                 $rateData = $taxRatesMap[$qbTaxRateRef] ?? null;
                 if (!$rateData) {
                     return ['id' => 0, 'rate' => 0];
@@ -2510,6 +2563,7 @@ class QuickBooksImportController extends Controller
                     ]);
                 };
 
+
                 if (!empty($line['GroupLineDetail']['Line'])) {
                     foreach ($line['GroupLineDetail']['Line'] as $child) {
                         if (!empty($child['SalesItemLineDetail'])) {
@@ -2569,9 +2623,11 @@ class QuickBooksImportController extends Controller
 
                     if (!$customer) {
                         $errors[] = "Invoice {$qbId}: Customer missing";
+
                         $skipped++;
                         continue;
                     }
+
 
                     // Header tax
                     $invoiceTaxId        = 0;
@@ -2640,6 +2696,7 @@ class QuickBooksImportController extends Controller
                             ]);
                         }
 
+
                         $isTaxable = ($line['QBTaxCodeRef'] ?? 'NON') !== 'NON';
                         $lineAmt   = (float)$line['Amount'];
                         $lineTax   = 0;
@@ -2684,6 +2741,7 @@ class QuickBooksImportController extends Controller
 
                         $subtotal += $lineAmt;
                     }
+
 
                     $invoice->update([
                         'subtotal'          => $subtotal,
@@ -2750,6 +2808,7 @@ class QuickBooksImportController extends Controller
                         $payMethod = !empty($linkedCreditMemoIds) && (float)$paymentData['TotalAmt'] == 0
                             ? 'Credit Memo'
                             : ($paymentData['PaymentMethodRef']['name'] ?? 'Unknown');
+
 
                         $description = 'Payment for Invoice ' . $qbInvoiceData['doc_number'];
 
@@ -2855,6 +2914,8 @@ class QuickBooksImportController extends Controller
                                 'description'=> 'Overpayment / Credit',
                                 'date'       => $allocation['payment_date'],
                                 'category'   => 'Customer Credit',
+                                'payment_id' => $newIP->id, // Use same payment_id as Invoice transaction
+
                                 'payment_no' => $paymentId,
                                 'created_by' => \Auth::user()->creatorId(),
                             ]);
@@ -3158,6 +3219,7 @@ class QuickBooksImportController extends Controller
     //         $allCustomers = collect();
     //         $startPosition = 1;
     //         $maxResults = 50; // Adjust batch size as needed
+
 
     //         do {
     //             // Fetch paginated batch
@@ -3499,6 +3561,222 @@ class QuickBooksImportController extends Controller
             $maxResults = 50;
             $allTaxRates = collect();
 
+
+    //     } catch (\Exception $e) {
+    //         return response()->json([
+    //             'status' => 'error',
+    //             'message' => $e->getMessage(),
+    //         ], 500);
+    //     }
+    // }
+   public function customers()
+{
+    try {
+        \Log::info("======= START CUSTOMER + CUSTOMER TYPES IMPORT =======");
+
+        $createdBy = \Auth::user()->creatorId();
+        $ownedBy   = \Auth::user()->ownedId();
+
+        /* ---------------------------------------------------
+         *  STEP 1: FETCH ALL CUSTOMER TYPES FROM QUICKBOOKS
+         * --------------------------------------------------- */
+        \Log::info("Fetching Customer Types from QuickBooks...");
+
+        $allTypes = collect();
+        $startPosition = 1;
+        $maxResults = 50;
+
+        do {
+            $query = "SELECT * FROM CustomerType STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
+            $response = $this->qbController->runQuery($query);
+
+            if ($response instanceof \Illuminate\Http\JsonResponse) {
+                return $response;
+            }
+
+            $typesBatch = $response['QueryResponse']['CustomerType'] ?? [];
+            $allTypes = $allTypes->merge($typesBatch);
+
+            $count = count($typesBatch);
+            $startPosition += $count;
+
+        } while ($count === $maxResults);
+
+        \Log::info("Total Customer Types fetched from QB: " . $allTypes->count());
+
+
+        /* ---------------------------------------------------
+         *  STEP 2: SYNC CUSTOMER TYPES IN LOCAL DB
+         * --------------------------------------------------- */
+        foreach ($allTypes as $type) {
+            $qbTypeId = $type['Id'] ?? null;
+            $name = $type['Name'] ?? 'Unnamed Type';
+
+            if (!$qbTypeId) {
+                \Log::warning("Skipping invalid CustomerType without ID.");
+                continue;
+            }
+
+            $typeModel = \App\Models\CustomerType::firstOrCreate(
+                ['qb_type_id' => $qbTypeId],
+                ['name' => $name]
+            );
+
+            if ($typeModel->wasRecentlyCreated) {
+                \Log::info("ADDED NEW Customer Type: {$name} (QB ID: {$qbTypeId})");
+            } else {
+                \Log::info("Customer Type already exists: {$name} (QB ID: {$qbTypeId})");
+            }
+        }
+
+
+        /* ---------------------------------------------------
+         *  STEP 3: FETCH ALL CUSTOMERS FROM QUICKBOOKS
+         * --------------------------------------------------- */
+        \Log::info("Fetching Customers from QuickBooks...");
+
+        $allCustomers = collect();
+        $startPosition = 1;
+
+        do {
+            $query = "SELECT * FROM Customer WHERE Active IN (true, false) 
+                      STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
+
+            $response = $this->qbController->runQuery($query);
+
+            if ($response instanceof \Illuminate\Http\JsonResponse) {
+                return $response;
+            }
+
+            $batch = $response['QueryResponse']['Customer'] ?? [];
+            $allCustomers = $allCustomers->merge($batch);
+
+            $count = count($batch);
+            $startPosition += $count;
+
+        } while ($count === $maxResults);
+
+        \Log::info("Total Customers fetched: " . $allCustomers->count());
+
+
+        /* ---------------------------------------------------
+         *  STEP 4: IMPORT / UPDATE CUSTOMERS
+         * --------------------------------------------------- */
+        $imported = 0;
+        $updated  = 0;
+        $errors   = [];
+
+        foreach ($allCustomers as $qbCustomer) {
+            try {
+                $qbId = $qbCustomer['Id'];
+                \Log::info("---- Processing Customer ID: {$qbId} ----");
+
+                /* ---- TYPE HANDLING ---- */
+                $typeRef = $qbCustomer['CustomerTypeRef']['value'] ?? null;
+                $typeId = null;
+
+                if ($typeRef) {
+                    $typeModel = \App\Models\CustomerType::where('qb_type_id', $typeRef)->first();
+
+                    if ($typeModel) {
+                        \Log::info("Mapped Customer Type => {$typeModel->name} ({$typeRef})");
+                        $typeId = $typeModel->id;
+                    } else {
+                        \Log::warning("No matching Customer Type found for TypeRef: {$typeRef}");
+                    }
+                } else {
+                    \Log::info("No CustomerTypeRef found — setting type_id = NULL");
+                }
+
+                /* ---- Customer Data ---- */
+                $data = [
+                    'name' => $qbCustomer['Name'] ?? $qbCustomer['FullyQualifiedName'] ?? '',
+                    'email' => $qbCustomer['PrimaryEmailAddr']['Address'] ?? null,
+                    'contact' => $qbCustomer['PrimaryPhone']['FreeFormNumber'] ?? null,
+                    'billing_name' => $qbCustomer['BillAddr']['Line1'] ?? null,
+                    'billing_city' => $qbCustomer['BillAddr']['City'] ?? null,
+                    'billing_state' => $qbCustomer['BillAddr']['CountrySubDivisionCode'] ?? null,
+                    'billing_country' => $qbCustomer['BillAddr']['Country'] ?? null,
+                    'billing_zip' => $qbCustomer['BillAddr']['PostalCode'] ?? null,
+                    'billing_address' => implode(', ', array_filter([
+                        $qbCustomer['BillAddr']['Line1'] ?? null,
+                        $qbCustomer['BillAddr']['Line2'] ?? null,
+                        $qbCustomer['BillAddr']['City'] ?? null,
+                        $qbCustomer['BillAddr']['CountrySubDivisionCode'] ?? null,
+                        $qbCustomer['BillAddr']['PostalCode'] ?? null,
+                        $qbCustomer['BillAddr']['Country'] ?? null,
+                    ])),
+                    'shipping_name' => $qbCustomer['ShipAddr']['Line1'] ?? null,
+                    'shipping_city' => $qbCustomer['ShipAddr']['City'] ?? null,
+                    'shipping_state' => $qbCustomer['ShipAddr']['CountrySubDivisionCode'] ?? null,
+                    'shipping_country' => $qbCustomer['ShipAddr']['Country'] ?? null,
+                    'shipping_zip' => $qbCustomer['ShipAddr']['PostalCode'] ?? null,
+                    'shipping_address' => implode(', ', array_filter([
+                        $qbCustomer['ShipAddr']['Line1'] ?? null,
+                        $qbCustomer['ShipAddr']['Line2'] ?? null,
+                        $qbCustomer['ShipAddr']['City'] ?? null,
+                        $qbCustomer['ShipAddr']['CountrySubDivisionCode'] ?? null,
+                        $qbCustomer['ShipAddr']['PostalCode'] ?? null,
+                        $qbCustomer['ShipAddr']['Country'] ?? null,
+                    ])),
+                    'qb_balance' => $qbCustomer['Balance'] ?? null,
+                    'is_active' => ($qbCustomer['Active'] == true || $qbCustomer['Active'] == "true") ? 1 : 0,
+                    'type_id' => $typeId,
+                    'owned_by' => $ownedBy,
+                ];
+
+                /* ---- Update or Insert ---- */
+                $existing = Customer::where('customer_id', $qbId)
+                                    ->where('created_by', $createdBy)
+                                    ->first();
+
+                if ($existing) {
+                    $existing->update($data);
+                    $updated++;
+                    \Log::info("Customer UPDATED: {$qbId}");
+                } else {
+                    Customer::create(array_merge($data, [
+                        'customer_id' => $qbId,
+                        'created_by' => $createdBy,
+                    ]));
+                    $imported++;
+                    \Log::info("Customer INSERTED: {$qbId}");
+                }
+            } catch (\Exception $e) {
+                $errors[] = "Error importing customer {$qbCustomer['Id']}: " . $e->getMessage();
+                \Log::error("Error importing customer {$qbId}: " . $e->getMessage());
+            }
+        }
+
+        \Log::info("======= CUSTOMER IMPORT COMPLETE =======");
+
+        return response()->json([
+            'status' => 'success',
+            'message' => "Customers import completed.",
+            'imported' => $imported,
+            'updated' => $updated,
+            'errors' => $errors,
+            'total_types' => $allTypes->count(),
+            'total_customers' => $allCustomers->count(),
+        ]);
+
+    } catch (\Exception $e) {
+        \Log::error("Fatal Error in customers(): " . $e->getMessage());
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+        ], 500);
+    }
+}
+
+
+    public function importTaxes()
+    {
+        try {
+            $startPosition = 1;
+            $maxResults = 50;
+            $allTaxRates = collect();
+
             do {
                 $query = "SELECT * FROM TaxRate STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
                 $response = $this->qbController->runQuery($query);
@@ -3624,7 +3902,9 @@ class QuickBooksImportController extends Controller
 
             do {
 
+
                 // Fetch paginated batch
+                $query = "SELECT * FROM Vendor WHERE Active IN (true, false) STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
                 $query = "SELECT * FROM Vendor WHERE Active IN (true, false) STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
                 $vendorsResponse = $this->qbController->runQuery($query);
 
@@ -3651,6 +3931,7 @@ class QuickBooksImportController extends Controller
             foreach ($allVendors as $qbVendor) {
                 try {
                     $isActive = $qbVendor['Active'];
+                    $isActive = $qbVendor['Active'];
                     // Check if vendor already exists (by email)
                     $existingVendor = Vender::where('vender_id', $qbVendor['Id'] ?? null)
                         ->where('created_by', \Auth::user()->creatorId())->first();
@@ -3658,6 +3939,41 @@ class QuickBooksImportController extends Controller
                     if ($existingVendor) {
                         // Update existing vendor
                         $existingVendor->update([
+                            // 'title' => $qbVendor['Title'] ?? '',
+                            // 'name' => $qbVendor['Name'] ?? $qbVendor['DisplayName'] ?? '',
+                            // 'first_name' => $qbVendor['Name'] ?? $qbVendor['DisplayName'] ?? '',
+                            // 'company_name' => $qbVendor['CompanyName'] ?? '',
+                            // 'email' => $qbVendor['PrimaryEmailAddr']['Address'] ?? null,
+                            // 'contact' => $qbVendor['PrimaryPhone']['FreeFormNumber'] ?? null,
+                            // 'billing_name' => $qbVendor['BillAddr']['Line1'] ?? null,
+                            // 'billing_city' => $qbVendor['BillAddr']['City'] ?? null,
+                            // 'billing_state' => $qbVendor['BillAddr']['CountrySubDivisionCode'] ?? null,
+                            // 'billing_country' => $qbVendor['BillAddr']['Country'] ?? null,
+                            // 'billing_zip' => $qbVendor['BillAddr']['PostalCode'] ?? null,
+                            // 'billing_address' => implode(', ', array_filter([
+                            //     $qbVendor['BillAddr']['Line1'] ?? null,
+                            //     $qbVendor['BillAddr']['Line2'] ?? null,
+                            //     $qbVendor['BillAddr']['City'] ?? null,
+                            //     $qbVendor['BillAddr']['CountrySubDivisionCode'] ?? null,
+                            //     $qbVendor['BillAddr']['PostalCode'] ?? null,
+                            //     $qbVendor['BillAddr']['Country'] ?? null,
+                            // ])),
+                            // 'shipping_name' => $qbVendor['ShipAddr']['Line1'] ?? null,
+                            // 'shipping_city' => $qbVendor['ShipAddr']['City'] ?? null,
+                            // 'shipping_state' => $qbVendor['ShipAddr']['CountrySubDivisionCode'] ?? null,
+                            // 'shipping_country' => $qbVendor['ShipAddr']['Country'] ?? null,
+                            // 'shipping_zip' => $qbVendor['ShipAddr']['PostalCode'] ?? null,
+                            // 'shipping_address' => implode(', ', array_filter([
+                            //     $qbVendor['ShipAddr']['Line1'] ?? null,
+                            //     $qbVendor['ShipAddr']['Line2'] ?? null,
+                            //     $qbVendor['ShipAddr']['City'] ?? null,
+                            //     $qbVendor['ShipAddr']['CountrySubDivisionCode'] ?? null,
+                            //     $qbVendor['ShipAddr']['PostalCode'] ?? null,
+                            //     $qbVendor['ShipAddr']['Country'] ?? null,
+                            // ])),
+                            // 'owned_by' => \Auth::user()->ownedId(),
+                            // 'qb_balance' => $qbVendor['Balance'] ?? 0,
+                            'is_active' => $isActive ? 1 : 0,
                             // 'title' => $qbVendor['Title'] ?? '',
                             // 'name' => $qbVendor['Name'] ?? $qbVendor['DisplayName'] ?? '',
                             // 'first_name' => $qbVendor['Name'] ?? $qbVendor['DisplayName'] ?? '',
@@ -3734,6 +4050,7 @@ class QuickBooksImportController extends Controller
                                 $qbVendor['ShipAddr']['Country'] ?? null,
                             ])),
                             'qb_balance' => $qbVendor['Balance'] ?? 0,
+                            'is_active' => $isActive ? 1 : 0,
                             'is_active' => $isActive ? 1 : 0,
                         ]);
                         $vender->save();
@@ -4106,6 +4423,7 @@ class QuickBooksImportController extends Controller
                 $type = $isInventory ? 'product' : 'service';
                 $categoryId = $isInventory ? $productCategoryId : $serviceCategoryId;
                 $productData = [
+                    'item_id' => $item['ItemId'] ?? '',
                     'item_id' => $item['ItemId'] ?? '',
                     'name' => $item['Name'] ?? '',
                     'sku' => $item['Name'] ?? '',
@@ -4919,6 +5237,7 @@ class QuickBooksImportController extends Controller
         try {
             $creatorId = \Auth::user()->creatorId();
             $ownedId   = \Auth::user()->ownedId();
+            $ownedId   = \Auth::user()->ownedId();
 
             // =======================================================================
             // 1. FETCH PURCHASES (EXPENSES, CHECKS, CC)
@@ -4926,11 +5245,14 @@ class QuickBooksImportController extends Controller
             \Log::info('[QB Import] Fetching Expenses...');
             
             $allExpenses   = collect();
+            $allExpenses   = collect();
             $startPosition = 1;
+            $maxResults    = 50;
             $maxResults    = 50;
 
             do {
                 $query = "SELECT * FROM Purchase STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
+                $resp  = $this->qbController->runQuery($query);
                 $resp  = $this->qbController->runQuery($query);
 
                 if ($resp instanceof \Illuminate\Http\JsonResponse) {
@@ -4943,6 +5265,8 @@ class QuickBooksImportController extends Controller
 
                 $fetchedCount  = count($data);
                 $allExpenses   = $allExpenses->merge($data);
+                $fetchedCount  = count($data);
+                $allExpenses   = $allExpenses->merge($data);
                 $startPosition += $fetchedCount;
                 
                 \Log::info("[QB Import] Fetched batch of $fetchedCount expenses.");
@@ -4952,10 +5276,12 @@ class QuickBooksImportController extends Controller
 
             // =======================================================================
             // 2. FETCH REFERENCES (ITEMS & ACCOUNTS)  - unchanged logic
+            // 2. FETCH REFERENCES (ITEMS & ACCOUNTS)  - unchanged logic
             // =======================================================================
             \Log::info('[QB Import] Fetching Reference Data...');
             
             $allItems = collect(); 
+            $pos      = 1;
             $pos      = 1;
             do {
                 $resp = $this->qbController->runQuery("SELECT * FROM Item STARTPOSITION {$pos} MAXRESULTS 100");
@@ -4963,15 +5289,18 @@ class QuickBooksImportController extends Controller
                 if (array_key_exists('Id', $data)) $data = [$data];
                 $allItems = $allItems->merge($data);
                 $pos     += count($data);
+                $pos     += count($data);
             } while (count($data) === 100);
 
             $allAccounts = collect();
+            $pos         = 1;
             $pos         = 1;
             do {
                 $resp = $this->qbController->runQuery("SELECT * FROM Account STARTPOSITION {$pos} MAXRESULTS 100");
                 $data = $resp['QueryResponse']['Account'] ?? [];
                 if (array_key_exists('Id', $data)) $data = [$data];
                 $allAccounts = $allAccounts->merge($data);
+                $pos        += count($data);
                 $pos        += count($data);
             } while (count($data) === 100);
 
@@ -4987,15 +5316,26 @@ class QuickBooksImportController extends Controller
                         ->orWhere('name', 'like', '%Cash%');
                     })
                     ->first();
+                    ->where(function ($q) {                       // *** CHANGED: group OR condition
+                        $q->where('account_type', 'Cash')
+                        ->orWhere('name', 'like', '%Cash%');
+                    })
+                    ->first();
 
                 try {
                     $bank = \App\Models\BankAccount::create([
                         'bank_name'        => 'Default Cash Account',
+                        'bank_name'        => 'Default Cash Account',
                         'chart_account_id' => $cashChart ? $cashChart->id : 0,
+                        'created_by'       => $creatorId, 
+                        'owned_by'         => $ownedId,
                         'created_by'       => $creatorId, 
                         'owned_by'         => $ownedId,
                     ]);
                     return $bank->id;
+                } catch (\Exception $e) { 
+                    return 0; 
+                }
                 } catch (\Exception $e) { 
                     return 0; 
                 }
@@ -5008,6 +5348,8 @@ class QuickBooksImportController extends Controller
             foreach ($allExpenses as $qbExpense) {
                 $qbId     = $qbExpense['Id'];
                 $docNum   = $qbExpense['DocNumber'] ?? 'N/A';
+                $qbId     = $qbExpense['Id'];
+                $docNum   = $qbExpense['DocNumber'] ?? 'N/A';
                 $totalAmt = $qbExpense['TotalAmt'] ?? 0;
                 
                 try {
@@ -5017,14 +5359,19 @@ class QuickBooksImportController extends Controller
                     $existingBill = \App\Models\Bill::where('bill_id', $qbId)->first();
                     $isDuplicate  = false; 
                     $bill         = null;
+                    $isDuplicate  = false; 
+                    $bill         = null;
 
                     if ($existingBill) {
                         $isDuplicate = true;
                         $bill        = $existingBill;
+                        $bill        = $existingBill;
                         $metrics['skipped']++;
                         $skippedDetails[] = [
                             'qb_id'  => $qbId, 
+                            'qb_id'  => $qbId, 
                             'reason' => 'Duplicate (Skipped Creation)',
+                            'data'   => ['DocNumber' => $docNum]
                             'data'   => ['DocNumber' => $docNum]
                         ];
                     } else {
@@ -5035,7 +5382,18 @@ class QuickBooksImportController extends Controller
                         $entityId  = $entityRef['value'] ?? null;
 
                         if (!$entityId) {
+                        // -----------------------------------------------------
+                        // ENTITY CHECK (VENDOR OR CUSTOMER)  *** CHANGED BLOCK
+                        // -----------------------------------------------------
+                        $entityRef = $qbExpense['EntityRef'] ?? null;
+                        $entityId  = $entityRef['value'] ?? null;
+
+                        if (!$entityId) {
                             $metrics['skipped']++;
+                            $skippedDetails[] = [
+                                'qb_id'  => $qbId, 
+                                'reason' => 'No Entity Reference (Vendor/Customer)'
+                            ];
                             $skippedDetails[] = [
                                 'qb_id'  => $qbId, 
                                 'reason' => 'No Entity Reference (Vendor/Customer)'
@@ -5071,10 +5429,45 @@ class QuickBooksImportController extends Controller
                                 ];
                                 continue;
                             }
+
+                        $localEntityId = null; // will be stored in vender_id
+                        $userType      = 'Vendor';
+
+                        // 1) Try vendor
+                        $vendor = \App\Models\Vender::where('vender_id', $entityId)
+                            ->where('created_by', $creatorId)
+                            ->first();
+
+                        if ($vendor) {
+                            $localEntityId = $vendor->id;
+                            $userType      = 'Vendor';
+                        } else {
+                            // 2) Try customer  *** NEW
+                            $customer = \App\Models\Customer::where('customer_id', $entityId)
+                                ->where('created_by', $creatorId)
+                                ->first();
+
+                            if ($customer) {
+                                $localEntityId = $customer->id;
+                                $userType      = 'Customer';
+                            } else {
+                                $metrics['skipped']++;
+                                $skippedDetails[] = [
+                                    'qb_id'  => $qbId, 
+                                    'reason' => "Vendor/Customer ID [$entityId] not found"
+                                ];
+                                continue;
+                            }
                         }
 
                         // Type Mapping (same as before)
+                        // Type Mapping (same as before)
                         $qbPaymentType = $qbExpense['PaymentType'] ?? 'Cash';
+                        $typeMap       = [
+                            'CreditCard' => 'Credit Card', 
+                            'Check'      => 'Check', 
+                            'Cash'       => 'Expense'
+                        ];
                         $typeMap       = [
                             'CreditCard' => 'Credit Card', 
                             'Check'      => 'Check', 
@@ -5085,8 +5478,12 @@ class QuickBooksImportController extends Controller
                         // -----------------------------------------------------
                         // Create Bill (Vendor OR Customer)  *** CHANGED
                         // -----------------------------------------------------
+                        // -----------------------------------------------------
+                        // Create Bill (Vendor OR Customer)  *** CHANGED
+                        // -----------------------------------------------------
                         $bill = \App\Models\Bill::create([
                             'bill_id'      => $qbId,
+                            'vender_id'    => $localEntityId,      // <- vendor_id OR customer_id
                             'vender_id'    => $localEntityId,      // <- vendor_id OR customer_id
                             'bill_date'    => $qbExpense['TxnDate'],
                             'due_date'     => $qbExpense['TxnDate'],
@@ -5096,8 +5493,11 @@ class QuickBooksImportController extends Controller
                             'owned_by'     => $ownedId,
                             'type'         => $mappedType,
                             'user_type'    => $userType,           // <- 'Vendor' or 'Customer' *** NEW
+                            'user_type'    => $userType,           // <- 'Vendor' or 'Customer' *** NEW
                             'subtotal'     => $totalAmt,
                             'total'        => $totalAmt,
+                            'created_at'   => now(),
+                            'updated_at'   => now(),
                             'created_at'   => now(),
                             'updated_at'   => now(),
                         ]);
@@ -5118,6 +5518,7 @@ class QuickBooksImportController extends Controller
 
                     foreach ($rawLines as $line) {
                         $lineAmount  = $line['Amount'] ?? 0;
+                        $lineAmount  = $line['Amount'] ?? 0;
                         $description = $line['Description'] ?? null;
                         
                         if ($isDuplicate) {
@@ -5125,6 +5526,7 @@ class QuickBooksImportController extends Controller
                             continue;
                         }
 
+                        $isBillable     = 0;
                         $isBillable     = 0;
                         $localCustomerId = null;
 
@@ -5143,7 +5545,18 @@ class QuickBooksImportController extends Controller
 
                             $itemName = $detail['ItemRef']['name'] ?? 'Unknown Item';
                             $product  = \App\Models\ProductService::firstOrCreate(
+                            $product  = \App\Models\ProductService::firstOrCreate(
                                 ['name' => $itemName, 'created_by' => $creatorId],
+                                [
+                                    'sku'            => $itemName,
+                                    'purchase_price' => $lineAmount,
+                                    'sale_price'     => 0,
+                                    'quantity'       => 0,
+                                    'type'           => 'product',
+                                    'unit_id'        => 1,
+                                    'category_id'    => 1,
+                                    'created_by'     => $creatorId
+                                ]
                                 [
                                     'sku'            => $itemName,
                                     'purchase_price' => $lineAmount,
@@ -5157,6 +5570,14 @@ class QuickBooksImportController extends Controller
                             );
 
                             \App\Models\BillProduct::create([
+                                'bill_id'     => $bill->id, 
+                                'product_id'  => $product->id, 
+                                'quantity'    => $detail['Qty'] ?? 1, 
+                                'price'       => $lineAmount, 
+                                'description' => $description, 
+                                'tax'         => 0, 
+                                'billable'    => $isBillable, 
+                                'customer_id' => $localCustomerId
                                 'bill_id'     => $bill->id, 
                                 'product_id'  => $product->id, 
                                 'quantity'    => $detail['Qty'] ?? 1, 
@@ -5185,8 +5606,22 @@ class QuickBooksImportController extends Controller
                             if ($accRef) {
                                 $chartAcc = \App\Models\ChartOfAccount::where('code', $accRef)
                                     ->where('created_by', $creatorId)->first();
+                                $chartAcc = \App\Models\ChartOfAccount::where('code', $accRef)
+                                    ->where('created_by', $creatorId)->first();
                                 if ($chartAcc) {
                                     \App\Models\BillAccount::create([
+                                        'bill_id'          => $bill->id, 
+                                        'chart_account_id' => $chartAcc->id, 
+                                        'price'            => $lineAmount, 
+                                        'description'      => $description, 
+                                        'type'             => $bill->type, 
+                                        'ref_id'           => $bill->id, 
+                                        'status'           => 1, 
+                                        'tax'              => 0, 
+                                        'billable'         => $isBillable, 
+                                        'customer_id'      => $localCustomerId, 
+                                        'created_at'       => now(), 
+                                        'updated_at'       => now()
                                         'bill_id'          => $bill->id, 
                                         'chart_account_id' => $chartAcc->id, 
                                         'price'            => $lineAmount, 
@@ -5219,6 +5654,10 @@ class QuickBooksImportController extends Controller
                             $sourceAccount['value'] ?? null, 
                             $sourceAccount['name'] ?? null
                         );
+                        $bankAccountId = $this->getOrCreateBankAccountFromChartAccount(
+                            $sourceAccount['value'] ?? null, 
+                            $sourceAccount['name'] ?? null
+                        );
                     }
 
                     if (!$bankAccountId) {
@@ -5229,9 +5668,11 @@ class QuickBooksImportController extends Controller
                     $payRef = $qbExpense['DocNumber'] ?? 'Expense-' . $qbId;
                     
                     $settledAmount     = $totalAmt;
+                    $settledAmount     = $totalAmt;
                     $overpaymentAmount = 0;
 
                     if ($totalAmt > $calculatedBillTotal && $calculatedBillTotal > 0) {
+                        $settledAmount     = $calculatedBillTotal;
                         $settledAmount     = $calculatedBillTotal;
                         $overpaymentAmount = $totalAmt - $calculatedBillTotal;
                     }
@@ -5246,9 +5687,21 @@ class QuickBooksImportController extends Controller
                         'description'   => 'QB Expense Import', 
                         'created_at'    => \Carbon\Carbon::parse($qbExpense['TxnDate'])->format('Y-m-d H:i:s'), 
                         'updated_at'    => \Carbon\Carbon::parse($qbExpense['TxnDate'])->format('Y-m-d H:i:s'),
+                        'bill_id'       => $bill->id, 
+                        'date'          => $qbExpense['TxnDate'], 
+                        'amount'        => $totalAmt, 
+                        'account_id'    => $bankAccountId, 
+                        'payment_method'=> $bill->type, 
+                        'reference'     => $payRef, 
+                        'description'   => 'QB Expense Import', 
+                        'created_at'    => \Carbon\Carbon::parse($qbExpense['TxnDate'])->format('Y-m-d H:i:s'), 
+                        'updated_at'    => \Carbon\Carbon::parse($qbExpense['TxnDate'])->format('Y-m-d H:i:s'),
                     ]);
 
                     if (is_object($paymentRecord) && isset($paymentRecord->id)) {
+                        // -----------------------------------------------------
+                        // TRANSACTION FOR VENDOR OR CUSTOMER *** CHANGED
+                        // -----------------------------------------------------
                         // -----------------------------------------------------
                         // TRANSACTION FOR VENDOR OR CUSTOMER *** CHANGED
                         // -----------------------------------------------------
@@ -5267,10 +5720,38 @@ class QuickBooksImportController extends Controller
                             'owned_by'    => $ownedId, 
                             'created_at'  => now(), 
                             'updated_at'  => now(),
+                            'user_id'     => $bill->vender_id,          // vendor_id OR customer_id
+                            'user_type'   => $bill->user_type,          // 'Vendor' or 'Customer'
+                            'type'        => $bill->type, 
+                            'payment_id'  => $paymentRecord->id, 
+                            'amount'      => $settledAmount, 
+                            'date'        => $qbExpense['TxnDate'], 
+                            'payment_no'  => $payRef, 
+                            'description' => "{$bill->type} Imported from QuickBooks", 
+                            'account'     => $bankAccountId, 
+                            'category'    => 'Expense', 
+                            'created_by'  => $creatorId, 
+                            'owned_by'    => $ownedId, 
+                            'created_at'  => now(), 
+                            'updated_at'  => now(),
                         ]);
 
                         if ($overpaymentAmount > 0) {
                             \App\Models\Transaction::create([
+                                'user_id'     => $bill->vender_id,          // vendor_id OR customer_id
+                                'user_type'   => $bill->user_type,          // 'Vendor' or 'Customer'
+                                'type'        => $bill->type, 
+                                'payment_id'  => $paymentRecord->id, 
+                                'amount'      => $overpaymentAmount, 
+                                'date'        => $qbExpense['TxnDate'], 
+                                'payment_no'  => $payRef, 
+                                'description' => 'Overpayment / Credit', 
+                                'account'     => $bankAccountId, 
+                                'category'    => 'Vendor Credit',           // you may want a different label for customers
+                                'created_by'  => $creatorId, 
+                                'owned_by'    => $ownedId, 
+                                'created_at'  => now(), 
+                                'updated_at'  => now(),
                                 'user_id'     => $bill->vender_id,          // vendor_id OR customer_id
                                 'user_type'   => $bill->user_type,          // 'Vendor' or 'Customer'
                                 'type'        => $bill->type, 
@@ -5306,13 +5787,28 @@ class QuickBooksImportController extends Controller
                             Utility::updateUserBalance('customer', $customer->id, $totalAmt, 'debit');
                             Utility::updateUserBalance('customer', $customer->id, $totalAmt, 'credit');
                         }
+                    // ---------------------------------------------------------
+                    // Update Balance (Vendor or Customer)  *** CHANGED
+                    // ---------------------------------------------------------
+                    if ($bill->user_type === 'Vendor') {
+                        if ($vendor = \App\Models\Vender::find($bill->vender_id)) {
+                            Utility::updateUserBalance('vendor', $vendor->id, $totalAmt, 'debit');
+                            Utility::updateUserBalance('vendor', $vendor->id, $totalAmt, 'credit');
+                        }
+                    } elseif ($bill->user_type === 'Customer') {
+                        if ($customer = \App\Models\Customer::find($bill->vender_id)) {
+                            Utility::updateUserBalance('customer', $customer->id, $totalAmt, 'debit');
+                            Utility::updateUserBalance('customer', $customer->id, $totalAmt, 'credit');
+                        }
                     }
 
                 } catch (\Exception $e) {
                     $metrics['failed']++;
                     $skippedDetails[] = [
                         'qb_id'  => $qbId, 
+                        'qb_id'  => $qbId, 
                         'reason' => 'Exception: ' . $e->getMessage(),
+                        'trace'  => $e->getLine()
                         'trace'  => $e->getLine()
                     ];
                     \Log::error("[QB Import] Expense Failed $qbId: " . $e->getMessage());
@@ -5322,11 +5818,16 @@ class QuickBooksImportController extends Controller
             // =======================================================================
             // 4. REVERSE LINKING POs (unchanged logic)
             // =======================================================================
+
+            // =======================================================================
+            // 4. REVERSE LINKING POs (unchanged logic)
+            // =======================================================================
             \Log::info('[QB Import] Phase 4: Reverse Linking POs...');
             
             $poLinksStart = 1;
             do {
                 $query = "SELECT * FROM PurchaseOrder STARTPOSITION {$poLinksStart} MAXRESULTS 50";
+                $resp  = $this->qbController->runQuery($query);
                 $resp  = $this->qbController->runQuery($query);
                 
                 $poData = $resp['QueryResponse']['PurchaseOrder'] ?? [];
@@ -5339,6 +5840,7 @@ class QuickBooksImportController extends Controller
 
                         foreach ($links as $link) {
                             $targetType = $link['TxnType'] ?? '';
+                            $targetId   = $link['TxnId'] ?? '';
                             $targetId   = $link['TxnId'] ?? '';
 
                             // Valid targets: Bill (Invoices) or Purchase (Expenses/Checks)
@@ -5359,6 +5861,7 @@ class QuickBooksImportController extends Controller
                                             'txn_id'   => $localBill->id,
                                             'txn_type' => $localBill->type,
                                             'status'   => 4
+                                            'status'   => 4
                                         ]);
                                         $metrics['linked_pos']++;
                                         \Log::info("[QB Import] REVERSE LINK: PO {$localPO->purchase_number} linked to {$localBill->type} (ID:{$localBill->id})");
@@ -5376,9 +5879,14 @@ class QuickBooksImportController extends Controller
             \Log::info("[QB Import] Expenses Completed.", [
                 'counts'         => $metrics,
                 'skipped_items'  => $skippedDetails
+                'counts'         => $metrics,
+                'skipped_items'  => $skippedDetails
             ]);
             
             return response()->json([
+                'status'          => 'success',
+                'message'         => "Import & Linking completed.",
+                'metrics'         => $metrics,
                 'status'          => 'success',
                 'message'         => "Import & Linking completed.",
                 'metrics'         => $metrics,
@@ -6266,6 +6774,8 @@ class QuickBooksImportController extends Controller
         $metrics = [
             'PO'     => ['imported' => 0, 'skipped' => 0, 'failed' => 0],
             'Bill'   => ['imported' => 0, 'skipped' => 0, 'failed' => 0],
+            'PO'     => ['imported' => 0, 'skipped' => 0, 'failed' => 0],
+            'Bill'   => ['imported' => 0, 'skipped' => 0, 'failed' => 0],
             'Credit' => ['imported' => 0, 'skipped' => 0, 'failed' => 0]
         ];
 
@@ -6276,6 +6786,9 @@ class QuickBooksImportController extends Controller
             $creatorId = \Auth::user()->creatorId();
             $ownedId = \Auth::user()->ownedId();
 
+            // -------------------------
+            // PHASE 1: IMPORT PURCHASE ORDERS
+            // -------------------------
             // -------------------------
             // PHASE 1: IMPORT PURCHASE ORDERS
             // -------------------------
@@ -6316,9 +6829,14 @@ class QuickBooksImportController extends Controller
                     $vendorId = $qbPO['VendorRef']['value'] ?? null;
                     $vendor = Vender::where('vender_id', $vendorId)->where('created_by', $creatorId)->first();
                     if (!$vendor) { $metrics['PO']['skipped']++; continue; }
+                    if (!$vendor) { $metrics['PO']['skipped']++; continue; }
 
                     $status = ($qbPO['POStatus'] ?? '') == 'Closed' ? 2 : 1;
 
+                    Purchase::create([
+                        'purchase_id'     => $qbId,
+                        'vender_id'       => $vendor->id,
+                        'purchase_date'   => $qbPO['TxnDate'],
                     Purchase::create([
                         'purchase_id'     => $qbId,
                         'vender_id'       => $vendor->id,
@@ -6328,7 +6846,17 @@ class QuickBooksImportController extends Controller
                         'type'            => 'PurchaseOrder',
                         'subtotal'        => $qbPO['TotalAmt'] ?? 0,
                         'total'           => $qbPO['TotalAmt'] ?? 0,
+                        'status'          => $status,
+                        'type'            => 'PurchaseOrder',
+                        'subtotal'        => $qbPO['TotalAmt'] ?? 0,
+                        'total'           => $qbPO['TotalAmt'] ?? 0,
                         'ship_to_address' => $qbPO['ShipAddr']['Line1'] ?? null,
+                        'created_by'      => $creatorId,
+                        'owned_by'        => $ownedId,
+                        'created_at'      => now(),
+                        'updated_at'      => now(),
+                    ]);
+
                         'created_by'      => $creatorId,
                         'owned_by'        => $ownedId,
                         'created_at'      => now(),
@@ -6343,7 +6871,9 @@ class QuickBooksImportController extends Controller
             }
 
             // -------------------------
+            // -------------------------
             // PHASE 2: IMPORT BILLS & PAYMENTS
+            // -------------------------
             // -------------------------
             \Log::info('[QB Import] Phase 2: Fetching Bills...');
             $allBills = collect();
@@ -6370,6 +6900,7 @@ class QuickBooksImportController extends Controller
             } while (count($data) === $maxResults);
 
             // Map payments to bills (useful to process payments seen from each bill)
+            // Map payments to bills (useful to process payments seen from each bill)
             $billPaymentsMap = [];
             foreach ($allBillPayments as $payment) {
                 $lines = $payment['Line'] ?? [];
@@ -6389,6 +6920,10 @@ class QuickBooksImportController extends Controller
             $createdBillPaymentByRef = [];
 
             // Process each bill
+            // We'll also need quick lookup of created BillPayment records by payment ref if we want to link later
+            $createdBillPaymentByRef = [];
+
+            // Process each bill
             foreach ($allBills as $qbBill) {
                 $qbId = $qbBill['Id'];
                 $docNumber = $qbBill['DocNumber'] ?? 'N/A';
@@ -6397,12 +6932,15 @@ class QuickBooksImportController extends Controller
                     if (Bill::where('bill_id', $qbId)->exists()) {
                         $metrics['Bill']['skipped']++;
                         continue;
+                        $metrics['Bill']['skipped']++;
+                        continue;
                     }
 
                     $vendorId = $qbBill['VendorRef']['value'] ?? null;
                     $vendor = Vender::where('vender_id', $vendorId)->where('created_by', $creatorId)->first();
                     if (!$vendor) { $metrics['Bill']['skipped']++; continue; }
 
+                    $billTotal = floatval($qbBill['TotalAmt'] ?? 0);
                     $billTotal = floatval($qbBill['TotalAmt'] ?? 0);
 
                     $bill = Bill::create([
@@ -6420,13 +6958,42 @@ class QuickBooksImportController extends Controller
                         'owned_by' => $ownedId,
                         'created_at' => now(),
                         'updated_at' => now(),
+                        'created_at' => now(),
+                        'updated_at' => now(),
                     ]);
 
+                    // Process bill lines and compute combined line total
                     // Process bill lines and compute combined line total
                     $rawLines = $qbBill['Line'] ?? [];
                     if (array_key_exists('DetailType', $rawLines) || array_key_exists('Amount', $rawLines)) $rawLines = [$rawLines];
                     $lineTotal = 0.0;
+                    $lineTotal = 0.0;
                     foreach ($rawLines as $line) {
+                        $amount = floatval($line['Amount'] ?? 0);
+                        $lineTotal += $amount;
+                        $desc = $line['Description'] ?? null;
+                        if (!empty($line['ItemBasedExpenseLineDetail'])) {
+                            $d = $line['ItemBasedExpenseLineDetail'];
+                            $itemName = $d['ItemRef']['name'] ?? 'Unknown';
+                            $prod = ProductService::firstOrCreate(
+                                ['name' => $itemName, 'created_by' => $creatorId],
+                                ['sku' => $itemName, 'type'=>'product', 'unit_id'=>1, 'category_id'=>1]
+                            );
+                            BillProduct::create([
+                                'bill_id' => $bill->id, 'product_id' => $prod->id, 'quantity' => $d['Qty'] ?? 1, 'price' => $amount, 'tax' => 0, 'description' => $desc
+                            ]);
+                        } elseif (!empty($line['AccountBasedExpenseLineDetail'])) {
+                            $d = $line['AccountBasedExpenseLineDetail'];
+                            $qbAccId = $d['AccountRef']['value'] ?? null;
+                            $lAccId = 0;
+                            if ($qbAccId) {
+                                $la = ChartOfAccount::where('code', $qbAccId)->first();
+                                if ($la) $lAccId = $la->id;
+                            }
+                            BillAccount::create([
+                                'ref_id' => $bill->id, 'type' => 'Bill', 'chart_account_id' => $lAccId, 'price' => $amount, 'description' => $desc, 'tax' => 0, 'quantity_ordered' => 1
+                            ]);
+                        }
                         $amount = floatval($line['Amount'] ?? 0);
                         $lineTotal += $amount;
                         $desc = $line['Description'] ?? null;
@@ -6457,8 +7024,20 @@ class QuickBooksImportController extends Controller
                     // -------------------------
                     // PROCESS PAYMENTS FOR THIS BILL
                     // -------------------------
+                    // -------------------------
+                    // PROCESS PAYMENTS FOR THIS BILL
+                    // -------------------------
                     if (isset($billPaymentsMap[$qbId])) {
                         foreach ($billPaymentsMap[$qbId] as $paymentData) {
+                            // Grab values and normalize
+                            $payAmountTotal = floatval($paymentData['TotalAmt'] ?? 0.0);
+                            $payDate = $paymentData['TxnDate'] ?? now();
+                            $payRef = $paymentData['PaymentRefNum'] ?? 'QB-' . ($paymentData['Id'] ?? uniqid('qb_'));
+                            $qbPaymentId = $paymentData['Id'] ?? null;
+
+                            // Get bank/chart account (same helper you already use)
+                            $sourceAccount = $paymentData['CheckPayment']['BankAccountRef'] ?? $paymentData['CreditCardPayment']['CCAccountRef'] ?? null;
+                            $bankAccountId = 0; $chartAccountId = 0;
                             // Grab values and normalize
                             $payAmountTotal = floatval($paymentData['TotalAmt'] ?? 0.0);
                             $payDate = $paymentData['TxnDate'] ?? now();
@@ -6471,8 +7050,55 @@ class QuickBooksImportController extends Controller
                             if ($sourceAccount) {
                                 $bankAccountId = $this->getOrCreateBankAccountFromChartAccount(
                                     $sourceAccount['value'] ?? null,
+                                    $sourceAccount['value'] ?? null,
                                     $sourceAccount['name'] ?? null
                                 );
+                                if ($bankAccountId) {
+                                    $bankAccountModel = \App\Models\BankAccount::find($bankAccountId);
+                                    if ($bankAccountModel) $chartAccountId = $bankAccountModel->chart_account_id;
+                                }
+                            }
+
+                            // Determine the amount from payment lines that was applied to THIS bill (if QuickBooks shows it)
+                            $appliedAmountFromLine = null; // null means no explicit line amount; we'll fallback to billTotal
+                            $paymentLines = $paymentData['Line'] ?? [];
+                            if (array_key_exists('Amount', $paymentLines)) $paymentLines = [$paymentLines];
+                            if (!is_array($paymentLines)) $paymentLines = [];
+
+                            foreach ($paymentLines as $pl) {
+                                $linked = $pl['LinkedTxn'] ?? [];
+                                if (array_key_exists('TxnId', $linked)) $linked = [$linked];
+                                foreach ($linked as $l) {
+                                    if (($l['TxnType'] ?? '') === 'Bill' && ($l['TxnId'] == $qbId)) {
+                                        // if QB provides Amount on this line, use it
+                                        if (isset($pl['Amount'])) {
+                                            $appliedAmountFromLine = floatval($pl['Amount']);
+                                        } else {
+                                            // no explicit amount on line; use bill total
+                                            $appliedAmountFromLine = $billTotal;
+                                        }
+                                        break 2;
+                                    }
+                                }
+                            }
+
+                            // Final applied amount recorded for this bill: use appliedAmountFromLine if present, else assume full bill amount
+                            $appliedAmountToRecord = $appliedAmountFromLine !== null ? $appliedAmountFromLine : $billTotal;
+                            // Ensure we never record more than the bill total here (main payments)
+                            if ($appliedAmountToRecord > $billTotal) $appliedAmountToRecord = $billTotal;
+
+                            // Round to cents to avoid floating errors
+                            $appliedAmountToRecord = round($appliedAmountToRecord, 2);
+                            $payAmountTotal = round($payAmountTotal, 2);
+
+                            // Detailed logging per bill+payment
+                            \Log::info("[QB Import] Processing Bill {$qbId} ({$docNumber}) Vendor: {$vendor->name}");
+                            \Log::info("  Bill Total: " . number_format($billTotal, 2));
+                            \Log::info("  Combined Line Total: " . number_format($lineTotal, 2));
+                            \Log::info("  Payment Total from QB (payment id {$qbPaymentId}): " . number_format($payAmountTotal, 2));
+                            \Log::info("  Applied Amount to THIS bill (to record): " . number_format($appliedAmountToRecord, 2));
+
+                            // Create BillPayment (local) for the applied amount
                                 if ($bankAccountId) {
                                     $bankAccountModel = \App\Models\BankAccount::find($bankAccountId);
                                     if ($bankAccountModel) $chartAccountId = $bankAccountModel->chart_account_id;
@@ -6525,11 +7151,19 @@ class QuickBooksImportController extends Controller
                                 'amount' => $appliedAmountToRecord,
                                 'account_id' => $bankAccountId,
                                 'chart_account_id' => $chartAccountId,
+                                'amount' => $appliedAmountToRecord,
+                                'account_id' => $bankAccountId,
+                                'chart_account_id' => $chartAccountId,
                                 'payment_method' => 'QB Import',
                                 'reference' => $payRef,
                                 'description' => 'Imported from QuickBooks',
                             ]);
 
+                            if ($paymentRecord && isset($paymentRecord->id)) {
+                                // store mapping so we can link unapplied later if needed
+                                $createdBillPaymentByRef[$payRef][] = $paymentRecord->id;
+
+                                // Create main Transaction for the applied amount (category Bill)
                             if ($paymentRecord && isset($paymentRecord->id)) {
                                 // store mapping so we can link unapplied later if needed
                                 $createdBillPaymentByRef[$payRef][] = $paymentRecord->id;
@@ -6541,9 +7175,11 @@ class QuickBooksImportController extends Controller
                                     'type' => 'Payment',
                                     'payment_id' => $paymentRecord->id,
                                     'amount' => $appliedAmountToRecord,
+                                    'amount' => $appliedAmountToRecord,
                                     'date' => $payDate,
                                     'payment_no' => $payRef,
                                     'description' => 'Bill Payment Imported from QuickBooks',
+                                    'account' => $bankAccountId,
                                     'account' => $bankAccountId,
                                     'category' => 'Bill',
                                     'created_by' => $creatorId,
@@ -6560,18 +7196,243 @@ class QuickBooksImportController extends Controller
                         } // end foreach payments for this bill
                     } // end if payments for bill exist
 
+                            } else {
+                                \Log::warning("[QB Import] Could not create local BillPayment for QB Payment {$qbPaymentId} / Bill {$qbId}");
+                            }
+
+                            // Update vendor balance for the bill's total (same as before)
+                            Utility::updateUserBalance('vendor', $vendor->id, $billTotal, 'debit');
+                        } // end foreach payments for this bill
+                    } // end if payments for bill exist
+
                     $metrics['Bill']['imported']++;
                 } catch (\Exception $e) {
                     $metrics['Bill']['failed']++;
                     \Log::error("[QB Import] Bill Failed $qbId: " . $e->getMessage());
                 }
             } // end foreach allBills
+            } // end foreach allBills
 
             // =======================================================================
             // POST-PROCESS: For each QuickBooks BillPayment, compute unapplied amount:
             // unapplied = payment.TotalAmt - sum(amounts on linked bill lines)
             // Create a single Vendor Credit transaction per QB payment if unapplied > threshold.
+            // POST-PROCESS: For each QuickBooks BillPayment, compute unapplied amount:
+            // unapplied = payment.TotalAmt - sum(amounts on linked bill lines)
+            // Create a single Vendor Credit transaction per QB payment if unapplied > threshold.
             // =======================================================================
+            \Log::info('[QB Import] Phase 2: Post-processing BillPayments for unapplied overpayments (one record per QB payment)...');
+
+            foreach ($allBillPayments as $paymentData) {
+                try {
+                    $qbPaymentId = $paymentData['Id'] ?? null;
+                    $payRef = $paymentData['PaymentRefNum'] ?? 'QB-' . ($qbPaymentId ?? uniqid('qb_'));
+                    $paymentTotal = round(floatval($paymentData['TotalAmt'] ?? 0.0), 2);
+
+                    // Sum amounts from lines that were linked to Bills (these are the QB-applied amounts)
+                    $sumApplied = 0.0;
+                    $paymentLines = $paymentData['Line'] ?? [];
+                    if (array_key_exists('Amount', $paymentLines)) $paymentLines = [$paymentLines];
+                    if (!is_array($paymentLines)) $paymentLines = [];
+
+                    foreach ($paymentLines as $pl) {
+                        $linked = $pl['LinkedTxn'] ?? [];
+                        if (array_key_exists('TxnId', $linked)) $linked = [$linked];
+                        foreach ($linked as $l) {
+                            if (($l['TxnType'] ?? '') === 'Bill') {
+                                // Some QB lines may not include Amount; guard it
+                                if (isset($pl['Amount'])) $sumApplied += floatval($pl['Amount']);
+                            }
+                        }
+                    }
+
+                    $sumApplied = round($sumApplied, 2);
+                    $unapplied = round($paymentTotal - $sumApplied, 2);
+
+                    \Log::info("[QB Import] QB PaymentID: {$qbPaymentId} Ref: {$payRef}");
+                    \Log::info("  Payment Total: " . number_format($paymentTotal, 2));
+                    \Log::info("  Sum Applied to Bills (from payment lines): " . number_format($sumApplied, 2));
+                    \Log::info("  Calculated Unapplied (payment - applied): " . number_format($unapplied, 2));
+
+                    // small epsilon to avoid floating rounding noise
+                    if ($unapplied >= 0.01) {
+                        // Find vendor for this payment
+                        $vendorQbId = $paymentData['VendorRef']['value'] ?? null;
+                        $vendor = null;
+                        if ($vendorQbId) {
+                            $vendor = Vender::where('vender_id', $vendorQbId)->where('created_by', $creatorId)->first();
+                        }
+                        if (!$vendor) {
+                            \Log::warning("[QB Import] Unapplied overpayment skipped: vendor not found for payment {$qbPaymentId}");
+                            continue;
+                        }
+
+                        // Resolve bank/chart account similarly
+                        $sourceAccount = $paymentData['CheckPayment']['BankAccountRef'] ?? $paymentData['CreditCardPayment']['CCAccountRef'] ?? null;
+                        $bankAccountId = 0; $chartAccountId = 0;
+                        if ($sourceAccount) {
+                            $bankAccountId = $this->getOrCreateBankAccountFromChartAccount(
+                                $sourceAccount['value'] ?? null,
+                                $sourceAccount['name'] ?? null
+                            );
+                            if ($bankAccountId) {
+                                $bankAccountModel = \App\Models\BankAccount::find($bankAccountId);
+                                if ($bankAccountModel) $chartAccountId = $bankAccountModel->chart_account_id;
+                            }
+                        }
+
+                        // Try to link to a created BillPayment local record (if any) using payRef
+                        $linkPaymentId = null;
+                        if (isset($createdBillPaymentByRef[$payRef]) && count($createdBillPaymentByRef[$payRef]) > 0) {
+                            // pick the first created BillPayment id for this payment as a reference
+                            $linkPaymentId = $createdBillPaymentByRef[$payRef][0];
+                        }
+
+                        // Create single Vendor Credit transaction for unapplied amount
+                        $txn = \App\Models\Transaction::create([
+                            'user_id' => $vendor->id,
+                            'user_type' => 'Vendor',
+                            'type' => 'Payment',
+                            'payment_id' => $linkPaymentId, // may be null
+                            'amount' => $unapplied,
+                            'date' => $paymentData['TxnDate'] ?? now(),
+                            'payment_no' => $payRef,
+                            'description' => 'Unapplied overpayment from QuickBooks (imported)',
+                            'account' => $bankAccountId,
+                            'chart_account_id' => $chartAccountId,
+                            'category' => 'Vendor Credit',
+                            'created_by' => $creatorId,
+                            'owned_by' => $ownedId,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+
+                        Utility::updateUserBalance('vendor', $vendor->id, $unapplied, 'credit');
+
+                        \Log::info("[QB Import] Created Vendor Credit transaction (unapplied) for payment {$qbPaymentId}: amount " . number_format($unapplied, 2) . " txn_id={$txn->id}");
+                    } else {
+                        \Log::info("[QB Import] No unapplied amount for payment {$qbPaymentId} (unapplied={$unapplied})");
+                    }
+                } catch (\Exception $e) {
+                    \Log::error("[QB Import] Error while processing unapplied overpayment for QB Payment {$paymentData['Id']}: " . $e->getMessage());
+                }
+            }
+
+            // -------------------------
+            // PHASE 3: IMPORT VENDOR CREDITS (existing QB VendorCredit objects)
+            // -------------------------
+            \Log::info('[QB Import] Phase 3: Fetching Vendor Credits...');
+            $allCredits = collect();
+            $startPosition = 1;
+            do {
+                $query = "SELECT * FROM VendorCredit STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
+                $resp = $this->qbController->runQuery($query);
+                $data = $resp['QueryResponse']['VendorCredit'] ?? [];
+                if (array_key_exists('Id', $data)) $data = [$data];
+                $fetchedCount = count($data);
+                $allCredits = $allCredits->merge($data);
+                $startPosition += $fetchedCount;
+            } while ($fetchedCount === $maxResults);
+
+            foreach ($allCredits as $qbCredit) {
+                $qbId = $qbCredit['Id'];
+                try {
+                    if (\App\Models\VendorCredit::where('vendor_credit_id', $qbId)->exists()) {
+                        $metrics['Credit']['skipped']++;
+                        continue;
+                    }
+
+                    $vendorId = $qbCredit['VendorRef']['value'] ?? null;
+                    $vendor = Vender::where('vender_id', $vendorId)->where('created_by', $creatorId)->first();
+                    if (!$vendor) {
+                        $metrics['Credit']['skipped']++;
+                        continue;
+                    }
+
+                    $credit = \App\Models\VendorCredit::create([
+                        'vendor_credit_id' => $qbId,
+                        'vender_id' => $vendor->id,
+                        'date' => $qbCredit['TxnDate'],
+                        'amount' => $qbCredit['TotalAmt'] ?? 0,
+                        'memo' => $qbCredit['PrivateNote'] ?? null,
+                        'created_by' => $creatorId,
+                        'owned_by' => $ownedId,
+                        'created_at' => now(), 'updated_at' => now(),
+                    ]);
+
+                    $rawLines = $qbCredit['Line'] ?? [];
+                    if (array_key_exists('DetailType', $rawLines) || array_key_exists('Amount', $rawLines)) $rawLines = [$rawLines];
+
+                    foreach ($rawLines as $line) {
+                        $amount = $line['Amount'] ?? 0;
+                        $description = $line['Description'] ?? null;
+                        $isBillable = 0;
+                        $localCustomerId = null;
+
+                        if (!empty($line['ItemBasedExpenseLineDetail'])) {
+                            $detail = $line['ItemBasedExpenseLineDetail'];
+                            if (isset($detail['BillableStatus']) && $detail['BillableStatus'] === 'Billable') {
+                                $isBillable = 1;
+                                if (isset($detail['CustomerRef']['value'])) {
+                                    $customer = \App\Models\Customer::where('customer_id', $detail['CustomerRef']['value'])->where('created_by', $creatorId)->first();
+                                    if ($customer) $localCustomerId = $customer->id;
+                                }
+                            }
+                            $itemName = $detail['ItemRef']['name'] ?? 'Unknown Item';
+                            $product = ProductService::firstOrCreate(
+                                ['name' => $itemName, 'created_by' => $creatorId],
+                                ['sku' => $itemName, 'purchase_price' => $amount, 'type' => 'product', 'unit_id' => 1, 'category_id' => 1]
+                            );
+
+                            \App\Models\VendorCreditProduct::create([
+                                'vendor_credit_id' => $credit->id,
+                                'product_id' => $product->id,
+                                'quantity' => $detail['Qty'] ?? 1,
+                                'price' => $amount,
+                                'description' => $description,
+                                'tax' => 0,
+                                'billable' => $isBillable,
+                                'customer_id' => $localCustomerId
+                            ]);
+                        } elseif (!empty($line['AccountBasedExpenseLineDetail'])) {
+                            $detail = $line['AccountBasedExpenseLineDetail'];
+                            if (isset($detail['BillableStatus']) && $detail['BillableStatus'] === 'Billable') {
+                                $isBillable = 1;
+                                if (isset($detail['CustomerRef']['value'])) {
+                                    $customer = \App\Models\Customer::where('customer_id', $detail['CustomerRef']['value'])->where('created_by', $creatorId)->first();
+                                    if ($customer) $localCustomerId = $customer->id;
+                                }
+                            }
+                            $accRef = $detail['AccountRef']['value'] ?? null;
+                            if ($accRef) {
+                                $chartAcc = ChartOfAccount::where('code', $accRef)->where('created_by', $creatorId)->first();
+                                if ($chartAcc) {
+                                    \App\Models\VendorCreditAccount::create([
+                                        'vendor_credit_id' => $credit->id,
+                                        'chart_account_id' => $chartAcc->id,
+                                        'price' => $amount,
+                                        'description' => $description,
+                                        'tax' => 0,
+                                        'billable' => $isBillable,
+                                        'customer_id' => $localCustomerId,
+                                        'created_at' => now(), 'updated_at' => now()
+                                    ]);
+                                }
+                            }
+                        }
+                    }
+
+                    Utility::updateUserBalance('vendor', $vendor->id, $qbCredit['TotalAmt'], 'credit');
+                    $metrics['Credit']['imported']++;
+                } catch (\Exception $e) {
+                    $metrics['Credit']['failed']++;
+                    \Log::error("[QB Import] Credit Failed $qbId: " . $e->getMessage());
+                }
+            }
+
+            // -------------------------
+            // PHASE 4: RECONCILIATION (PO links)
+            // -------------------------
             \Log::info('[QB Import] Phase 2: Post-processing BillPayments for unapplied overpayments (one record per QB payment)...');
 
             foreach ($allBillPayments as $paymentData) {
@@ -6795,10 +7656,12 @@ class QuickBooksImportController extends Controller
                             $localPo->txn_id = $localBill->id;
                             $localPo->txn_type = $link['target_type'];
                             $localPo->status = 2; // Closed
+                            $localPo->status = 2; // Closed
                             $localPo->save();
                         }
                     }
                 } catch (\Exception $e) {
+                    \Log::warning("[QB Import] PO Link reconcile failed: " . $e->getMessage());
                     \Log::warning("[QB Import] PO Link reconcile failed: " . $e->getMessage());
                 }
             }
