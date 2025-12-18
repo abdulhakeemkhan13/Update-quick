@@ -195,68 +195,56 @@ class VendorsSingleDetailsShowDataTable extends DataTable
             }
         }
 
-    }
+        // --------------------------------------------------------
+        // 3) BILL PAYMENTS (grouped by reference) - OPTIMIZED
+        // --------------------------------------------------------
+        if (empty($transactionType) || $transactionType === 'bill_payment') {
+            $payments = BillPayment::selectRaw('
+                    bill_payments.reference,
+                    MIN(bill_payments.date) as date,
+                    SUM(bill_payments.amount) as total_amount,
+                    MIN(bill_payments.id) as first_payment_id,
+                    GROUP_CONCAT(bill_payments.id) as payment_ids
+                ')
+                ->whereHas('bill', function ($q) use ($vendorId, $creatorId) {
+                    $q->where('vender_id', $vendorId)
+                      ->where('created_by', $creatorId)
+                      ->where('type', 'Bill');
+                })
+                ->when($dateFrom, fn($q) => $q->whereDate('bill_payments.date', '>=', $dateFrom))
+                ->when($dateTo, fn($q) => $q->whereDate('bill_payments.date', '<=', $dateTo))
+                ->groupBy('bill_payments.reference')
+                ->get();
 
-    // --------------------------------------------------------
-    // 3. BILL PAYMENTS (grouped by reference)
-    // --------------------------------------------------------
-    if (empty($transactionType) || $transactionType == 'bill_payment') {
-        // Query bill payments grouped by reference
-        $paymentsQuery = BillPayment::selectRaw('
-                bill_payments.reference,
-                MIN(bill_payments.date) as date,
-                SUM(bill_payments.amount) as total_amount,
-                MIN(bill_payments.id) as first_payment_id,
-                GROUP_CONCAT(bill_payments.id) as payment_ids
-            ')
-            ->whereHas('bill', function ($q) use ($vendorId) {
-                $q->where('vender_id', $vendorId)
-                  ->where('type', 'Bill');
-            })
-            ->groupBy('bill_payments.reference');
+            foreach ($payments as $payment) {
+                $paymentIds = array_filter(explode(',', (string) $payment->payment_ids));
 
-        if ($dateFrom) $paymentsQuery->whereDate('bill_payments.date', '>=', $dateFrom);
-        if ($dateTo) $paymentsQuery->whereDate('bill_payments.date', '<=', $dateTo);
-
-        $payments = $paymentsQuery->get();
-
-        foreach ($payments as $payment) {
-            // Get payment IDs in this group
-            $paymentIds = explode(',', $payment->payment_ids);
-            
-            // Get vendor credit amount for all payments in this group
-            $vendorCreditAmount = 0;
-            
-            foreach ($paymentIds as $paymentId) {
-                // Get the payment_no from transactions table for this payment
-                $paymentTransaction = Transaction::where('payment_id', $paymentId)
+                // 2 queries instead of N loops
+                $paymentNos = Transaction::whereIn('payment_id', $paymentIds)
                     ->whereNotNull('payment_no')
-                    ->first();
+                    ->pluck('payment_no')
+                    ->unique()
+                    ->values();
 
-                if ($paymentTransaction && $paymentTransaction->payment_no) {
-                    // Find all transactions with the same payment_no where category = 'Vendor Credit'
-                    $vendorCreditAmount += Transaction::where('payment_no', $paymentTransaction->payment_no)
+                $vendorCreditAmount = $paymentNos->isEmpty()
+                    ? 0
+                    : Transaction::whereIn('payment_no', $paymentNos)
                         ->where('category', 'Vendor Credit')
                         ->sum('amount');
-                }
+
+                $transactions->push([
+                    'id' => 'payment_ref_' . ($payment->reference ?: $payment->first_payment_id),
+                    'date' => $payment->date,
+                    'type' => 'Bill Payment',
+                    'number' => $payment->reference ?: Auth::user()->paymentNumberFormat($payment->first_payment_id),
+                    'payee' => $vendorName,
+                    'category' => '-',
+                    'total' => (float) $payment->total_amount + (float) $vendorCreditAmount,
+                    'url' => '#',
+                    'edit_url' => null,
+                ]);
 
             }
-
-            // Total = bill payment amount + vendor credit amount
-            $totalAmount = $payment->total_amount + $vendorCreditAmount;
-
-            $transactions->push([
-                'id' => 'payment_ref_' . $payment->reference,
-                'date' => $payment->date,
-                'type' => 'Bill Payment',
-                'number' => $payment->reference ?: Auth::user()->paymentNumberFormat($payment->first_payment_id),
-                'payee' => $vendorName,
-                'category' => '-',
-                'total' => $totalAmount,
-                'status' => 'Paid',
-                'url' => '#',
-                'edit_url' => null,
-            ]);
         }
 
         // --------------------------------------------------------
@@ -286,18 +274,85 @@ class VendorsSingleDetailsShowDataTable extends DataTable
             }
         }
 
+        // --------------------------------------------------------
 
-    // --------------------------------------------------------
-    // 5. VENDOR CREDITS (from vendor_credits table)
-    // --------------------------------------------------------
-    if (empty($transactionType) || $transactionType == 'vendor_credit') {
-        try {
-            $creditsQuery = VendorCredit::where('vender_id', $vendorId)
-                ->where('created_by', $creatorId);
+        // 5) VENDOR CREDITS - OPTIMIZED totals
+        // --------------------------------------------------------
+        if (empty($transactionType) || $transactionType === 'vendor_credit') {
+            try {
+                $credits = VendorCredit::where('vender_id', $vendorId)
+                    ->where('created_by', $creatorId)
+                    ->when($dateFrom, fn($q) => $q->whereDate('date', '>=', $dateFrom))
+                    ->when($dateTo, fn($q) => $q->whereDate('date', '<=', $dateTo))
+                    ->get();
 
-            if ($dateFrom) $creditsQuery->whereDate('date', '>=', $dateFrom);
-            if ($dateTo) $creditsQuery->whereDate('date', '<=', $dateTo);
+                $creditIds = $credits->pluck('id')->all();
 
+                $productTotals = empty($creditIds) ? collect() : DB::table('vendor_credit_products')
+                    ->select('vendor_credit_id', DB::raw('SUM(price * quantity) as total'))
+                    ->whereIn('vendor_credit_id', $creditIds)
+                    ->groupBy('vendor_credit_id')
+                    ->pluck('total', 'vendor_credit_id');
+
+                $accountTotals = empty($creditIds) ? collect() : DB::table('vendor_credit_accounts')
+                    ->select('vendor_credit_id', DB::raw('SUM(price) as total'))
+                    ->whereIn('vendor_credit_id', $creditIds)
+                    ->groupBy('vendor_credit_id')
+                    ->pluck('total', 'vendor_credit_id');
+
+                foreach ($credits as $credit) {
+                    $creditTotal = (float) ($productTotals[$credit->id] ?? 0) + (float) ($accountTotals[$credit->id] ?? 0);
+                    if ($creditTotal == 0) {
+                        $creditTotal = (float) ($credit->amount ?? 0);
+                    }
+
+                    $transactions->push([
+                        'id' => 'credit_' . $credit->id,
+                        'date' => $credit->date,
+                        'type' => 'Vendor Credit',
+                        'number' => $credit->vendor_credit_id ?? ('#VC-' . $credit->id),
+                        'payee' => $vendorName,
+                        'category' => '-',
+                        'total' => $creditTotal,
+                        'url' => '#',
+                        'edit_url' => null,
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                // table may not exist
+            }
+        }
+
+
+        // --------------------------------------------------------
+        // 5b) UNAPPLIED PAYMENTS
+        // --------------------------------------------------------
+        if (empty($transactionType) || $transactionType === 'unapplied_payment') {
+            try {
+                $unappliedPayments = UnappliedPayment::where('vendor_id', $vendorId)
+                    ->where('created_by', $creatorId)
+                    ->where('unapplied_amount', '>', 0)
+                    ->when($dateFrom, fn($q) => $q->whereDate('txn_date', '>=', $dateFrom))
+                    ->when($dateTo, fn($q) => $q->whereDate('txn_date', '<=', $dateTo))
+                    ->get();
+
+                foreach ($unappliedPayments as $unapplied) {
+                    $transactions->push([
+                        'id' => 'unapplied_' . $unapplied->id,
+                        'date' => $unapplied->txn_date,
+                        'type' => 'Unapplied Payment',
+                        'number' => $unapplied->reference ?? ('#UP-' . $unapplied->id),
+                        'payee' => $vendorName,
+                        'category' => '-',
+                        'total' => $unapplied->unapplied_amount,
+                        'url' => '#',
+                        'edit_url' => null,
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                // table may not exist
+            }
+        }
 
         // --------------------------------------------------------
         // 6) GENERAL TRANSACTIONS (Checks/Others)
@@ -309,78 +364,59 @@ class VendorsSingleDetailsShowDataTable extends DataTable
                 ->when($dateFrom, fn($q) => $q->whereDate('date', '>=', $dateFrom))
                 ->when($dateTo, fn($q) => $q->whereDate('date', '<=', $dateTo));
 
+
             if ($transactionType === 'expense') {
                 $transQuery->where('category', 'Bill');
             } elseif ($transactionType === 'check') {
                 $transQuery->where('type', 'check');
             }
 
+
             foreach ($transQuery->get() as $t) {
                 $type = ucfirst($t->type ?? 'Expense');
                 if ($t->category === 'Bill') $type = 'Expense';
 
-
-            foreach ($credits as $credit) {
-                // Calculate total from vendor_credit_products and vendor_credit_accounts
-                $creditTotal = 0;
-                $creditTotal += \DB::table('vendor_credit_products')
-                    ->where('vendor_credit_id', $credit->id)
-                    ->sum(\DB::raw('price * quantity'));
-                $creditTotal += \DB::table('vendor_credit_accounts')
-                    ->where('vendor_credit_id', $credit->id)
-                    ->sum('price');
-
                 $transactions->push([
-                    'id' => 'credit_' . $credit->id,
-                    'date' => $credit->date,
-                    'type' => 'Vendor Credit',
-                    'number' => $credit->vendor_credit_id ?? ('#VC-' . $credit->id),
+                    'id' => 'trans_' . $t->id,
+                    'date' => $t->date,
+                    'type' => $type,
+                    'number' => '#' . ($t->payment_no ?? $t->id),
                     'payee' => $vendorName,
-                    'category' => '-',
-                    'total' => $creditTotal ?: ($credit->amount ?? 0),
-                    'status' => 'Open',
+                    'category' => $t->category ?? '-',
+                    'total' => $t->amount,
                     'url' => '#',
                     'edit_url' => null,
                 ]);
             }
 
-        } catch (\Exception $e) {
-            // VendorCredit table may not exist, skip silently
         }
-    }
 
-    // --------------------------------------------------------
-    // 5b. UNAPPLIED PAYMENTS
-    // --------------------------------------------------------
-    if (empty($transactionType) || $transactionType == 'unapplied_payment') {
-        try {
-            $unappliedQuery = UnappliedPayment::where('vendor_id', $vendorId)
+        // --------------------------------------------------------
+        // 7) RECENTLY PAID
+        // --------------------------------------------------------
+        if ($transactionType === 'recently_paid') {
+            $recentBills = Bill::with('category')
+                ->where('vender_id', $vendorId)
                 ->where('created_by', $creatorId)
-                ->where('unapplied_amount', '>', 0);
+                ->where('status', 4) // Paid
+                ->where('updated_at', '>=', now()->subDays(30))
+                ->get();
 
-            if ($dateFrom) $unappliedQuery->whereDate('txn_date', '>=', $dateFrom);
-            if ($dateTo) $unappliedQuery->whereDate('txn_date', '<=', $dateTo);
-
-            $unappliedPayments = $unappliedQuery->get();
-
-            foreach ($unappliedPayments as $unapplied) {
+            foreach ($recentBills as $bill) {
                 $transactions->push([
-                    'id' => 'unapplied_' . $unapplied->id,
-                    'date' => $unapplied->txn_date,
-                    'type' => 'Unapplied Payment',
-                    'number' => $unapplied->reference ?? ('#UP-' . $unapplied->id),
+                    'id' => 'bill_' . $bill->id,
+                    'date' => $bill->bill_date,
+                    'type' => 'Bill',
+                    'number' => '#' . Auth::user()->billNumberFormat($bill->bill_id),
                     'payee' => $vendorName,
-                    'category' => '-',
-                    'total' => $unapplied->unapplied_amount,
-                    'status' => 'Unapplied',
-                    'url' => '#',
-                    'edit_url' => null,
+                    'category' => optional($bill->category)->name ?? '-',
+                    'total' => $bill->getTotal(),
+                    'url' => route('bill.show', Crypt::encrypt($bill->id)),
+                    'edit_url' => route('bill.edit', Crypt::encrypt($bill->id)),
                 ]);
             }
-        } catch (\Exception $e) {
-            // UnappliedPayment table may not exist, skip silently
         }
-    }
+
 
     // --------------------------------------------------------
     // 6. GENERAL TRANSACTIONS (Checks/Others)
@@ -423,6 +459,7 @@ class VendorsSingleDetailsShowDataTable extends DataTable
             }
         }
 
+
         return $transactions->sortByDesc('date')->values();
     }
 
@@ -430,31 +467,19 @@ class VendorsSingleDetailsShowDataTable extends DataTable
     {
         return $this->builder()
 
-                    ->setTableId('vendor-transactions-table')
-                    ->columns($this->getColumns())
-                    ->ajax([
-                        // Missing required parameter for [Route: vender.show] [URI: vender/{vender}] [Missing parameter: vender].
-                        'url' => route('vender.show',['vender'=>$this->vendor_id]),
-                        'type' => 'GET',
-                        //token
-                        'headers' => [
-                            'X-CSRF-TOKEN' => csrf_token(),
-                        ],
-                    ])
-                    ->dom('t')
-                    ->orderBy(1, 'desc')
-                    ->parameters([
-                        "dom" =>  "<'row'<'col-sm-12'tr>>",
-                        'language' => [
-                            'paginate' => [
-                                'next' => '<i class="ti ti-chevron-right"></i>',
-                                'previous' => '<i class="ti ti-chevron-left"></i>'
-                            ]
-                        ],
-                        'drawCallback' => "function() {
-                            $('.dataTables_paginate > .pagination').addClass('pagination-rounded');
-                        }"
-                    ]);
+            ->setTableId('vendor-transactions-table')
+            ->columns($this->getColumns())
+            ->minifiedAjax() // ✅ IMPORTANT: uses current URL (/vender/{encrypted})
+            ->dom('t')
+            ->orderBy(1, 'desc')
+            ->parameters([
+                'processing' => true,
+                'serverSide' => true,
+                'deferRender' => true,
+                'autoWidth' => false,
+                "dom" => "<'row'<'col-sm-12'tr>>",
+            ]);
+
     }
 
     protected function getColumns()
