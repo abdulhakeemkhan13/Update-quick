@@ -1,0 +1,1998 @@
+/* =====================================================
+   QBO Menu and Header Styles - EXACT QBO REPLICA
+   White background, icons with labels visible
+   ===================================================== */
+
+:root {
+    --qbo-sidebar-width: 72px;
+    --qbo-header-height: 56px;
+    --qbo-sidebar-bg: #ffffff;
+    --qbo-sidebar-hover-bg: #f4f5f7;
+    --qbo-sidebar-text: #393a3d;
+    --qbo-sidebar-text-muted: #6b6c72;
+    --qbo-sidebar-border: #e4e5e7;
+    --qbo-accent-green: #2ca01c;
+    --qbo-accent-blue: #0077c5;
+    --qbo-transition-speed: 0.15s;
+}
+
+/* =====================================================
+   Sidebar Base Styles - QBO Style
+   ===================================================== */
+.qbo-sidebar {
+    position: fixed;
+    left: 0;
+    top: var(--qbo-header-height);
+    /* Sidebar below header */
+    height: calc(100vh - var(--qbo-header-height));
+    width: var(--qbo-sidebar-width);
+    background: var(--qbo-sidebar-bg);
+    border-right: 1px solid var(--qbo-sidebar-border);
+    z-index: 1050;
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+}
+
+/* =====================================================
+   Sidebar Sections (Groups)
+   ===================================================== */
+.qbo-sidebar-section {
+    padding: 4px 0;
+}
+
+.qbo-sidebar-section.qbo-sidebar-group-divider {
+    border-bottom: 1px solid var(--qbo-sidebar-border);
+}
+
+/* =====================================================
+   Sidebar Items - Common Styles
+   ===================================================== */
+.qbo-sidebar-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 4px;
+    margin: 2px 8px;
+    border-radius: 8px;
+    color: var(--qbo-sidebar-text);
+    text-decoration: none;
+    cursor: pointer;
+    transition: background var(--qbo-transition-speed) ease;
+    background: transparent;
+    border: none;
+    width: calc(100% - 16px);
+}
+
+.qbo-sidebar-item:hover {
+    background: var(--qbo-sidebar-hover-bg);
+    text-decoration: none;
+    color: var(--qbo-sidebar-text);
+}
+
+.qbo-sidebar-item.active {
+    background: #e8f4fc;
+    color: var(--qbo-accent-blue);
+}
+
+/* Icon container */
+.qbo-sidebar-item-icon {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 2px;
+}
+
+.qbo-sidebar-item-icon svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+}
+
+.qbo-sidebar-item-icon i {
+    font-size: 20px;
+}
+
+/* Label below icon */
+.qbo-sidebar-item-label {
+    font-size: 10px;
+    font-weight: 400;
+    text-align: center;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 60px;
+}
+
+/* =====================================================
+   Create Button - With Hover Flyout
+   ===================================================== */
+.qbo-create-wrapper {
+    position: relative;
+}
+
+.qbo-create-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 4px;
+    margin: 8px;
+    border-radius: 8px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--qbo-sidebar-text);
+    transition: background var(--qbo-transition-speed) ease;
+    width: calc(100% - 16px);
+}
+
+.qbo-create-btn:hover {
+    background: var(--qbo-sidebar-hover-bg);
+}
+
+.qbo-create-btn .qbo-sidebar-item-icon {
+    width: 24px;
+    height: 24px;
+}
+
+.qbo-create-btn .qbo-sidebar-item-label {
+    font-size: 10px;
+    margin-top: 2px;
+}
+
+/* =====================================================
+   Navigation Section with Divider
+   ===================================================== */
+.qbo-sidebar-nav {
+    padding: 4px 0;
+    border-bottom: 1px solid var(--qbo-sidebar-border);
+}
+
+.qbo-nav-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.qbo-nav-item {
+    margin: 0;
+}
+
+/* =====================================================
+   Apps Section
+   ===================================================== */
+.qbo-apps-section {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--qbo-sidebar-border);
+}
+
+.qbo-apps-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.qbo-app-item {
+    margin: 0;
+}
+
+/* =====================================================
+   Pinned Section
+   ===================================================== */
+.qbo-pinned-section {
+    padding: 8px 0;
+}
+
+.qbo-pinned-label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--qbo-sidebar-text-muted);
+    text-align: center;
+    display: block;
+    padding: 4px 8px;
+}
+
+.qbo-pinned-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+/* =====================================================
+   Sidebar Footer
+   ===================================================== */
+.qbo-sidebar-footer {
+    margin-top: auto;
+    padding: 8px 0;
+    border-top: 1px solid var(--qbo-sidebar-border);
+}
+
+/* =====================================================
+   Create Flyout - Hover Based (QBO Style Multi-Column)
+   ===================================================== */
+.qbo-create-flyout {
+    position: fixed;
+    left: var(--qbo-sidebar-width);
+    top: 0;
+    width: 580px;
+    max-height: 100vh;
+    background: #fff;
+    border-right: 1px solid var(--qbo-sidebar-border);
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.1);
+    z-index: 1049;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+    overflow-y: auto;
+    padding: 20px 24px;
+}
+
+/* Show flyout on hover of wrapper */
+.qbo-create-wrapper:hover .qbo-create-flyout,
+.qbo-create-flyout:hover {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Multi-column grid layout */
+.qbo-flyout-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+}
+
+.qbo-flyout-column {
+    min-width: 0;
+}
+
+.qbo-flyout-heading {
+    font-size: 13px;
+    font-weight: 600;
+    color: #393a3d;
+    margin: 0 0 12px;
+    padding-bottom: 8px;
+    border-bottom: none;
+}
+
+.qbo-flyout-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.qbo-flyout-list::after {
+    content: "";
+    background-image: url(data:image/svg+xml,%3Csvg width='120' height='120' xmlns='http://www.w3.org/2000/svg'%3E%3Ctitle%3EArtboard 1%3C/title%3E%3Cdesc%3ECreated with Sketch.%3C/desc%3E%3Cdefs%3E%3Cpolygon points='0 0.255 87.79 0.255 87.79 88.045 0 88.045' id='path-1'/%3E%3Cpolygon points='0 0.255 87.79 0.255 87.79 88.045 0 88.045' id='path-3'/%3E%3Cpolygon points='0 0.24 87.917 0.24 87.917 88.155 0 88.155' id='path-5'/%3E%3Cpolygon points='0 0.24 87.917 0.24 87.917 88.155 0 88.155' id='path-7'/%3E%3C/defs%3E%3Cg%3E%3Ctitle%3Ebackground%3C/title%3E%3Crect fill='none' id='canvas_background' height='122' width='122' y='-1' x='-1'/%3E%3C/g%3E%3Cg%3E%3Ctitle%3ELayer 1%3C/title%3E%3Cg fill-rule='evenodd' fill='none' id='Page-1'%3E%3Cg id='Artboard-1'%3E%3Cpath fill='%239B9B9B' id='Shape' d='m56.64,50.06l19.903,0l-33.437,-32.828l-33.648,32.828l17.548,0c-0.612,43.89 -13.118,48.748 -13.256,48.795l1.63,6.355c19.376,-4.308 39.86,-24.972 41.26,-55.15l0,0z'/%3E%3C/g%3E%3C/g%3E%3C/g%3E%3C/svg%3E);
+    background-position: 4px -3px;
+    display: inline-block;
+    vertical-align: middle;
+    background-size: 21px;
+    width: 18px;
+    height: 18px;
+}
+
+.qbo-flyout-list li {
+    margin: 0;
+}
+
+.qbo-flyout-list li a {
+    display: block;
+    padding: 6px 0;
+    color: #393a3d;
+    text-decoration: none;
+    font-size: 13px;
+    line-height: 1.4;
+    transition: color 0.1s ease;
+}
+
+.qbo-flyout-list li a:hover {
+    color: var(--qbo-accent-blue);
+    text-decoration: underline;
+}
+
+/* Legacy styles - keep for backward compat */
+.qbo-flyout-header {
+    display: none;
+}
+
+.qbo-flyout-body {
+    padding: 16px 0;
+    max-height: calc(100vh - 150px);
+    overflow-y: auto;
+}
+
+.qbo-create-section {
+    padding: 0 20px 16px;
+}
+
+.qbo-create-section h5 {
+    font-size: 11px;
+    font-weight: 600;
+    color: #6b6c72;
+    text-transform: uppercase;
+    margin: 0 0 8px;
+    letter-spacing: 0.5px;
+}
+
+.qbo-create-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.qbo-create-list li a {
+    display: flex;
+    align-items: center;
+    padding: 8px 0;
+    color: var(--qbo-accent-blue);
+    text-decoration: none;
+    font-size: 14px;
+    transition: color 0.15s ease;
+}
+
+.qbo-create-list li a:hover {
+    color: #005fa3;
+}
+
+.qbo-create-list li a i {
+    margin-right: 10px;
+    font-size: 16px;
+}
+
+/* =====================================================
+   Header Styles
+   ===================================================== */
+.qbo-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    /* Full width header like QBO */
+    right: 0;
+    height: var(--qbo-header-height);
+    background: #fff;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--qbo-sidebar-border);
+    z-index: 1060;
+    /* Higher than sidebar */
+    gap: 16px;
+}
+
+/* Header Brand Section - Logo & Company Name */
+.qbo-header-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.qbo-header-logo {
+    display: flex;
+    align-items: center;
+    text-decoration: none;
+}
+
+.qbo-logo-img {
+    height: 32px;
+    width: auto;
+    max-width: 120px;
+    object-fit: contain;
+}
+
+.qbo-header-company-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #393a3d;
+    text-decoration: none;
+    white-space: nowrap;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.qbo-header-company-name:hover {
+    color: #0077c5;
+}
+
+/* Search Bar */
+.qbo-header-search {
+    flex: 1;
+    max-width: 600px;
+}
+
+.qbo-search-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.qbo-search-icon {
+    position: absolute;
+    left: 12px;
+    color: #666;
+    font-size: 18px;
+}
+
+.qbo-search-input {
+    width: 100%;
+    padding: 8px 40px 8px 40px;
+    border: 1px solid #d4d7dc;
+    border-radius: 4px;
+    font-size: 14px;
+    background: #f4f5f7;
+    transition: all 0.15s ease;
+}
+
+.qbo-search-input:focus {
+    outline: none;
+    border-color: var(--qbo-accent-blue);
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(0, 119, 197, 0.1);
+}
+
+.qbo-search-input::placeholder {
+    color: #8c939c;
+}
+
+.qbo-search-shortcut {
+    position: absolute;
+    right: 12px;
+    padding: 2px 6px;
+    border: 1px solid #d4d7dc;
+    border-radius: 3px;
+    font-size: 11px;
+    color: #666;
+    background: #fff;
+}
+
+/* Header Actions */
+.qbo-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.qbo-header-action {
+    position: relative;
+}
+
+.qbo-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    color: #444;
+    font-size: 20px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.qbo-action-btn:hover {
+    background: #f4f5f7;
+}
+
+.qbo-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: #e21836;
+    border-radius: 9px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* User Alert Button with Red Badge (like QBO) */
+.qbo-user-alert-btn {
+    position: relative;
+}
+
+.qbo-alert-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 10px;
+    height: 10px;
+    background: #e21836;
+    border-radius: 50%;
+    border: 2px solid #fff;
+}
+
+/* User Menu */
+.qbo-user-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    background: transparent;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    overflow: hidden;
+}
+
+.qbo-user-btn:hover {
+    border-color: var(--qbo-accent-blue);
+}
+
+.qbo-user-avatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.qbo-user-initial {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--qbo-accent-blue);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 50%;
+}
+
+/* Dropdown Menu */
+.qbo-dropdown-menu {
+    min-width: 280px;
+    padding: 8px 0;
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+}
+
+.qbo-dropdown-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.qbo-dropdown-header h6 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.qbo-mark-all-read {
+    font-size: 12px;
+    color: var(--qbo-accent-blue);
+}
+
+.qbo-dropdown-body {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.qbo-dropdown-footer {
+    padding: 12px 16px;
+    border-top: 1px solid #e0e0e0;
+    text-align: center;
+}
+
+.qbo-dropdown-footer a {
+    color: var(--qbo-accent-blue);
+    font-size: 13px;
+}
+
+/* Notification Items */
+.qbo-notification-item {
+    display: flex;
+    align-items: flex-start;
+    padding: 12px 16px;
+    text-decoration: none;
+    color: #333;
+    transition: background 0.15s ease;
+}
+
+.qbo-notification-item:hover {
+    background: #f4f5f7;
+}
+
+.qbo-notification-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #e8f4fc;
+    color: var(--qbo-accent-blue);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-right: 12px;
+}
+
+.qbo-notification-content p {
+    margin: 0 0 4px;
+    font-size: 13px;
+}
+
+.qbo-notification-time {
+    font-size: 11px;
+    color: #666;
+}
+
+/* Empty State */
+.qbo-empty-state {
+    padding: 32px 16px;
+    text-align: center;
+    color: #666;
+}
+
+.qbo-empty-state i {
+    font-size: 40px;
+    opacity: 0.5;
+    margin-bottom: 8px;
+}
+
+.qbo-empty-state p {
+    margin: 0;
+    font-size: 13px;
+}
+
+/* User Dropdown */
+.qbo-user-info {
+    display: flex;
+    align-items: center;
+    padding: 16px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.qbo-user-avatar-lg {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    overflow: hidden;
+    margin-right: 12px;
+    flex-shrink: 0;
+}
+
+.qbo-user-avatar-lg img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.qbo-user-initial-lg {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--qbo-accent-blue);
+    color: #fff;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.qbo-user-details h6 {
+    margin: 0 0 4px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.qbo-user-details p {
+    margin: 0;
+    font-size: 12px;
+    color: #666;
+}
+
+/* =====================================================
+   Customize Modal - Exact QBO Style
+   ===================================================== */
+
+/* Modal Overlay */
+#qboCustomizeModal .modal-dialog {
+    max-width: 600px;
+}
+
+#qboCustomizeModal .modal-content {
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+/* Modal Header */
+#qboCustomizeModal .modal-header {
+    border-bottom: none;
+    padding: 24px 24px 8px;
+}
+
+#qboCustomizeModal .modal-title {
+    font-size: 28px;
+    font-weight: 600;
+    color: #21262A;
+    font-style: normal;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding: 0;
+    line-height: 1.3;
+}
+
+#qboCustomizeModal .btn-close {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    opacity: 0.5;
+    transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+#qboCustomizeModal .btn-close:hover {
+    opacity: 1;
+    background: #f4f5f7;
+}
+
+/* Modal Body */
+#qboCustomizeModal .modal-body {
+    padding: 6px 24px 24px;
+}
+
+#qboCustomizeModal .modal-body>p {
+    color: #6b6c72;
+    font-size: 14px;
+    margin-bottom: 20px;
+    line-height: 1.5;
+}
+
+/* Customize List Container */
+/* Customize List Container - No scroll per user request */
+.qbo-customize-list {
+    padding-right: 8px;
+}
+
+/* Scrollbar styling */
+.qbo-customize-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.qbo-customize-list::-webkit-scrollbar-track {
+    background: #f4f5f7;
+    border-radius: 4px;
+}
+
+.qbo-customize-list::-webkit-scrollbar-thumb {
+    background: #d4d7dc;
+    border-radius: 4px;
+}
+
+.qbo-customize-list::-webkit-scrollbar-thumb:hover {
+    background: #b0b3b8;
+}
+
+/* Customize Item */
+.qbo-customize-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 0px;
+    background: #fff;
+    border-radius: 8px;
+    transition: all 0.15s ease;
+    cursor: move;
+}
+
+/* Drag Handle */
+.qbo-customize-drag {
+    cursor: grab;
+    color: #b0b3b8;
+    margin-right: 12px;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.qbo-customize-drag:active {
+    cursor: grabbing;
+}
+
+.qbo-customize-drag svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Visibility Toggle (X icon) */
+.qbo-visibility-toggle-btn {
+    background: none;
+    border: none;
+    color: #b0b3b8;
+    cursor: pointer;
+    padding: 4px;
+    margin-right: 12px;
+    display: flex;
+    align-items: center;
+    transition: color 0.15s ease;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.qbo-visibility-toggle-btn:hover {
+    color: #6b6c72;
+    background: #e4e5e7;
+}
+
+.qbo-visibility-toggle-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* Item hidden state */
+.qbo-customize-item.item-hidden {
+    opacity: 0.5;
+    background: #f4f5f7;
+}
+
+.qbo-customize-item.item-hidden .qbo-customize-label {
+    text-decoration: line-through;
+    color: #b0b3b8;
+}
+
+/* Pin Button */
+.qbo-pin-btn {
+    background: none;
+    border: none;
+    color: #b0b3b8;
+    cursor: pointer;
+    padding: 4px;
+    margin-right: 12px;
+    display: flex;
+    align-items: center;
+    transition: color 0.15s ease, background 0.15s ease;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.qbo-pin-btn:hover {
+    color: #393a3d;
+    background: #e4e5e7;
+}
+
+.qbo-pin-btn.pinned {
+    color: #2ca01c;
+}
+
+.qbo-pin-btn.pinned:hover {
+    color: #228b17;
+    background: rgba(44, 160, 28, 0.1);
+}
+
+.qbo-pin-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* App Icon */
+.qbo-customize-icon-img {
+    width: 24px;
+    height: 24px;
+    margin-right: 12px;
+    flex-shrink: 0;
+    border-radius: 50%;
+}
+
+.qbo-customize-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 18px;
+    margin-right: 12px;
+    flex-shrink: 0;
+}
+
+/* App Label */
+.qbo-customize-label {
+    flex: 1;
+    font-size: 14px;
+    color: #393a3d;
+    font-weight: 500;
+}
+
+/* Modal Footer - Exact QBO Style */
+#qboCustomizeModal .modal-footer {
+    border-top: none !important;
+    padding: 16px 24px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Left side container for Reset button */
+#qboCustomizeModal .modal-footer .btn-link {
+    padding: 0;
+    color: #00892E !important;
+    font-size: 16px;
+    font-weight: 500;
+    text-decoration: none;
+    background: none;
+    border: none;
+    margin-right: auto;
+}
+
+#qboCustomizeModal .modal-footer .btn-link:hover {
+    color: #00892E !important;
+    text-decoration: none;
+}
+
+/* Cancel Button - Green Outlined */
+#qboCustomizeModal .modal-footer .btn-secondary {
+    background: #fff;
+    border: 2px solid #2ca01c;
+    color: #2ca01c;
+    padding: 8px 24px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.15s ease;
+    min-width: 80px;
+}
+
+#qboCustomizeModal .modal-footer .btn-secondary:hover {
+    background: rgba(44, 160, 28, 0.08);
+    border-color: #228b17;
+    color: #228b17;
+}
+
+/* Save Button - Solid Green */
+#qboCustomizeModal .modal-footer .btn-primary {
+    background: #2ca01c;
+    border: 2px solid #2ca01c;
+    color: #fff;
+    padding: 8px 32px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.15s ease;
+    min-width: 80px;
+}
+
+#qboCustomizeModal .modal-footer .btn-primary:hover {
+    background: #228b17;
+    border-color: #228b17;
+}
+
+/* Sortable Ghost Class */
+.qbo-sortable-ghost {
+    opacity: 0.4;
+    background: #e8f4fc;
+    border: 2px dashed #0077c5;
+}
+
+/* Loading State */
+.qbo-customize-list.loading {
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.qbo-loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #2ca01c;
+    border-radius: 50%;
+    animation: qbo-spin 1s linear infinite;
+}
+
+@keyframes qbo-spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* Empty State */
+.qbo-customize-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #6b6c72;
+}
+
+.qbo-customize-empty svg {
+    width: 64px;
+    height: 64px;
+    opacity: 0.3;
+    margin-bottom: 16px;
+}
+
+.qbo-customize-empty p {
+    margin: 0;
+    font-size: 14px;
+}
+
+/* =====================================================
+   Pinned Section Flyout - Hover to show pinned items
+   ===================================================== */
+.qbo-pinned-wrapper {
+    position: relative;
+}
+
+.qbo-pinned-flyout {
+    position: absolute;
+    left: 100%;
+    top: 0;
+    min-width: 280px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(-10px);
+    transition: all 0.15s ease;
+    z-index: 1100;
+}
+
+.qbo-pinned-wrapper:hover .qbo-pinned-flyout {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+}
+
+.qbo-pinned-flyout-header {
+    padding: 16px 20px 12px;
+    font-weight: 600;
+    font-size: 16px;
+    color: #393a3d;
+    border-bottom: 1px solid #e4e5e7;
+}
+
+.qbo-pinned-flyout-body {
+    padding: 8px 0;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* Pinned Item */
+.qbo-pinned-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 20px;
+    text-decoration: none;
+    color: #393a3d;
+    transition: background 0.1s ease;
+}
+
+.qbo-pinned-item:hover {
+    background: #f4f5f7;
+    color: #393a3d;
+}
+
+.qbo-pinned-item-icon {
+    width: 28px;
+    height: 28px;
+    margin-right: 12px;
+    flex-shrink: 0;
+}
+
+.qbo-pinned-item-icon img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+}
+
+.qbo-pinned-item-label {
+    font-size: 14px;
+}
+
+/* Empty State */
+.qbo-pinned-empty {
+    padding: 24px 20px;
+    text-align: center;
+    color: #6b6c72;
+}
+
+.qbo-pinned-empty p {
+    margin: 0;
+    font-size: 14px;
+}
+
+.qbo-pinned-empty-hint {
+    margin-top: 8px !important;
+    font-size: 12px !important;
+    color: #9b9da2;
+}
+
+/* Responsive */
+@media (max-width: 767.98px) {
+    #qboCustomizeModal .modal-dialog {
+        max-width: 95%;
+        margin: 1rem auto;
+    }
+
+    .qbo-customize-item {
+        padding: 10px 12px;
+    }
+
+    .qbo-customize-icon-img,
+    .qbo-customize-icon {
+        width: 32px;
+        height: 32px;
+    }
+
+    .qbo-customize-label {
+        font-size: 14px;
+    }
+}
+
+/* =====================================================
+   Sidebar Overlay (Mobile)
+   ===================================================== */
+.qbo-sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1045;
+    display: none;
+}
+
+.qbo-sidebar-overlay.show {
+    display: block;
+}
+
+/* Mobile Menu Button */
+.qbo-mobile-menu-btn {
+    display: none;
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: #444;
+    cursor: pointer;
+    margin-right: 16px;
+}
+
+/* =====================================================
+   Main Content Adjustment
+   ===================================================== */
+.qbo-main-content {
+    margin-left: var(--qbo-sidebar-width) !important;
+    margin-top: var(--qbo-header-height);
+    /* Space for fixed header */
+    padding-top: 24px;
+    min-height: calc(100vh - var(--qbo-header-height));
+}
+
+/* =====================================================
+   Responsive Styles
+   ===================================================== */
+@media (max-width: 991.98px) {
+    .qbo-sidebar {
+        left: calc(-1 * var(--qbo-sidebar-width));
+    }
+
+    .qbo-sidebar.mobile-open {
+        left: 0;
+    }
+
+    .qbo-header {
+        left: 0;
+    }
+
+    .qbo-mobile-menu-btn {
+        display: block;
+    }
+
+    .qbo-main-content {
+        margin-left: 0 !important;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .qbo-search-wrapper {
+        display: none;
+    }
+
+    .qbo-header {
+        padding: 0 12px;
+    }
+
+    .qbo-header-company-name {
+        display: none;
+    }
+
+    .qbo-logo-img {
+        height: 28px;
+    }
+}
+
+/* =====================================================
+   Bookmarks Flyout - QBO Style
+   ===================================================== */
+.qbo-bookmarks-wrapper {
+    position: relative;
+}
+
+.qbo-bookmarks-flyout {
+    position: fixed;
+    left: var(--qbo-sidebar-width);
+    top: 48px;
+    width: 280px;
+    background: #fff;
+    border: 1px solid var(--qbo-sidebar-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    z-index: 1051;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+.qbo-bookmarks-wrapper:hover .qbo-bookmarks-flyout,
+.qbo-bookmarks-flyout:hover {
+    opacity: 1;
+    visibility: visible;
+}
+
+.qbo-bookmarks-flyout-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 16px 12px;
+    border-bottom: 1px solid var(--qbo-sidebar-border);
+}
+
+.qbo-bookmarks-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #393a3d;
+}
+
+.qbo-bookmarks-edit-btn {
+    background: none;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    color: #6b6c72;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+}
+
+.qbo-bookmarks-edit-btn:hover {
+    background: var(--qbo-sidebar-hover-bg);
+    color: #393a3d;
+}
+
+.qbo-bookmarks-flyout-body {
+    padding: 12px 16px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.qbo-bookmarks-empty {
+    text-align: center;
+    color: rgb(107, 108, 114);
+    padding: 7px 0px;
+}
+
+.qbo-bookmarks-empty p {
+    color: #6b6c72;
+    font-size: 14px;
+    margin: 0 0 0px;
+}
+
+.qbo-bookmark-current-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: none;
+    color: #393a3d;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 8px 0;
+    transition: color 0.15s ease;
+}
+
+.qbo-bookmark-current-btn:hover {
+    color: var(--qbo-accent-blue);
+}
+
+.qbo-bookmarks-items {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.qbo-bookmark-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 4px;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+}
+
+.qbo-bookmark-item:hover {
+    background: var(--qbo-sidebar-hover-bg);
+}
+
+.qbo-bookmark-icon {
+    flex-shrink: 0;
+    color: #393a3d;
+}
+
+.qbo-bookmark-label {
+    flex: 1;
+    color: #393a3d;
+    text-decoration: none;
+    font-size: 14px;
+}
+
+.qbo-bookmark-label:hover {
+    color: var(--qbo-accent-blue);
+}
+
+.qbo-bookmark-edit-icon {
+    background: none;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    color: #999;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.qbo-bookmark-item:hover .qbo-bookmark-edit-icon {
+    opacity: 1;
+}
+
+.qbo-bookmark-edit-icon:hover {
+    color: #393a3d;
+}
+
+/* Inline Edit Form */
+.qbo-bookmark-edit-form {
+    padding: 12px 16px;
+    border-top: 1px solid var(--qbo-sidebar-border);
+    background: #f9fafb;
+}
+
+.qbo-bookmark-edit-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: #393a3d;
+    margin-bottom: 8px;
+}
+
+.qbo-bookmark-edit-label {
+    font-size: 12px;
+    color: #6b6c72;
+    margin-bottom: 4px;
+    display: block;
+}
+
+.qbo-bookmark-edit-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #d4d7dc;
+    border-radius: 4px;
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+
+.qbo-bookmark-edit-input:focus {
+    outline: none;
+    border-color: var(--qbo-accent-green);
+    box-shadow: 0 0 0 2px rgba(44, 160, 28, 0.1);
+}
+
+.qbo-bookmark-edit-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-start;
+}
+
+.qbo-bookmark-remove-btn {
+    background: #fff;
+    border: 1px solid var(--qbo-accent-green);
+    color: var(--qbo-accent-green);
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.qbo-bookmark-remove-btn:hover {
+    background: rgba(44, 160, 28, 0.05);
+}
+
+.qbo-bookmark-save-btn {
+    background: var(--qbo-accent-green);
+    border: 1px solid var(--qbo-accent-green);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.qbo-bookmark-save-btn:hover {
+    background: #249516;
+}
+
+.qbo-bookmarks-flyout-footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--qbo-sidebar-border);
+}
+
+.qbo-edit-bookmark-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: none;
+    color: #6b6c72;
+    font-size: 13px;
+    cursor: pointer;
+    padding: 0;
+    transition: color 0.15s ease;
+}
+
+.qbo-edit-bookmark-link:hover {
+    color: #393a3d;
+}
+
+/* =====================================================
+   Customize Bookmarks Modal - QBO Style
+   ===================================================== */
+.qbo-bookmarks-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.qbo-bookmarks-modal {
+    background: #fff;
+    border-radius: 8px;
+    width: 100%;
+    max-width: 500px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    position: relative;
+}
+
+.qbo-bookmarks-modal-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: none;
+    border: none;
+    color: #6b6c72;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+}
+
+.qbo-bookmarks-modal-close:hover {
+    background: var(--qbo-sidebar-hover-bg);
+    color: #393a3d;
+}
+
+.qbo-bookmarks-modal-header {
+    padding: 20px 44px 16px 20px;
+}
+
+.qbo-bookmarks-modal-header span {
+    font-size: 20px;
+    font-weight: 600;
+    color: #393a3d;
+}
+
+.qbo-bookmarks-modal-body {
+    padding: 0 20px;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.qbo-bookmarks-modal-instructions {
+    color: #6b6c72;
+    font-size: 14px;
+    margin: 0 0 16px;
+}
+
+.qbo-bookmarks-search-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.qbo-bookmarks-search-icon {
+    position: absolute;
+    left: 12px;
+    pointer-events: none;
+}
+
+.qbo-bookmarks-search-input {
+    width: 100%;
+    padding: 10px 40px;
+    border: 1px solid #d4d7dc;
+    border-radius: 4px;
+    font-size: 14px;
+    background: #fff;
+}
+
+.qbo-bookmarks-search-input:focus {
+    outline: none;
+    border-color: var(--qbo-accent-blue);
+    box-shadow: 0 0 0 2px rgba(0, 119, 197, 0.1);
+}
+
+.qbo-bookmarks-search-input::placeholder {
+    color: #8c939c;
+}
+
+.qbo-bookmarks-search-clear {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    color: #6b6c72;
+    cursor: pointer;
+    padding: 4px;
+}
+
+.qbo-bookmarks-search-clear:hover {
+    color: #393a3d;
+}
+
+.qbo-bookmarks-reset-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: #6b6c72;
+    font-size: 13px;
+    cursor: pointer;
+    padding: 8px 0;
+    margin-bottom: 8px;
+}
+
+.qbo-bookmarks-reset-btn:hover {
+    color: #393a3d;
+}
+
+.qbo-bookmarks-checkbox-wrapper {
+    max-height: 320px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.qbo-bookmarks-selected,
+.qbo-bookmarks-not-selected {
+    display: flex;
+    flex-direction: column;
+}
+
+.qbo-bookmark-modal-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 4px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+}
+
+.qbo-bookmark-modal-item:hover {
+    background: var(--qbo-sidebar-hover-bg);
+}
+
+.qbo-bookmark-drag-handle {
+    cursor: grab;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    color: #999;
+}
+
+.qbo-bookmark-drag-handle:active {
+    cursor: grabbing;
+}
+
+.qbo-bookmark-checkbox {
+    width: 18px;
+    height: 18px;
+    border: 1px solid #d4d7dc;
+    border-radius: 3px;
+    cursor: pointer;
+    accent-color: var(--qbo-accent-green);
+}
+
+.qbo-bookmark-checkbox:checked {
+    background: var(--qbo-accent-green);
+    border-color: var(--qbo-accent-green);
+}
+
+.qbo-bookmark-checkbox-label {
+    font-size: 14px;
+    color: #393a3d;
+}
+
+.qbo-bookmarks-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--qbo-sidebar-border);
+}
+
+.qbo-bookmarks-cancel-btn {
+    background: #fff;
+    border: 1px solid var(--qbo-accent-green);
+    color: var(--qbo-accent-green);
+    padding: 10px 20px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.qbo-bookmarks-cancel-btn:hover {
+    background: rgba(44, 160, 28, 0.05);
+}
+
+.qbo-bookmarks-save-btn {
+    background: var(--qbo-accent-green);
+    border: 1px solid var(--qbo-accent-green);
+    color: #fff;
+    padding: 10px 24px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.qbo-bookmarks-save-btn:hover {
+    background: #249516;
+}
+
+/* =====================================================
+   Reports Flyout - QBO Style
+   ===================================================== */
+.qbo-reports-wrapper {
+    position: relative;
+}
+
+.qbo-reports-flyout {
+    position: fixed;
+    left: var(--qbo-sidebar-width);
+    top: 96px;
+    width: 240px;
+    background: #fff;
+    border: 1px solid var(--qbo-sidebar-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    z-index: 1051;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+.qbo-reports-wrapper:hover .qbo-reports-flyout,
+.qbo-reports-flyout:hover {
+    opacity: 1;
+    visibility: visible;
+}
+
+.qbo-reports-flyout-header {
+    padding: 16px 16px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #6b6c72;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.qbo-reports-flyout-body {
+    padding: 0 8px 12px;
+}
+
+.qbo-reports-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+}
+
+.qbo-reports-item:hover {
+    background: var(--qbo-sidebar-hover-bg);
+}
+
+.qbo-reports-link {
+    flex: 1;
+    color: #393a3d;
+    text-decoration: none;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.qbo-reports-link:hover {
+    color: var(--qbo-accent-blue);
+}
+
+.qbo-reports-bookmark-btn {
+    background: none;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    color: #999;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.qbo-reports-item:hover .qbo-reports-bookmark-btn {
+    opacity: 1;
+}
+
+.qbo-reports-bookmark-btn:hover {
+    color: var(--qbo-accent-blue);
+}
+
+.qbo-reports-bookmark-btn.bookmarked {
+    opacity: 1;
+    color: var(--qbo-accent-green);
+}
+
+.qbo-reports-bookmark-btn.bookmarked svg path {
+    fill: currentColor;
+}
+
+.qbo-reports-submenu {
+    cursor: pointer;
+}
+
+.qbo-reports-chevron {
+    color: #6b6c72;
+    transition: transform 0.15s ease;
+}
+
+.qbo-reports-submenu:hover .qbo-reports-chevron {
+    color: #393a3d;
+}
+
+/* =====================================================
+   All Apps Flyout - QBO Style
+   ===================================================== */
+.qbo-allapps-wrapper {
+    position: relative;
+}
+
+.qbo-allapps-flyout {
+    position: fixed;
+    left: var(--qbo-sidebar-width);
+    top: 48px;
+    bottom: 60px;
+    width: 260px;
+    background: #fff;
+    border: 1px solid var(--qbo-sidebar-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    z-index: 1051;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.qbo-allapps-wrapper:hover .qbo-allapps-flyout,
+.qbo-allapps-flyout:hover {
+    opacity: 1;
+    visibility: visible;
+}
+
+.qbo-allapps-flyout-header {
+    padding: 16px 16px 0px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #4C555B;
+    flex-shrink: 0;
+}
+
+.qbo-allapps-flyout-body {
+    padding: 8px 0;
+    overflow-y: auto;
+    overflow-x: visible;
+    flex: 1;
+    scrollbar-width: none;
+    /* Firefox */
+    -ms-overflow-style: none;
+    /* IE and Edge */
+}
+
+.qbo-allapps-flyout-body::-webkit-scrollbar {
+    display: none;
+    /* Chrome, Safari, Opera */
+}
+
+.qbo-allapps-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.15s ease;
+}
+
+.qbo-allapps-item:hover {
+    background: var(--qbo-sidebar-hover-bg);
+}
+
+.qbo-allapps-item-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+}
+
+.qbo-allapps-icon {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+}
+
+.qbo-allapps-label {
+    font-size: 14px;
+    color: #393a3d;
+}
+
+.qbo-allapps-chevron {
+    color: #6b6c72;
+    flex-shrink: 0;
+}
+
+.qbo-allapps-premium-icon {
+    flex-shrink: 0;
+}
+
+.qbo-allapps-divider {
+    border: none;
+    border-top: 1px solid var(--qbo-sidebar-border);
+    margin: 8px 16px;
+}
+
+/* Submenu (nested flyout) - uses fixed positioning to avoid clipping */
+.qbo-allapps-submenu {
+    position: fixed;
+    min-width: 220px;
+    background: #fff;
+    border: 1px solid var(--qbo-sidebar-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+    z-index: 1052;
+    padding: 8px 0;
+}
+
+/* Create a hover bridge between parent and submenu */
+.qbo-allapps-submenu::before {
+    content: '';
+    position: absolute;
+    left: -12px;
+    top: 0;
+    bottom: 0;
+    width: 16px;
+}
+
+.qbo-allapps-parent:hover .qbo-allapps-submenu {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.qbo-submenu-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    transition: background 0.15s ease;
+}
+
+.qbo-submenu-item:hover {
+    background: var(--qbo-sidebar-hover-bg);
+}
+
+.qbo-submenu-link {
+    flex: 1;
+    color: #393a3d;
+    text-decoration: none;
+    font-size: 14px;
+}
+
+.qbo-submenu-link:hover {
+    color: var(--qbo-accent-blue);
+}
+
+.qbo-submenu-bookmark-btn {
+    background: none;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    color: #999;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.qbo-submenu-item:hover .qbo-submenu-bookmark-btn {
+    opacity: 1;
+}
+
+.qbo-submenu-bookmark-btn:hover {
+    color: var(--qbo-accent-blue);
+}
+
+.qbo-submenu-bookmark-btn.bookmarked {
+    opacity: 1;
+    color: var(--qbo-accent-green);
+}
+
+.qbo-submenu-bookmark-btn.bookmarked svg path {
+    fill: currentColor;
+}

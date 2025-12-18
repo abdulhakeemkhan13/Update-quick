@@ -13,6 +13,11 @@ class PurchaseProduct extends Model
         'tax',
         'discount',
         'total',
+        'price',
+        'rate',
+        'quantity',
+        'description',
+        'line_total',
     ];
 
     public function product()

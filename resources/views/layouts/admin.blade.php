@@ -28,7 +28,7 @@
 
 @endphp
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" dir="{{ $SITE_RTL == 'on' ? 'rtl' : '' }}">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" dir="{{ $SITE_RTL == 'on' ? 'rtl' : '' }}" data-behaviour="pinned">
 
 <meta name="csrf-token" id="csrf-token" content="{{ csrf_token() }}">
 
@@ -92,6 +92,16 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
     <!-- vendor css -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.print.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
     @if ($SITE_RTL == 'on')
         <link rel="stylesheet" href="{{ asset('assets/css/style-rtl.css') }}">
@@ -107,10 +117,23 @@
 
     <link rel="stylesheet" href="{{ asset('assets/css/customizer.css') }}">
     <link rel="stylesheet" href="{{ asset('css/custom.css') }}">
+    <!-- QBO Menu Styles -->
+    <link rel="stylesheet" href="{{ asset('css/qbo-menu.css') }}">
 
     @if ($setting['cust_darklayout'] == 'on')
         <link rel="stylesheet" href="{{ asset('css/custom-dark.css') }}">
     @endif
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/daterangepicker@3.1.0/daterangepicker.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.print.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daterangepicker@3.1.0/daterangepicker.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
     <style>
         :root {
@@ -118,6 +141,61 @@
                 <?= $color ?>
             ;
         }
+
+        /* Make modal behave like a drawer */
+        #globalAddNewModal.modal {
+            padding: 0 !important;
+        }
+
+        /* Drawer container (modal-dialog) */
+        #globalAddNewModal .modal-dialog {
+            position: fixed !important;
+            top: 0 !important;
+            bottom: 0 !important;
+            right: -520px !important; /* start hidden */
+            margin: 0 !important;
+            height: 100%;
+            width: 520px !important;
+            max-width: 520px !important;
+
+            transform: none !important; /* override BS5 fade */
+            transition: right 0.35s ease-in-out;
+        }
+
+        /* When modal is shown → slide in */
+        #globalAddNewModal.show .modal-dialog {
+            right: 0 !important;
+        }
+
+        /* Drawer content styling */
+        #globalAddNewModal .modal-content {
+            height: 100%;
+            border-radius: 0 !important;
+            border: none !important;
+            overflow-y: auto;
+            box-shadow: -2px 0 12px rgba(0,0,0,0.18);
+        }
+
+        /* Clean header/body */
+        #globalAddNewModal .modal-header {
+            border-bottom: 1px solid #ddd;
+        }
+
+        #globalAddNewModal .modal-body {
+            padding: 16px;
+        }
+
+        /* Backdrop override */
+        .modal-backdrop.show {
+            opacity: 0.35 !important;
+        }
+
+        /* Kill Bootstrap’s fade transform interference */
+        #globalAddNewModal.fade .modal-dialog {
+            transform: none !important;
+        }
+
+
     </style>
 
     <link rel="stylesheet" href="{{ asset('css/custom-color.css') }}">
@@ -137,10 +215,16 @@
         </div>
     </div>
 
+    {{-- OLD MENU AND HEADER - COMMENTED OUT FOR QBO REDESIGN 
     @include('partials.admin.menu')
+    @include('partials.admin.header')
+    --}}
+    
+    {{-- NEW QBO-STYLE MENU AND HEADER --}}
+    @include('partials.admin.qbo-menu')
+    @include('partials.admin.qbo-header')
     <!-- [ navigation menu ] end -->
     <!-- [ Header ] start -->
-    @include('partials.admin.header')
 
     <!-- Modal -->
     <div class="modal notification-modal fade" id="notification-modal" tabindex="-1" role="dialog" aria-hidden="true">
@@ -204,9 +288,11 @@
     <!-- [ Header ] end -->
 
     <!-- [ Main Content ] start -->
-    <div class="dash-container">
+    <div class="dash-container qbo-main-content">
         <div class="dash-content">
+
             <div class="page-header">
+
                 <div class="page-block">
                     <div class="row align-items-center">
                         <div class="col-auto">
@@ -222,7 +308,9 @@
                         </div>
                     </div>
                 </div>
-            </div>
+
+            </div> 
+
             @yield('content')
             <!-- [ Main Content ] end -->
         </div>
@@ -243,7 +331,7 @@
 
     <div class="modal fade" id="commonModalOver" tabindex="-1" role="dialog" aria-labelledby="commonModalLabel"
         aria-hidden="true">
-        <div class="modal-dialog" role="document">
+        <div class="modal-dialog " role="document">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="commonModalLabel"></h5>
@@ -254,6 +342,7 @@
             </div>
         </div>
     </div>
+    
 
     <div class="position-fixed top-0 end-0 p-3" style="z-index: 99999">
         <div id="liveToast" class="toast text-white fade" role="alert" aria-live="assertive" aria-atomic="true">
@@ -266,8 +355,38 @@
     </div>
     @include('partials.admin.footer')
     @include('Chatify::layouts.footerLinks')
-
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
+        let modalDialog = modal.find('.modal-dialog');
+        if ($(this).data('size') === 'fullscreen') {
+            modalDialog.addClass('modal-fullscreen');
+        } else {
+            modalDialog.removeClass('modal-fullscreen');
+        }
+        $(document).on('click', '[data-ajax-popup="true"]', function(e) {
+            e.preventDefault();
+
+            let url = $(this).data('url');
+            let title = $(this).data('title') || '';
+
+            let modal = $('#commonModalOver');
+            modal.find('.modal-title').text(title);
+            modal.find('.modal-body').html('<div class="text-center py-5">Loading...</div>'); // optional loader
+
+            $.ajax({
+                url: url,
+                method: 'GET',
+                success: function(data) {
+                    modal.find('.modal-body').html(data);
+                    modal.modal('show');
+                },
+                error: function() {
+                    modal.find('.modal-body').html('<p class="text-danger text-center">Error loading content.</p>');
+                }
+            });
+        });
+
+
         //new export function
 
         function exportDataTable(tableId, pageTitle, format = "excel") {

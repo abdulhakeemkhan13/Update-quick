@@ -241,7 +241,88 @@
             // When individual modal checkboxes change, update Select All state
             $(document).on('change', '.modal-row-checkbox', updateModalSelectAllState);
 
+            $(document).on('change', '.item-product', function() {
+                const productId = $(this).val();
+                const currentRow = $(this).closest('tr');
 
+                if (!productId) return;
+
+                $.ajax({
+                    url: '{{ route('bill.product') }}',
+                    method: 'POST',
+                    data: {
+                        _token: '{{ csrf_token() }}',
+                        product_id: productId
+                    },
+                    success: function(response) {
+                        // Parse JSON if it's a string
+                        const data = typeof response === 'string' ? JSON.parse(response) :
+                            response;
+
+                        if (data.product) {
+                            // Get description (or name if description doesn't exist)
+                            const description = data.product.description || data.product.name ||
+                                '';
+                            currentRow.find('.item-description').val(description);
+
+                            // Get purchase price
+                            const rate = parseFloat(data.product.purchase_price) || 0;
+                            currentRow.find('.item-rate').val(rate.toFixed(2));
+
+                            // Set quantity to 1
+                            const qty = 1;
+                            currentRow.find('.item-qty').val(qty);
+
+                            // Calculate amount (qty × rate)
+                            const amount = qty * rate;
+                            currentRow.find('.item-amount').val(amount.toFixed(2));
+
+                            // Recalculate subtotal and grand total
+                            calculateBillTotal();
+                        }
+                    },
+                    error: function(xhr) {
+                        console.error('Error fetching product:', xhr);
+                        alert('Failed to load product details. Please try again.');
+                    }
+                });
+            });
+
+            // Function to calculate bill totals
+            function calculateBillTotal() {
+                let subtotal = 0;
+
+                // Sum all category amounts
+                $('.category-amount').each(function() {
+                    subtotal += parseFloat($(this).val()) || 0;
+                });
+
+                // Sum all item amounts
+                $('.item-amount').each(function() {
+                    subtotal += parseFloat($(this).val()) || 0;
+                });
+
+                // Update displays
+                $('#subtotal').val(subtotal.toFixed(2));
+                $('#total').val(subtotal.toFixed(2));
+                $('#subtotal-display').text('$' + subtotal.toFixed(2));
+                $('#total-display').text('$' + subtotal.toFixed(2));
+                $('#grand-total-display').text('$' + subtotal.toFixed(2));
+            }
+
+            // Recalculate when qty or rate changes
+            $(document).on('input', '.item-qty, .item-rate', function() {
+                const row = $(this).closest('tr');
+                const qty = parseFloat(row.find('.item-qty').val()) || 0;
+                const rate = parseFloat(row.find('.item-rate').val()) || 0;
+                row.find('.item-amount').val((qty * rate).toFixed(2));
+                calculateBillTotal();
+            });
+
+            // Recalculate when category amount changes
+            $(document).on('input', '.category-amount', function() {
+                calculateBillTotal();
+            });
             // modal proceed payment button - does nothing (explicit per requirements)
             $('#modal-proceed-payment').on('click', function(e) {
                 // e.preventDefault();
@@ -302,9 +383,9 @@
         </a>
 
         @can('create bill')
-            <a href="{{ route('bill.create', 0) }}" class="btn btn-sm btn-primary" data-bs-toggle="tooltip"
-                title="{{ __('Create') }}">
-                {{ __('Create New Bill') }}
+            <a href="#" data-url="{{ route('bill.create', 0) }}" data-ajax-popup="true" data-size="fullscreen"
+                data-title="{{ __('Create New Bill') }}" data-bs-toggle="tooltip" title="{{ __('Create') }}"
+                class="btn btn-sm btn-primary">
                 <i class="ti ti-plus"></i>
             </a>
         @endcan
@@ -499,9 +580,9 @@
                                                     @endcan
                                                     @can('show bill')
                                                         <div class="action-btn bg-info ms-2">
-                                                            <a href="{{ route('bill.show', \Crypt::encrypt($bill->id)) }}"
+                                                            <a href="{{ $bill->vender_id ? route('vender.show', \Crypt::encrypt($bill->vender_id)) : '#' }}"
                                                                 class="mx-3 btn btn-sm align-items-center"
-                                                                data-bs-toggle="tooltip" title="{{ __('Show') }}"
+                                                                data-bs-toggle="tooltip" title="{{ __('Show Vendor') }}"
                                                                 data-original-title="{{ __('Detail') }}">
                                                                 <i class="ti ti-eye text-white"></i>
                                                             </a>
@@ -509,10 +590,15 @@
                                                     @endcan
                                                     @can('edit bill')
                                                         <div class="action-btn bg-primary ms-2">
-                                                            <a href="{{ route('bill.edit', \Crypt::encrypt($bill->id)) }}"
+                                                            {{-- <a href="{{ route('bill.edit', \Crypt::encrypt($bill->id)) }}"
                                                                 class="mx-3 btn btn-sm align-items-center"
                                                                 data-bs-toggle="tooltip" title="Edit"
                                                                 data-original-title="{{ __('Edit') }}">
+                                                                <i class="ti ti-pencil text-white"></i>
+                                                            </a> --}}
+                                                            <a href="#" data-url="{{ route('bill.edit', \Crypt::encrypt($bill->id)) }}" 
+                                                                data-ajax-popup="true" data-size="fullscreen"
+                                                                data-bs-toggle="tooltip" title="Edit">
                                                                 <i class="ti ti-pencil text-white"></i>
                                                             </a>
                                                         </div>

@@ -86,61 +86,132 @@ class DepositDetailDataTable extends DataTable
         ]);
 
         try {
-            // Test data availability
-            $invoicePaymentCount = DB::table('invoice_payments')
-                ->join('invoices', 'invoices.id', '=', 'invoice_payments.invoice_id')
-                ->where('invoices.created_by', $ownerId)
-                ->count();
-
-            $revenueCount = DB::table('revenues')
-                ->where('created_by', $ownerId)
-                ->count();
-
-            \Log::info('Data availability check', [
-                'invoice_payments' => $invoicePaymentCount,
-                'revenues' => $revenueCount
-            ]);
-
+           
             // Build the main query for invoice payments (customer deposits)
             $invoicePaymentsQuery = DB::table('invoice_payments')
-                ->join('invoices', 'invoices.id', '=', 'invoice_payments.invoice_id')
-                ->join('customers', 'customers.id', '=', 'invoices.customer_id')
-                ->where('invoices.created_by', $ownerId)
-                ->whereBetween('invoice_payments.date', [$start, $end])
+    ->join('invoices', 'invoices.id', '=', 'invoice_payments.invoice_id')
+    ->join('customers', 'customers.id', '=', 'invoices.customer_id')
+    ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'invoice_payments.account_id')
+    ->where('invoices.created_by', $ownerId)
+    ->whereBetween('invoice_payments.date', [$start, $end])
+    ->select([
+        'invoice_payments.date as transaction_date',
+        DB::raw("'Payment' as transaction_type"),
+        'invoices.invoice_id as num',
+        'customers.name as customer_full_name',
+        DB::raw("'-' as vendor"),
+        DB::raw("
+            COALESCE(
+                invoice_payments.description,
+                CONCAT('Payment for Invoice #', invoices.invoice_id)
+            ) as memo_description
+        "),
+        DB::raw("
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM transactions t_credit
+                    JOIN transactions t_invoice
+                        ON t_credit.payment_no = t_invoice.payment_no
+                    WHERE t_credit.category = 'Customer Credit'
+                      AND t_invoice.category = 'Invoice'
+                      AND t_invoice.payment_id = invoice_payments.id
+                      AND t_credit.amount > 0
+                )
+                THEN 'Uncleared'
+                WHEN invoice_payments.add_receipt IS NOT NULL
+                THEN 'Cleared'
+                ELSE 'Uncleared'
+            END as cleared
+        "),
+        DB::raw("
+            (
+                invoice_payments.amount
+                - COALESCE(
+                    (
+                        SELECT SUM(t_credit.amount)
+                        FROM transactions t_credit
+                        JOIN transactions t_invoice
+                            ON t_credit.payment_no = t_invoice.payment_no
+                        WHERE t_credit.category = 'Customer Credit'
+                          AND t_invoice.category = 'Invoice'
+                          AND t_invoice.payment_id = invoice_payments.id
+                    ),
+                    0
+                )
+            ) AS amount
+        "),
+        'bank_accounts.bank_name as bank'
+    ]);
+
+                // dd($invoicePaymentsQuery->get());
+            // Build query for Customer Credits (Extra paid amounts from transactions)
+            // Linked to Invoice Payments via payment_no to ensure correct Owner/Context
+            $customerCreditsQuery = DB::table('transactions as t_credit')
+                ->join('transactions as t_link', 't_link.payment_no', '=', 't_credit.payment_no')
+                ->join('invoice_payments as ip', 'ip.id', '=', 't_link.payment_id')
+                ->join('invoices as i', 'i.id', '=', 'ip.invoice_id')
+                ->join('customers', 'customers.id', '=', 't_credit.user_id')
+                ->where('t_credit.category', 'Customer Credit')
+                ->where('t_link.category', 'Invoice')
+                ->where('i.created_by', $ownerId)
+                ->whereBetween('t_credit.date', [$start, $end])
                 ->select([
-                    'invoice_payments.date as transaction_date',
-                    DB::raw("'Payment' as transaction_type"),
-                    'invoices.invoice_id as num',
+                    't_credit.date as transaction_date',
+                    DB::raw("'Customer Credit' as transaction_type"),
+                    't_credit.payment_no as num',
                     'customers.name as customer_full_name',
                     DB::raw("'-' as vendor"),
-                    DB::raw('COALESCE(invoice_payments.description, CONCAT("Payment for Invoice #", invoices.invoice_id)) as memo_description'),
-                    DB::raw("CASE WHEN invoice_payments.add_receipt IS NOT NULL THEN 'Cleared' ELSE 'Uncleared' END as cleared"),
-                    'invoice_payments.amount as amount'
+                    't_credit.description as memo_description',
+                    DB::raw("'Uncleared' as cleared"),
+                    't_credit.amount as amount',
+                    DB::raw("'-' as bank")
+                ])
+                ->distinct();
+
+            // Build query for Credit Memos (Negative amounts)
+            // "subtract credit_mamoes amount" - User Request
+            $creditNotesQuery = DB::table('credit_notes')
+                ->join('customers', 'customers.id', '=', 'credit_notes.customer')
+                ->where('credit_notes.created_by', $ownerId)
+                ->whereBetween('credit_notes.date', [$start, $end])
+                ->select([
+                    'credit_notes.date as transaction_date',
+                    DB::raw("'Credit Memo' as transaction_type"),
+                    DB::raw("CONCAT('CN-', credit_notes.id) as num"), // Or credit_notes.id if integer preferred
+                    'customers.name as customer_full_name',
+                    DB::raw("'-' as vendor"),
+                    'credit_notes.description as memo_description',
+                    DB::raw("'Uncleared' as cleared"), // Credit notes are uncleared until applied
+                    DB::raw("(-1 * credit_notes.amount) as amount"),
+                    DB::raw("'-' as bank")
                 ]);
 
-            // Build query for other revenues (direct deposits)
-            $revenuesQuery = DB::table('revenues')
-                ->leftJoin('customers', 'customers.id', '=', 'revenues.customer_id')
-                ->where('revenues.created_by', $ownerId)
-                ->whereBetween('revenues.date', [$start, $end])
+            // Build query for Deposits
+            $depositsQuery = DB::table('deposits')
+                ->leftJoin('customers', 'customers.id', '=', 'deposits.customer_id')
+                ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'deposits.bank_id')
+                ->whereBetween('deposits.txn_date', [$start, $end])
                 ->select([
-                    'revenues.date as transaction_date',
+                    'deposits.txn_date as transaction_date',
                     DB::raw("'Deposit' as transaction_type"),
-                    'revenues.reference as num',
+                    'deposits.doc_number as num',
                     DB::raw('COALESCE(customers.name, "Direct Deposit") as customer_full_name'),
                     DB::raw("'-' as vendor"),
-                    'revenues.description as memo_description',
+                    'deposits.private_note as memo_description',
                     DB::raw("'Cleared' as cleared"),
-                    'revenues.amount as amount'
+                    DB::raw('-deposits.total_amt as amount'),
+                    'bank_accounts.bank_name as bank'
                 ]);
 
-            // Combine both queries using UNION
-            $query = $invoicePaymentsQuery->unionAll($revenuesQuery);
+            // Combine all queries using UNION
+            $query = $invoicePaymentsQuery
+                ->unionAll($depositsQuery);
 
             // Apply customer filter
             if (!empty($selectedCustomer)) {
                 $query->where(function ($q) use ($selectedCustomer) {
-                    $q->where('customers.name', 'LIKE', '%' . $selectedCustomer . '%');
+                    $q->where('customer_full_name', 'LIKE', '%' . $selectedCustomer . '%');
                 });
             }
 
@@ -203,15 +274,40 @@ class DepositDetailDataTable extends DataTable
                 'searching' => false,
                 'info' => false,
                 'ordering' => false,
-                'order' => [[0, 'asc']], // Sort by Transaction Date ascending
+                'order' => [[0, 'asc'], [1, 'asc']], // Sort by Bank then Transaction Date ascending
                 'colReorder' => true,
                 'fixedHeader' => true,
                 'scrollY' => '420px',
                 'scrollX' => true,
                 'scrollCollapse' => true,
+                'rowGroup' => [
+                    'dataSrc' => 'bank',
+                    'startRender' => 'function ( rows, group ) {
+                        return \'<tr class="group-header" data-group="\' + group + \'"><td colspan="9"><i class="fa fa-plus"></i> \' + group + \'</td></tr>\';
+                    }'
+                ],
+                'initComplete' => 'function() {
+                    var table = this.api();
+                    $(\'tr.group-header\').each(function() {
+                        var group = $(this).data(\'group\');
+                        var groupRows = table.rows().nodes().to$().filter(function() {
+                            return $(this).find(\'td:first\').text() === group;
+                        });
+                        groupRows.hide();
+                    });
+                    $(\'tr.group-header\').on(\'click\', function() {
+                        var group = $(this).data(\'group\');
+                        var groupRows = table.rows().nodes().to$().filter(function() {
+                            return $(this).find(\'td:first\').text() === group;
+                        });
+                        groupRows.toggle();
+                        var icon = $(this).find(\'i\');
+                        icon.toggleClass(\'fa-plus fa-minus\');
+                    });
+                }',
                 'columnDefs' => [
                     [
-                        'targets' => [7], // Amount column
+                        'targets' => [8], // Amount column
                         'className' => 'text-right'
                     ]
                 ],
@@ -225,6 +321,7 @@ class DepositDetailDataTable extends DataTable
     protected function getColumns()
     {
         return [
+            Column::make('bank')->title(__('Bank'))->visible(true)->width('10%'),
             Column::make('transaction_date')->title(__('Transaction Date'))->visible(true)->width('12%'),
             Column::make('transaction_type')->title(__('Transaction Type'))->visible(true)->width('12%'),
             Column::make('num')->title(__('Num'))->visible(true)->width('10%'),

@@ -197,7 +197,8 @@ class IncomeByCustomerSummaryTwoDataTable extends DataTable
                 DB::raw('SUM(ip.price * ip.quantity - COALESCE(ip.discount, 0)) as income')
             )
             ->where('i.created_by', $ownerId)
-            ->where('i.status', '!=', 0);
+            ->where('i.status', '!=', 0)
+            ;
 
         if ($startDate) {
             $incomeSubquery->whereDate('i.issue_date', '>=', $startDate);

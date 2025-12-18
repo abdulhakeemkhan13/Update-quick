@@ -6,10 +6,23 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 
+use Laravel\Scout\Searchable;
+
 class Vender extends Authenticatable
 {
     use HasRoles;
     use Notifiable;
+    use Searchable;
+
+    public function toSearchableArray()
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'email' => $this->email,
+            'contact' => $this->contact,
+        ];
+    }
 
     protected $guard_name = 'web';
     protected $fillable   = [
@@ -23,6 +36,7 @@ class Vender extends Authenticatable
         'balance',
         'is_active',
         'created_by',
+        'owned_by',
         'email_verified_at',
         'billing_name',
         'billing_country',
@@ -38,6 +52,29 @@ class Vender extends Authenticatable
         'shipping_phone',
         'shipping_zip',
         'shipping_address',
+        'company_name',
+        'title',
+        'first_name',
+        'middle_name',
+        'last_name',
+        'suffix',
+        'mobile',
+        'fax',
+        'other',
+        'website',
+        'print_on_check_name',
+        'billing_address_2',
+        'notes',
+        'bank_account_number',
+        'routing_number',
+        'business_id_no',
+        'track_payments_1099',
+        'billing_rate',
+        'terms',
+        'account_no',
+        'default_expense_category',
+        'opening_balance',
+        'opening_balance_as_of',
     ];
 
     protected $hidden = [
@@ -238,6 +275,20 @@ class Vender extends Authenticatable
 
         return $due;
     }
+
+    public function getDueAmount()
+{
+    $totalDue = 0;
+    $bills = \App\Models\Bill::where('vender_id', $this->id)
+                             ->where('status', '!=', 4)
+                             ->get();
+
+    foreach ($bills as $bill) {
+        $totalDue += $bill->getDue(); // Ye method already exist karta hoga Bill model mein
+    }
+
+    return $totalDue;
+}
 
     public function bills()
     {

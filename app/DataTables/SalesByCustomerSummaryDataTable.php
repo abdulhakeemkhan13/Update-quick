@@ -28,24 +28,10 @@ class SalesByCustomerSummaryDataTable extends DataTable
             'isGrandTotal' => true,
         ]);
 
-        /*return datatables()
-            ->of($query)
-            ->addColumn('customer_name', function ($row) {
-                return $row->customer_name ?: '-';
-            })
-            ->addColumn('total', function ($row) {
-                $amount = (float) ($row->total ?: 0);
-                return number_format($amount);
-            })
-            ->rawColumns(['customer_name', 'total'])
-            ->with([
-                'totals' => $this->calculateTotals($query)
-            ]);*/
-
         return datatables()
             ->collection($rows)
             ->addColumn('customer_name', fn($r) => $r->isGrandTotal ?? false ? $r->customer_name : ($r->customer_name ?: '-'))
-            ->addColumn('total', fn($r) => $r->isGrandTotal ?? false ? '<strong>' . number_format($r->total ?? 0) . '</strong>' : number_format($r->total ?? 0))
+            ->addColumn('total', fn($r) => $r->isGrandTotal ?? false ? '<strong>' . number_format($r->total ?? 0, 2) . '</strong>' : number_format($r->total ?? 0, 2))
             ->rawColumns(['customer_name', 'total']);
     }
 
@@ -80,66 +66,40 @@ class SalesByCustomerSummaryDataTable extends DataTable
             ?? request()->get('endDate')
             ?? date('Y-m-d');
 
-        // Query based on memory knowledge: invoices don't have 'total' field
-        // Must calculate from invoice_products: (price * quantity - discount) + tax
-        $query = DB::table('customers')
-            ->select([
-                'customers.name as customer_name',
-                // DB::raw('
-                //     COALESCE(
-                //         SUM(
-                //             (invoice_products.price * invoice_products.quantity) - 
-                //             COALESCE(invoice_products.discount, 0) + 
-                //             COALESCE(
-                //                 (
-                //                     SELECT SUM(t.rate * ((invoice_products.price * invoice_products.quantity) - COALESCE(invoice_products.discount, 0)) / 100)
-                //                     FROM taxes t
-                //                     WHERE FIND_IN_SET(t.id, COALESCE(invoice_products.tax, "")) > 0
-                //                 ), 0
-                //             )
-                //         ), 0
-                //     ) as total'
-                // )
-                DB::raw('
-    COALESCE(
-        SUM(
-            (invoice_products.price * invoice_products.quantity) - COALESCE(invoice_products.discount, 0)
-        ), 0
-    ) as total'
-                )
+        // Invoice Query
+        $invoices = DB::table('invoice_products as ip')
+            ->join('invoices as i', 'i.id', '=', 'ip.invoice_id')
+            ->join('customers as c', 'c.id', '=', 'i.customer_id')
+            ->select(
+                'c.id as customer_id',
+                'c.name as customer_name',
+                DB::raw('(ip.price * ip.quantity - COALESCE(ip.discount, 0)) as total')
+            )
+            ->where('i.created_by', $ownerId)
+            ->whereBetween('i.issue_date', [$start, $end])
+            ->where('i.status', '!=', 0);
 
+        // Credit Note Query (Negative values)
+        $creditNotes = DB::table('credit_note_products as cp')
+            ->join('credit_notes as cn', 'cn.id', '=', 'cp.credit_note_id')
+            ->join('customers as c', 'c.id', '=', 'cn.customer')
+            ->select(
+                'c.id as customer_id',
+                'c.name as customer_name',
+                DB::raw('(-1 * (cp.price * cp.quantity - COALESCE(cp.discount, 0))) as total')
+            )
+            ->where('cn.created_by', $ownerId)
+            ->whereBetween('cn.date', [$start, $end]);
 
-            ])
-            ->leftJoin('invoices', function ($join) use ($ownerId, $start, $end) {
-                $join->on('customers.id', '=', 'invoices.customer_id')
-                    ->where('invoices.created_by', $ownerId)
-                    ->whereBetween('invoices.issue_date', [$start, $end])
-                    ->where('invoices.status', '!=', 0); // Exclude draft (0)
-            })
-            ->leftJoin('invoice_products', 'invoice_products.invoice_id', '=', 'invoices.id')
-            ->where('customers.created_by', $ownerId)
-            ->groupBy('customers.id', 'customers.name')
-            ->havingRaw('total > 0') // Only show customers with sales
-            ->orderBy('total', 'desc');
+        // Unite Scripts
+        $unionQuery = $invoices->unionAll($creditNotes);
 
-        // Debug the query
-        \Log::info('Sales by Customer Query:', [
-            'sql' => $query->toSql(),
-            'bindings' => $query->getBindings(),
-            'owner_id' => $ownerId,
-            'start_date' => $start,
-            'end_date' => $end
-        ]);
-
-        // Get results and log count
-        $results = $query->get();
-        \Log::info('Query Results Count: ' . $results->count());
-
-        if ($results->count() > 0) {
-            \Log::info('Sample results:', $results->take(3)->toArray());
-        } else {
-            \Log::info('No sales data found in database');
-        }
+        // Final Query to aggregate by customer
+        $query = DB::query()->fromSub($unionQuery, 'combined_sales')
+            ->select('customer_name', DB::raw('SUM(total) as total'))
+            ->groupBy('customer_id', 'customer_name')
+            ->havingRaw('SUM(total) > 0') // Only show customers with positive sales
+            ->orderBy('customer_name', 'asc');
 
         return $query;
     }

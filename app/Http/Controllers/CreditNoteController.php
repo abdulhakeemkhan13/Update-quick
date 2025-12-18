@@ -6,10 +6,19 @@ use App\Models\CreditNote;
 use App\Models\Invoice;
 use App\Models\Utility;
 use App\Models\Customer;
+use App\Models\CustomField;
+use App\Models\ProductService;
+use App\Models\ProductServiceCategory;
 use App\Models\WorkFlow;
 use App\Models\Notification;
 use App\Models\WorkFlowAction;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
+use Maatwebsite\Excel\Facades\Excel;
+use Carbon\Carbon;
 use Auth;
 
 class CreditNoteController extends Controller
@@ -48,6 +57,58 @@ class CreditNoteController extends Controller
         {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
+    }
+
+    public function creditmemoIndex()
+    {
+        return view('creditmemo.index');
+    }
+
+    public function creditmemoCreate($customerId)
+    {
+        if (\Auth::user()->can('create invoice')) {
+            $user = \Auth::user();
+            $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
+            $column = ($user->type == 'company') ? 'created_by' : 'owned_by';
+
+            $customFields = CustomField::where('created_by', '=', \Auth::user()->creatorId())
+                ->where('module', '=', 'invoice')->get();
+            $invoice_number = \Auth::user()->invoiceNumberFormat($this->invoiceNumber());
+
+            $customers = Customer::where($column, $ownerId)->get()->pluck('name', 'id')->toArray();
+            $customers = ['__add__' => '➕ Add new customer'] + ['' => 'Select Customer'] + $customers;
+
+            $category = ProductServiceCategory::where($column, $ownerId)
+                ->where('type', 'income')->get()->pluck('name', 'id')->toArray();
+            $category = ['__add__' => '➕ Add new category'] + ['' => 'Select Category'] + $category;
+
+            $product_services = ProductService::where($column, $ownerId)->get()->pluck('name', 'id');
+            $product_services->prepend('--', '');
+
+            return view('creditmemo.create', compact(
+                'customers',
+                'invoice_number',
+                'product_services',
+                'category',
+                'customFields',
+                'customerId'
+            ));
+        } else {
+            return response()->json(['error' => __('Permission denied.')], 401);
+        }
+    }
+
+    public function invoiceNumber()
+    {
+        $user = \Auth::user();
+        $ownerId = $user->type === 'company' ? $user->creatorId() : $user->ownedId();
+        $column = $user->type == 'company' ? 'created_by' : 'owned_by';
+        $latest = Invoice::where($column, '=', $ownerId)->latest()->first();
+        if (!$latest) {
+            return 1;
+        }
+
+        return $latest->invoice_id + 1;
     }
 
     public function store(Request $request, $invoice_id)

@@ -4,8 +4,20 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
+use Laravel\Scout\Searchable;
+
 class Invoice extends Model
 {
+    use Searchable;
+
+    public function toSearchableArray()
+    {
+        return [
+            'id' => $this->id,
+            'invoice_id' => $this->invoice_id,
+            'ref_number' => $this->ref_number,
+        ];
+    }
     protected $fillable = [
         'invoice_id',
         'customer_id',
@@ -15,7 +27,7 @@ class Invoice extends Model
         'status',
         'category_id',
         'created_by',
-                'is_recurring',
+        'is_recurring',
         'recurring_repeat',
         'recurring_every_n',
         'recurring_end_type',
@@ -23,6 +35,18 @@ class Invoice extends Model
         'recurring_end_date',
         'next_run_at',
         'recurring_parent_id',
+        'subtotal',
+        'taxable_subtotal',
+        'total_discount',
+        'tax_id',
+        'tax_rate',
+        'sales_tax_amount',
+        'total_amount',
+        'logo',
+        'attachments',
+        'memo',
+        'terms',
+        'note',
     ];
 
     

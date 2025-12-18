@@ -15,12 +15,19 @@ class BillPayment extends Model
         'description',
         'voucher_id',
         'amount',
+        'payment_type',
+        'coa_account',
     ];
 
 
     public function bankAccount()
     {
         return $this->hasOne('App\Models\BankAccount', 'id', 'account_id');
+    }
+    
+    public function bill()
+    {
+        return $this->belongsTo('App\Models\Bill', 'bill_id');
     }
     
 }

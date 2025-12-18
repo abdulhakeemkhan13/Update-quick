@@ -14,7 +14,15 @@ class Proposal extends Model
         'category_id',
         'is_convert',
         'converted_invoice_id',
+        'subtotal',
+        'taxable_subtotal',
+        'total_discount',
+        'total_tax',
+        'sales_tax_amount',
+        'total_amount',
         'created_by',
+        'accepted_by',
+        'accepted_date',
     ];
 
     public static $statues = [

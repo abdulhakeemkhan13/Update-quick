@@ -12,6 +12,14 @@ class JournalEntry extends Model
         'description',
         'journal_id',
         'created_by',
+        'voucher_type',
+        'reference_id',
+        'prod_id',
+        'category',
+        'owned_by',
+        'status',
+        'module',
+        'source',
     ];
 
 
@@ -47,5 +55,32 @@ class JournalEntry extends Model
         return $total;
     }
 
+    /**
+     * Scope to filter active (non-cancelled) entries
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('status', 1);
+    }
+
+    /**
+     * Scope to filter by module
+     */
+    public function scopeByModule($query, $module)
+    {
+        return $query->where('module', $module);
+    }
+
+    /**
+     * Scope to filter by reference
+     */
+    public function scopeByReference($query, $referenceId, $category = null)
+    {
+        $query->where('reference_id', $referenceId);
+        if ($category) {
+            $query->where('category', $category);
+        }
+        return $query;
+    }
 
 }

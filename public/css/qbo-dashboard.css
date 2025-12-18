@@ -1,0 +1,1364 @@
+/* ==========================================================================
+   QBO Dashboard - GridStack with Bootstrap 12-column layout
+   Matches QuickBooks Online dashboard styling
+   ========================================================================== */
+
+/* ==========================================================================
+   Fixed Header - Welcome + Navigation (Sticky)
+   ========================================================================== */
+.qbo-fixed-header {
+    position: sticky;
+    top: 0;
+    z-index: 1020;
+    background-color: #fff;
+    /* padding: 20px 0 0 0; */
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-bottom: 1px solid #e9ecef;
+    box-shadow: 0 1px 4px 0 rgba(76, 85, 91, 0.2);
+}
+
+.qbo-welcome-row {
+    margin-bottom: 20px;
+}
+
+.qbo-welcome-title {
+    font-size: 28px;
+    font-weight: 500;
+    color: #333;
+    margin: 0;
+    text-align: center;
+}
+
+/* Navigation Chips Row */
+.qbo-nav-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 15px;
+}
+
+.qbo-nav-container {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    flex: 1;
+    padding: 5px 0;
+}
+
+.qbo-nav-container::-webkit-scrollbar {
+    display: none;
+}
+
+.qbo-nav-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 20px;
+    padding: 6px 16px 6px 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #333;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: all 0.2s ease-in-out;
+    flex-shrink: 0;
+}
+
+.qbo-nav-chip:hover {
+    background-color: #f5f5f5;
+    border-color: #ccc;
+    color: #333;
+    text-decoration: none;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.qbo-nav-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    color: #fff;
+}
+
+.qbo-nav-icon i {
+    font-size: 14px;
+}
+
+.qbo-nav-scroll-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid #e0e0e0;
+    border-radius: 50%;
+    background: #fff;
+    color: #666;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.2s;
+}
+
+.qbo-nav-scroll-btn:hover {
+    background: #f5f5f5;
+    border-color: #ccc;
+}
+
+/* ==========================================================================
+   Scrollable Content Area (Hidden Scrollbar)
+   ========================================================================== */
+.qbo-scrollable-content {
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding: 20px 0;
+}
+
+.qbo-scrollable-content::-webkit-scrollbar {
+    display: none;
+}
+
+/* ==========================================================================
+   Business Feed Section
+   ========================================================================== */
+.qbo-business-feed {
+    margin-bottom: 24px;
+}
+
+.qbo-feed-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.qbo-feed-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #666;
+}
+
+.qbo-feed-title i {
+    color: #f9a825;
+}
+
+.qbo-feed-pagination {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.qbo-feed-nav-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #666;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.qbo-feed-nav-btn:hover:not(:disabled) {
+    background: #e0e0e0;
+}
+
+.qbo-feed-nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.qbo-feed-page {
+    font-size: 13px;
+    color: #666;
+}
+
+.qbo-feed-view-all {
+    font-size: 13px;
+    color: #0077c5;
+    text-decoration: none;
+    margin-left: 8px;
+}
+
+.qbo-feed-view-all:hover {
+    text-decoration: underline;
+}
+
+/* Feed Cards */
+.qbo-feed-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+@media (max-width: 1200px) {
+    .qbo-feed-cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .qbo-feed-cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+.qbo-feed-card {
+    background: #fff;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 16px;
+    min-height: 140px;
+    display: flex;
+    flex-direction: column;
+}
+
+.qbo-feed-card:hover {
+    /* transform: translateY(-5px); */
+    box-shadow: rgba(0, 0, 0, 0.2) 0px 4px 16px 0px !important;
+}
+
+/* .qbo-feed-card-highlight {
+    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+    border-color: #90caf9;
+} */
+
+.qbo-feed-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #333;
+}
+
+.qbo-feed-card-header i {
+    color: #0077c5;
+}
+
+.qbo-card-menu {
+    margin-left: auto;
+    border: none;
+    background: transparent;
+    color: #999;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+.qbo-card-menu:hover {
+    background: #f0f0f0;
+    color: #666;
+}
+
+.qbo-feed-card-text {
+    font-size: 13px;
+    color: #555;
+    line-height: 1.5;
+    flex: 1;
+    margin: 0 0 12px 0;
+}
+
+.qbo-feed-card-link {
+    font-size: 13px;
+    color: #0077c5;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.qbo-feed-card-link:hover {
+    text-decoration: underline;
+}
+
+/* ==========================================================================
+   Create Actions Section - QBO Style
+   ========================================================================== */
+.qbo-create-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 24px;
+    padding: 8px 0;
+}
+
+.qbo-actions-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: #333;
+    margin-right: 8px;
+}
+
+.qbo-create-action-btn {
+    display: inline-block;
+    padding: 8px 16px;
+    border: 1px solid #d4d7dc;
+    border-radius: 20px;
+    background: #fff;
+    color: #393a3d;
+    font-size: 13px;
+    font-weight: 400;
+    text-decoration: none;
+    transition: all 0.15s ease;
+}
+
+.qbo-create-action-btn:hover {
+    background: #f4f5f7;
+    border-color: #b0b3b8;
+    color: #393a3d;
+    text-decoration: none;
+}
+
+.qbo-action-show-all {
+    font-size: 13px;
+    color: #2ca01c;
+    /* Green like QBO */
+    text-decoration: none;
+    font-weight: 500;
+    margin-left: 8px;
+}
+
+.qbo-action-show-all:hover {
+    color: #228b17;
+    text-decoration: underline;
+}
+
+/* ==========================================================================
+   Business at a Glance Section
+   ========================================================================== */
+.qbo-glance-section {
+    margin-bottom: 16px;
+}
+
+.qbo-glance-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.qbo-glance-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: #333;
+    margin: 0;
+}
+
+.qbo-glance-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.qbo-glance-actions .qbo-customize-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid #e0e0e0;
+    background: #fff;
+    color: #666;
+}
+
+.qbo-glance-actions .qbo-customize-btn:hover {
+    background: #f5f5f5;
+    border-color: #ccc;
+}
+
+/* Dashboard Container */
+.qbo-dashboard {
+    background-color: transparent;
+    padding: 0;
+}
+
+/* GridStack Container - ensure gaps work */
+.grid-stack {
+    background: transparent;
+}
+
+/* Ensure GridStack margin is applied */
+.grid-stack>.grid-stack-item {
+    padding: 0 !important;
+}
+
+/* Grid Item Content */
+.grid-stack>.grid-stack-item>.grid-stack-item-content {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    inset: 0;
+    /* Use full cell area */
+}
+
+/* ==========================================================================
+   GridStack Native Resize Handles - SHOW THEM in edit mode
+   Like QBO: green dots in the CENTER of each edge, ALWAYS visible in edit mode
+   ========================================================================== */
+.grid-stack>.grid-stack-item>.ui-resizable-handle {
+    display: none !important;
+    position: absolute !important;
+}
+
+/* Show all resize handles in edit mode - ALWAYS VISIBLE like QBO */
+.grid-stack.editing>.grid-stack-item>.ui-resizable-handle {
+    display: block !important;
+    background: #2ca01c !important;
+    opacity: 1 !important;
+    z-index: 100;
+    position: absolute !important;
+    border-radius: 50% !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* North (top center) - centered on the top border */
+.grid-stack.editing>.grid-stack-item>.ui-resizable-n {
+    height: 10px !important;
+    width: 10px !important;
+    top: 10px !important;
+    left: 50% !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: translateX(-50%) !important;
+    margin: 0 !important;
+    cursor: ns-resize !important;
+}
+
+/* South (bottom center) - centered on the bottom border */
+.grid-stack.editing>.grid-stack-item>.ui-resizable-s {
+    height: 10px !important;
+    width: 10px !important;
+    bottom: 10px !important;
+    left: 50% !important;
+    right: auto !important;
+    top: auto !important;
+    transform: translateX(-50%) !important;
+    margin: 0 !important;
+    cursor: ns-resize !important;
+}
+
+/* East (right center) - centered on the right border */
+.grid-stack.editing>.grid-stack-item>.ui-resizable-e {
+    width: 10px !important;
+    height: 10px !important;
+    right: 10px !important;
+    top: 50% !important;
+    left: auto !important;
+    bottom: auto !important;
+    transform: translateY(-50%) !important;
+    margin: 0 !important;
+    cursor: ew-resize !important;
+}
+
+/* West (left center) - centered on the left border */
+.grid-stack.editing>.grid-stack-item>.ui-resizable-w {
+    width: 10px !important;
+    height: 10px !important;
+    left: 10px !important;
+    top: 50% !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: translateY(-50%) !important;
+    margin: 0 !important;
+    cursor: ew-resize !important;
+}
+
+/* Hide corner handles - QBO only shows edge handles */
+.grid-stack.editing>.grid-stack-item>.ui-resizable-ne,
+.grid-stack.editing>.grid-stack-item>.ui-resizable-nw,
+.grid-stack.editing>.grid-stack-item>.ui-resizable-se,
+.grid-stack.editing>.grid-stack-item>.ui-resizable-sw {
+    display: none !important;
+}
+
+/* ==========================================================================
+   QBO Edit Overlay - Visible in edit mode (move + delete controls)
+   ========================================================================== */
+.qbo-edit-overlay {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    pointer-events: none;
+}
+
+/* Show overlay in edit mode */
+.grid-stack.editing .qbo-edit-overlay {
+    display: block;
+}
+
+/* Green dashed border in edit mode */
+.grid-stack.editing .grid-stack-item>.grid-stack-item-content {
+    border: 2px solid #2ca01c;
+}
+
+/* Hide custom resize handles - use native GridStack ones */
+.qbo-resize-handle {
+    display: none;
+}
+
+/* ==========================================================================
+   Move Container - Green box with 4 arrows (like QBO)
+   ========================================================================== */
+.qbo-move-container {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -60%);
+    background: #2ca01c;
+    border-radius: 8px;
+    padding: 8px;
+    display: grid;
+    grid-template-columns: 24px 24px 24px;
+    grid-template-rows: 24px 24px 24px;
+    gap: 0;
+    pointer-events: auto;
+    cursor: move;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.qbo-move-container svg {
+    color: #fff;
+    display: block;
+}
+
+.qbo-arrow-up {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.qbo-arrow-left {
+    grid-column: 1;
+    grid-row: 2;
+}
+
+.qbo-arrow-right {
+    grid-column: 3;
+    grid-row: 2;
+}
+
+.qbo-arrow-down {
+    grid-column: 2;
+    grid-row: 3;
+}
+
+/* Move tooltip */
+.qbo-move-tooltip {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 200;
+}
+
+.qbo-move-container:hover .qbo-move-tooltip {
+    display: block;
+}
+
+/* ==========================================================================
+   Delete Container - Trash icon below move container
+   ========================================================================== */
+.qbo-delete-container {
+    position: absolute;
+    top: calc(50% + 40px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #2ca01c;
+    border-radius: 8px;
+    padding: 8px;
+    pointer-events: auto;
+    cursor: pointer;
+    transition: background 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.qbo-delete-container svg {
+    color: #fff;
+    display: block;
+}
+
+.qbo-delete-container:hover {
+    background: #c62828;
+}
+
+/* Delete tooltip */
+.qbo-delete-tooltip {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 200;
+}
+
+.qbo-delete-container:hover .qbo-delete-tooltip {
+    display: block;
+}
+
+/* Hide delete button for Add Widget card */
+.qbo-no-delete .qbo-delete-container {
+    display: none;
+}
+
+/* ==========================================================================
+   Customize Button
+   ========================================================================== */
+.qbo-customize-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.qbo-customize-btn:hover {
+    background: #f0f0f0;
+    border-color: #999;
+}
+
+.qbo-customize-btn.active {
+    background: #2ca01c;
+    color: #fff;
+    border-color: #2ca01c;
+}
+
+/* ==========================================================================
+   Widget Card Styles
+   ========================================================================== */
+.qbo-widget-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.qbo-widget-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid #e9ecef;
+    flex-shrink: 0;
+}
+
+.qbo-widget-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #6c757d;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.qbo-widget-body {
+    flex: 1;
+    padding: 12px 16px;
+    overflow: auto;
+    min-height: 0;
+}
+
+.qbo-widget-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    border-top: 1px solid #e9ecef;
+    flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Add Widget Card
+   ========================================================================== */
+.qbo-add-widget-card .grid-stack-item-content {
+    border: 2px dashed #ccc;
+    background: #fff;
+}
+
+.grid-stack.editing .qbo-add-widget-card .grid-stack-item-content {
+    border-color: #2ca01c;
+}
+
+.qbo-add-widget-content {
+    text-align: center;
+    padding: 20px;
+    cursor: pointer;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.qbo-add-icon {
+    font-size: 28px;
+    color: #2ca01c;
+    margin-bottom: 10px;
+}
+
+.qbo-add-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 6px;
+}
+
+.qbo-suggestions-section {
+    margin-top: 12px;
+}
+
+.qbo-suggestions-title {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #6c757d;
+    margin-bottom: 10px;
+}
+
+.qbo-suggestions-icon {
+    font-size: 20px;
+    color: #ccc;
+    margin-bottom: 6px;
+}
+
+.qbo-suggestions-text {
+    font-size: 12px;
+    color: #6c757d;
+    margin: 0;
+}
+
+/* ==========================================================================
+   Links and Badges
+   ========================================================================== */
+.qbo-link {
+    color: #2ca01c;
+    font-size: 13px;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.qbo-link:hover {
+    color: #1a7012;
+    text-decoration: underline;
+}
+
+.qbo-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 8px;
+}
+
+.qbo-badge-info {
+    background: #e3f2fd;
+    color: #1976d2;
+}
+
+.qbo-badge-success {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.qbo-badge-danger {
+    background: #ffebee;
+    color: #c62828;
+}
+
+/* ==========================================================================
+   Profit & Loss Widget
+   ========================================================================== */
+.qbo-profit-main {
+    margin-bottom: 12px;
+}
+
+.qbo-profit-label {
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.qbo-profit-amount {
+    font-size: 24px;
+    font-weight: 600;
+    color: #333;
+    display: flex;
+    align-items: center;
+}
+
+.qbo-profit-bars {
+    margin-top: 12px;
+}
+
+.qbo-profit-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 60px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.qbo-profit-row-label .qbo-amount {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+}
+
+.qbo-profit-row-bar {
+    height: 6px;
+    background: #e9ecef;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.qbo-bar {
+    height: 100%;
+    border-radius: 3px;
+}
+
+.qbo-bar-income,
+.qbo-bar-expense {
+    background: #2ca01c;
+}
+
+.qbo-review-link {
+    font-size: 11px;
+    color: #1976d2;
+    cursor: pointer;
+}
+
+.qbo-review-link:hover {
+    text-decoration: underline;
+}
+
+/* ==========================================================================
+   Expenses Widget
+   ========================================================================== */
+.qbo-expense-header {
+    margin-bottom: 12px;
+}
+
+.qbo-expense-label {
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.qbo-expense-amount {
+    font-size: 24px;
+    font-weight: 600;
+    color: #333;
+}
+
+.qbo-expense-chart-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+}
+
+.qbo-donut-chart {
+    width: 120px;
+    height: 120px;
+    flex-shrink: 0;
+}
+
+.qbo-expense-legend {
+    flex: 1;
+}
+
+.qbo-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    font-size: 11px;
+    color: #333;
+}
+
+.qbo-legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Invoices Widget
+   ========================================================================== */
+.qbo-invoice-header {
+    margin-bottom: 10px;
+}
+
+.qbo-invoice-unpaid {
+    font-size: 12px;
+    color: #6c757d;
+    font-weight: 500;
+}
+
+.qbo-invoice-stats {
+    margin-bottom: 12px;
+}
+
+.qbo-invoice-stat-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 6px;
+}
+
+.qbo-invoice-stat {
+    flex: 1;
+}
+
+.qbo-invoice-stat-amount {
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
+}
+
+.qbo-invoice-stat-label {
+    font-size: 11px;
+    color: #6c757d;
+}
+
+.qbo-invoice-progress {
+    margin-bottom: 4px;
+}
+
+.qbo-progress-bar {
+    display: flex;
+    height: 5px;
+    background: #e9ecef;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.qbo-progress-segment {
+    height: 100%;
+}
+
+.qbo-progress-danger {
+    background: #f44336;
+}
+
+.qbo-progress-success {
+    background: #2ca01c;
+}
+
+.qbo-progress-warning {
+    background: #ff9800;
+}
+
+/* ==========================================================================
+   Bank Accounts Widget
+   ========================================================================== */
+.qbo-bank-header {
+    margin-bottom: 12px;
+}
+
+.qbo-bank-label {
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.qbo-bank-total {
+    font-size: 24px;
+    font-weight: 600;
+    color: #333;
+}
+
+.qbo-bank-total.text-danger {
+    color: #f44336;
+}
+
+.qbo-bank-list {
+    flex: 1;
+    overflow: auto;
+}
+
+.qbo-bank-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.qbo-bank-item:last-child {
+    border-bottom: none;
+}
+
+.qbo-bank-icon {
+    width: 32px;
+    height: 32px;
+    background: #e3f2fd;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #1976d2;
+    flex-shrink: 0;
+    font-size: 14px;
+}
+
+.qbo-bank-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.qbo-bank-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #333;
+}
+
+.qbo-bank-meta {
+    font-size: 10px;
+    color: #6c757d;
+}
+
+.qbo-bank-amounts {
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.qbo-bank-balance {
+    font-size: 13px;
+    font-weight: 500;
+    color: #333;
+}
+
+.qbo-bank-balance.text-danger {
+    color: #f44336;
+}
+
+/* ==========================================================================
+   Sales Funnel Widget
+   ========================================================================== */
+.qbo-funnel-container {
+    display: flex;
+    gap: 12px;
+    padding: 6px 0;
+    height: 100%;
+}
+
+.qbo-funnel-stage {
+    flex: 1;
+    text-align: center;
+}
+
+.qbo-funnel-box {
+    border: 2px dashed #ccc;
+    border-radius: 6px;
+    padding: 12px;
+    height: 100%;
+}
+
+.qbo-funnel-bar {
+    height: 5px;
+    border-radius: 3px;
+    margin-bottom: 10px;
+}
+
+.qbo-funnel-bar-warning {
+    background: #ff9800;
+}
+
+.qbo-funnel-bar-success {
+    background: #2ca01c;
+}
+
+.qbo-funnel-bar-primary {
+    background: #1976d2;
+}
+
+.qbo-funnel-label {
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.qbo-funnel-amount {
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+}
+
+.qbo-funnel-count {
+    font-size: 11px;
+    color: #6c757d;
+    margin-top: 6px;
+}
+
+/* ==========================================================================
+   Cash Flow Widget
+   ========================================================================== */
+.qbo-cashflow-chart {
+    flex: 1;
+    min-height: 150px;
+}
+
+.qbo-cashflow-legend {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    padding-top: 10px;
+}
+
+.qbo-legend-bar {
+    display: inline-block;
+    width: 20px;
+    height: 10px;
+    border-radius: 2px;
+    margin-right: 6px;
+}
+
+.qbo-legend-income {
+    background: #2ca01c;
+}
+
+.qbo-legend-expense {
+    background: #e21b1b;
+}
+
+/* ==========================================================================
+   Accounts Receivable/Payable Widget
+   ========================================================================== */
+.qbo-ar-header {
+    margin-bottom: 12px;
+}
+
+.qbo-ar-label {
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.qbo-ar-total {
+    font-size: 24px;
+    font-weight: 600;
+    color: #2ca01c;
+}
+
+.qbo-ar-chart-container {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.qbo-ar-donut {
+    width: 140px;
+    height: 140px;
+}
+
+.qbo-ar-legend {
+    flex: 1;
+}
+
+.qbo-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    font-size: 11px;
+}
+
+/* ==========================================================================
+   Sales Trend Widget
+   ========================================================================== */
+.qbo-sales-header {
+    margin-bottom: 10px;
+}
+
+.qbo-sales-label {
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.qbo-sales-total {
+    font-size: 24px;
+    font-weight: 600;
+    color: #2ca01c;
+}
+
+.qbo-sales-chart {
+    flex: 1;
+    min-height: 120px;
+}
+
+/* ==========================================================================
+   Empty State
+   ========================================================================== */
+.qbo-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    color: #6c757d;
+    text-align: center;
+}
+
+.qbo-empty-state i {
+    font-size: 40px;
+    margin-bottom: 12px;
+    color: #ccc;
+}
+
+.qbo-empty-state h4 {
+    font-size: 14px;
+    color: #333;
+    margin-bottom: 6px;
+}
+
+.qbo-empty-state p {
+    font-size: 12px;
+    margin: 0;
+}
+
+/* ==========================================================================
+   Modal Drawer (Right) - Fixed header/footer, scrollable body
+   Forces modal to stay within 100vh viewport with footer always visible
+   ========================================================================== */
+.modal-dialog-right {
+    position: fixed !important;
+    margin: 0 !important;
+    width: 360px;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    right: 0 !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    transform: none !important;
+    overflow: hidden !important;
+}
+
+.modal-dialog-right .modal-content {
+    height: 100vh !important;
+    max-height: 100vh !important;
+    border: none;
+    border-radius: 0;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+}
+
+.modal-dialog-right .modal-header {
+    flex: 0 0 auto !important;
+    border-bottom: 1px solid #e9ecef;
+    padding: 16px 20px;
+    background: #fff;
+}
+
+.modal-dialog-right .modal-body {
+    flex: 1 1 auto !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: 20px;
+    min-height: 0 !important;
+    /* Critical for flex overflow to work */
+}
+
+.modal-dialog-right .modal-footer {
+    flex: 0 0 auto !important;
+    border-top: 1px solid #e9ecef;
+    padding: 16px 20px;
+    background: #fff;
+    margin-top: auto !important;
+    /* Push to bottom if content is short */
+}
+
+.qbo-widget-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.qbo-widget-list-item {
+    padding: 12px;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+}
+
+.qbo-widget-list-item:hover {
+    background: #f8f9fa;
+}
+
+/* ==========================================================================
+   Utilities
+   ========================================================================== */
+.text-success {
+    color: #2ca01c !important;
+}
+
+.text-danger {
+    color: #f44336 !important;
+}
+
+.text-warning {
+    color: #ff9800 !important;
+}
+
+.text-muted {
+    color: #6c757d !important;
+}
+
+/* Footer Actions */
+.qbo-footer-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.qbo-menu-btn,
+.qbo-icon-btn {
+    background: none;
+    border: none;
+    padding: 4px 8px;
+    cursor: pointer;
+    color: #6c757d;
+    border-radius: 4px;
+}
+
+.qbo-menu-btn:hover,
+.qbo-icon-btn:hover {
+    background: #f0f0f0;
+}

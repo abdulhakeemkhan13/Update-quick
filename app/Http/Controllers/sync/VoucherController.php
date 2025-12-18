@@ -1,6 +1,8 @@
 <?php
 
 namespace App\Http\Controllers\sync;
+use App\DataTables\CustomerContactListDataTable;
+use App\DataTables\CustomerContactListPhoneNumbersDataTable;
 use App\DataTables\LedgerDataTable;
 use App\DataTables\JournalLedgerDataTable;
 use App\Http\Controllers\Controller;
@@ -685,7 +687,7 @@ class VoucherController extends Controller
             return $dataTable->ajax();
         }
 
-        return $dataTable->render('sync.customerbalance.index', [ // ✅ keep same view, or create vendorbalance.index
+        return $dataTable->render('sync.agingdetails.index', [
             'pageTitle' => $this->pageTitle,
             'startDate' => $request->get('start_date', date('Y-01-01')),
             'endDate' => $request->get('end_date', date('Y-m-d', strtotime('+1 day')))
@@ -700,7 +702,7 @@ class VoucherController extends Controller
             return $dataTable->ajax();
         }
 
-        return $dataTable->render('sync.customerbalance.index', [ // ✅ keep same view, or create vendorbalance.index
+        return $dataTable->render('sync.DoubleDateReport.index', [ // ✅ keep same view, or create vendorbalance.index
             'pageTitle' => $this->pageTitle,
             'startDate' => $request->get('start_date', date('Y-01-01')),
             'endDate' => $request->get('end_date', date('Y-m-d', strtotime('+1 day')))
@@ -730,7 +732,7 @@ class VoucherController extends Controller
             return $dataTable->ajax();
         }
 
-        return $dataTable->render('sync.customerbalance.index', [ // ✅ keep same view, or create vendorbalance.index
+        return $dataTable->render('sync.DoubleDateReport.index', [ // ✅ keep same view, or create vendorbalance.index
             'pageTitle' => $this->pageTitle,
             'startDate' => $request->get('start_date', date('Y-01-01')),
             'endDate' => $request->get('end_date', date('Y-m-d', strtotime('+1 day')))
@@ -760,7 +762,7 @@ class VoucherController extends Controller
             return $dataTable->ajax();
         }
 
-        return $dataTable->render('sync.customerbalance.index', [ // ✅ keep same view, or create vendorbalance.index
+        return $dataTable->render('sync.DoubleDateReport.index', [ // ✅ keep same view, or create vendorbalance.index
             'pageTitle' => $this->pageTitle,
             'startDate' => $request->get('start_date', date('Y-01-01')),
             'endDate' => $request->get('end_date', date('Y-m-d', strtotime('+1 day')))
@@ -852,6 +854,20 @@ class VoucherController extends Controller
             'endDate' => $request->get('end_date', date('Y-m-d', strtotime('+1 day')))
         ]);
     }
+    public function checkdetail(\App\DataTables\CheckDetailReport $dataTable, Request $request)
+    {
+        $this->pageTitle = 'Check Detail Report';
+
+        if ($request->ajax()) {
+            return $dataTable->ajax();
+        }
+
+        return $dataTable->render('sync.DoubleDateReport.index', [ // ✅ keep same view, or create vendorbalance.index
+            'pageTitle' => $this->pageTitle,
+            'startDate' => $request->get('start_date', date('Y-01-01')),
+            'endDate' => $request->get('end_date', date('Y-m-d', strtotime('+1 day')))
+        ]);
+    }
 
     public function expensesbyvendorsummary(\App\DataTables\ExpensesByVendorSummary $dataTable, Request $request)
     {
@@ -891,7 +907,7 @@ class VoucherController extends Controller
             return $dataTable->ajax();
         }
 
-        return $dataTable->render('sync.customerbalance.index', [ // ✅ keep same view, or create vendorbalance.index
+        return $dataTable->render('sync.DoubleDateReport.index', [ // ✅ keep same view, or create vendorbalance.index
             'pageTitle' => $this->pageTitle,
             'startDate' => $request->get('start_date', date('Y-01-01')),
             'endDate' => $request->get('end_date', date('Y-m-d', strtotime('+1 day')))
@@ -920,7 +936,7 @@ class VoucherController extends Controller
             return $dataTable->ajax();
         }
 
-        return $dataTable->render('sync.simpletable.index', [ // ✅ keep same view, or create vendorbalance.index
+        return $dataTable->render('sync.simpleview.index', [ // ✅ keep same view, or create vendorbalance.index
             'pageTitle' => $this->pageTitle,
         ]);
     }
@@ -934,7 +950,7 @@ class VoucherController extends Controller
             return $dataTable->ajax();
         }
 
-        return $dataTable->render('sync.simpletable.index', [ // ✅ keep same view, or create vendorbalance.index
+        return $dataTable->render('sync.simpleview.index', [ // ✅ keep same view, or create vendorbalance.index
             'pageTitle' => $this->pageTitle,
         ]);
     }
@@ -1129,6 +1145,80 @@ class VoucherController extends Controller
 
         return $dataTable->render('sync.customerbalance.index', [
             'pageTitle' => $this->pageTitle,
+            'startDate' => $request->get('start_date', date('Y-01-01')),
+            'endDate' => $request->get('end_date', date('Y-m-d', strtotime('+1 day')))
+        ]);
+    }
+
+        public function customerContactList(
+        CustomerContactListDataTable $dataTable,
+        \Illuminate\Http\Request $request
+    ) {
+        if (!\Auth::user()->can('manage customer')) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+        $user = \Auth::user();
+
+        $pageTitle = __('Customer Contact List');
+
+        $filter = [
+            'selectedCustomerName' => $request->get('customer_name', ''),
+        ];
+
+        // NEW: all active customer names for the dropdown
+        $customers = \App\Models\Customer::query()
+            ->where('created_by', $user->creatorId())
+            ->where('is_active', 1)
+            ->whereNotNull('name')
+            ->orderBy('name')
+            ->pluck('name')
+            ->unique()
+            ->values();
+
+        // return $dataTable->render(
+        //     'customer.contactList',
+        //     compact('pageTitle', 'user', 'filter', 'customers')
+        // );
+
+        return $dataTable->render('sync.simpleview.index', [ // ✅ keep same view, or create vendorbalance.index
+            'pageTitle' => $pageTitle,
+            'startDate' => $request->get('start_date', date('Y-01-01')),
+            'endDate' => $request->get('end_date', date('Y-m-d', strtotime('+1 day')))
+        ]);
+    }
+    public function customerContactListPhoneNumbers(
+        CustomerContactListPhoneNumbersDataTable $dataTable,
+        \Illuminate\Http\Request $request
+    ) {
+        if (!\Auth::user()->can('manage customer')) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        $user = \Auth::user();
+
+        $pageTitle = __('Customer Phone List');
+
+        $filter = [
+            'selectedCustomerName' => $request->get('customer_name', ''),
+        ];
+
+        // NEW: all active customer names for the dropdown
+        $customers = \App\Models\Customer::query()
+            ->where('created_by', $user->creatorId())
+            ->where('is_active', 1)
+            ->whereNotNull('name')
+            ->orderBy('name')
+            ->pluck('name')
+            ->unique()
+            ->values();
+
+        // return $dataTable->render(
+        //     'customer.contactList',
+        //     compact('pageTitle', 'user', 'filter', 'customers')
+        // );
+
+        return $dataTable->render('sync.simpleview.index', [ // ✅ keep same view, or create vendorbalance.index
+            'pageTitle' => $pageTitle,
             'startDate' => $request->get('start_date', date('Y-01-01')),
             'endDate' => $request->get('end_date', date('Y-m-d', strtotime('+1 day')))
         ]);

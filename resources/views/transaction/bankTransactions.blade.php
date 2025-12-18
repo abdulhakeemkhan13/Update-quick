@@ -92,9 +92,15 @@
 
 
 @section('content')
-    {{-- tabs --}}
-    @include('transaction.transactions-tabs')
-    <div class="row mt-3">
+{{-- MY APPS Sidebar (Fixed Position) --}}
+@include('partials.admin.allApps-subMenu-Sidebar', [
+    'activeSection' => 'accounting',
+    'activeItem' => 'bank_transactions'
+])
+
+{{-- tabs --}}
+@include('transaction.transactions-tabs')
+<div class="row mt-3">
         <div id="printableArea">
             <div class="row">
                 @if ($filter['bank'])
@@ -420,8 +426,9 @@
                     </div>
                 </div>
             </div>
-        @endsection
+        </div>
     </div>
+    
     <script>
         function selectBank(bankName) {
             document.getElementById('selectedBank').value = bankName;
@@ -464,3 +471,4 @@
             flex-shrink: 0;
         }
     </style>
+@endsection

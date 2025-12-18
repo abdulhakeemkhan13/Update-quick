@@ -8,4 +8,18 @@ use Illuminate\Database\Eloquent\Model;
 class TransactionLines extends Model
 {
     use HasFactory;
+
+    protected $fillable = [
+        'account_id',
+        'reference',
+        'reference_id',
+        'reference_sub_id',
+        'date',
+        'credit',
+        'debit',
+        'product_id',
+        'product_type',
+        'product_item_id',
+        'created_by',
+    ];
 }

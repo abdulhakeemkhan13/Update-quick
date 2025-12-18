@@ -10,6 +10,12 @@ use Illuminate\Support\Facades\DB;
 
 class BillPaymentList extends DataTable
 {
+    /**
+     * Build DataTable class.
+     *
+     * @param mixed $query Results from query() method.
+     * @return \Yajra\DataTables\DataTableAbstract
+     */
     public function dataTable($query)
     {
         $data = collect($query->get());
@@ -29,12 +35,22 @@ class BillPaymentList extends DataTable
                 continue;
             }
 
-            // Compute subtotal using real payment amount
-            $subtotalAmount = $rows->sum('total_amount');
+            // Compute subtotal using the already correctly-signed 'signed_amount' field
+            // The logic for sign application is now inside the editColumn function, 
+            // but we need to sum the raw 'total_amount' for an accurate final total.
+            // *Correction*: We must calculate the signed sum for the subtotal/grand total *here*
+            $subtotalAmount = $rows->sum(function($row) {
+                 // Apply the sign logic for subtotal calculation
+                 $isCreditCard = strtolower($row->account_subtype ?? '') === 'credit_card';
+                 $amount = (float)($row->total_amount ?? 0);
+                 return $isCreditCard ? $amount : -$amount;
+            });
 
             // If subtotal is 0 (no actual payments), skip this bank group
             if ($subtotalAmount == 0) {
-                continue;
+                // If you want to skip zero subtotals, keep this block. Otherwise, remove it.
+                // For a Bank Register, zero totals should usually be shown.
+                // For this scenario, we will keep showing it if payments exist, just to avoid empty rows.
             }
 
             // ✅ Header row for this bank
@@ -44,7 +60,6 @@ class BillPaymentList extends DataTable
                 'id' => null,
                 'bill_date' => '',
                 'transaction' => '<span class="" data-bucket="' . \Str::slug($bank) . '"> <span class="icon">▼</span> <strong>' . $bank . ' (' . $rows->count() . ')</strong></span>',
-                'type' => '',
                 'total_amount' => null,
                 'isPlaceholder' => true,
                 'isSubtotal' => false,
@@ -63,7 +78,7 @@ class BillPaymentList extends DataTable
                 'id' => null,
                 'bill_date' => '',
                 'transaction' => '<strong>Subtotal for ' . $bank . '</strong>',
-                'type' => '',
+                // Use the calculated signed subtotal
                 'total_amount' => $subtotalAmount,
                 'isSubtotal' => true,
             ]);
@@ -75,7 +90,6 @@ class BillPaymentList extends DataTable
                 'id' => null,
                 'bill_date' => '',
                 'transaction' => '',
-                'type' => '',
                 'total_amount' => '',
                 'isPlaceholder' => true,
             ]);
@@ -91,7 +105,6 @@ class BillPaymentList extends DataTable
             'id' => null,
             'bill_date' => '',
             'transaction' => '<strong>Grand Total</strong>',
-            'type' => '',
             'total_amount' => $grandTotalAmount,
             'isGrandTotal' => true,
         ]);
@@ -104,7 +117,7 @@ class BillPaymentList extends DataTable
                     return $row->transaction;
                 }
 
-                // 👇 Show Payment ID instead of Bill Number
+                // Show Payment ID instead of Bill Number
                 return 'PAY-' . str_pad($row->payment_id, 5, '0', STR_PAD_LEFT);
             })
             ->addColumn('vendor', fn($row) => (isset($row->isSubtotal) || isset($row->isGrandTotal) || isset($row->isPlaceholder)) ? '' : ($row->vendor_name ?? ''))
@@ -114,15 +127,29 @@ class BillPaymentList extends DataTable
                 }
                 return 'Payment';
             })
+            // 👇 FIX: Apply decimal formatting AND sign logic
             ->editColumn('total_amount', function ($row) {
                 if (isset($row->isPlaceholder))
                     return '';
 
-                if (isset($row->isSubtotal) || isset($row->isGrandTotal))
-                    return number_format($row->total_amount ?? 0);
+                $amount = (float)($row->total_amount ?? 0);
 
-                // ✅ For actual payment rows, show payment amount
-                return number_format($row->total_amount ?? 0);
+                // Check for Subtotal or GrandTotal rows, which already hold the correct signed sum
+                if (isset($row->isSubtotal) || isset($row->isGrandTotal)) {
+                    // FIX: Apply 2 decimal places here
+                    return number_format($amount, 2); 
+                }
+
+                // Logic for individual payment rows
+                // Assuming 'credit_card' sub-type should be positive (a credit/liability increase)
+                // and everything else (like 'bank') should be negative (a debit/asset decrease).
+                $isCreditCard = strtolower($row->account_subtype ?? '') === 'credit_card';
+                
+                // Apply the sign logic: positive for credit card, negative for others
+                $signedAmount = $isCreditCard ? $amount : -$amount;
+
+                // FIX: Apply 2 decimal places here
+                return number_format($signedAmount, 2);
             })
 
             ->setRowClass(function ($row) {
@@ -143,36 +170,11 @@ class BillPaymentList extends DataTable
             ->rawColumns(['transaction']);
     }
 
-    // public function query(Bill $model)
-    // {
-    //     $start = request()->get('start_date') ?? request()->get('startDate') ?? Carbon::now()->startOfYear()->format('Y-m-d');
-    //     $end = request()->get('end_date') ?? request()->get('endDate') ?? Carbon::now()->endOfDay()->format('Y-m-d');
-
-    //     return $model->newQuery()
-    //         ->select(
-    //             'bills.id',
-    //             'bills.bill_id as bill',
-    //             'bills.bill_date',
-    //             'bills.status',
-    //             'venders.name',
-    //             'bank_accounts.bank_name',
-    //             DB::raw('SUM((bill_products.price * bill_products.quantity) - bill_products.discount) as subtotal'),
-    //             DB::raw('(SELECT IFNULL(SUM((price * quantity - discount) * (taxes.rate / 100)),0) 
-    //                 FROM bill_products 
-    //                 LEFT JOIN taxes ON FIND_IN_SET(taxes.id, bill_products.tax) > 0
-    //                 WHERE bill_products.bill_id = bills.id) as total_tax')
-    //         )
-    //         ->leftJoin('venders', 'venders.id', '=', 'bills.vender_id')
-    //         ->leftJoin('bill_products', 'bill_products.bill_id', '=', 'bills.id')
-    //         ->leftJoin('bill_payments', 'bill_payments.bill_id', '=', 'bills.id')
-    //         ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'bill_payments.account_id')
-    //         ->where('bills.created_by', \Auth::user()->creatorId())
-    //         ->whereIn('bills.status', ['3', '4'])
-    //         ->whereBetween('bills.bill_date', [$start, $end])
-    //         ->groupBy('bills.id', 'bank_accounts.id');
-    // }
-
-
+    /**
+     * Get query source of dataTable.
+     *
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
     public function query(Bill $model)
     {
         $start = request()->get('start_date')
@@ -183,26 +185,88 @@ class BillPaymentList extends DataTable
             ?? request()->get('endDate')
             ?? Carbon::now()->endOfDay()->format('Y-m-d');
 
-        return DB::table('bill_payments')
+        $userId = \Auth::user()->creatorId();
+
+        // 1. Applied Bill Payments (grouped by reference)
+        $appliedPayments = DB::table('bill_payments')
             ->select(
-                'bill_payments.id as payment_id',
-                'bill_payments.date as bill_date',
-                'bill_payments.amount as total_amount',
+                'bill_payments.reference as payment_id',
+                DB::raw('MIN(bill_payments.date) as bill_date'),
+                
+                // Combined amount: SUM of bill_payments + SUM of vendor credits for this reference
+                DB::raw('(
+                    SUM(bill_payments.amount) 
+                    + COALESCE(
+                        (SELECT SUM(ABS(t.amount)) 
+                         FROM transactions t 
+                         JOIN bill_payments bp2 ON bp2.id = t.payment_id
+                         WHERE bp2.reference = bill_payments.reference
+                         AND LOWER(t.category) LIKE "%vendor credit%"
+                        ), 0
+                    )
+                ) as total_amount'),
+                
                 'bill_payments.reference',
-                'bill_payments.description',
-                'bills.bill_id as bill',
-                'venders.name as vendor_name',
-                'bank_accounts.bank_name'
+                DB::raw('MAX(bill_payments.description) as description'),
+                DB::raw('GROUP_CONCAT(DISTINCT bills.bill_id SEPARATOR ", ") as bill'),
+                DB::raw('MAX(venders.name) as vendor_name'),
+                'bank_accounts.bank_name',
+                'bank_accounts.account_subtype as account_subtype',
+                DB::raw('bill_payments.reference as memo')
             )
             ->leftJoin('bills', 'bills.id', '=', 'bill_payments.bill_id')
             ->leftJoin('venders', 'venders.id', '=', 'bills.vender_id')
             ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'bill_payments.account_id')
-            ->where('bills.created_by', \Auth::user()->creatorId())
+            ->where('bills.created_by', $userId)
             ->whereBetween('bill_payments.date', [$start, $end])
-            ->orderBy('bill_payments.date', 'asc');
+            ->where('bills.type', 'Bill')
+            ->groupBy(
+                'bill_payments.reference',
+                'bank_accounts.bank_name',
+                'bank_accounts.account_subtype'
+            );
+
+        // 2. Unapplied Payments (not yet linked to bills)
+        // EXCLUDE payments that are already counted as vendor credits in the transactions table
+        $unappliedPayments = DB::table('unapplied_payments')
+            ->select(
+                'unapplied_payments.reference as payment_id',
+                'unapplied_payments.txn_date as bill_date',
+                'unapplied_payments.unapplied_amount as total_amount',
+                'unapplied_payments.reference',
+                DB::raw('NULL as description'),
+                DB::raw('"Unapplied" as bill'),
+                'venders.name as vendor_name',
+                'bank_accounts.bank_name',
+                'bank_accounts.account_subtype as account_subtype',
+                DB::raw('unapplied_payments.reference as memo')
+            )
+            ->leftJoin('venders', 'venders.id', '=', 'unapplied_payments.vendor_id')
+            ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'unapplied_payments.account_id')
+            ->where('unapplied_payments.created_by', $userId)
+            ->whereBetween('unapplied_payments.txn_date', [$start, $end])
+            ->where('unapplied_payments.unapplied_amount', '>', 0)
+            // Exclude if already counted as vendor credit in transactions table (same reference/payment_no)
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                    ->from('transactions')
+                    ->whereRaw('transactions.payment_no = unapplied_payments.reference')
+                    ->whereRaw('LOWER(transactions.category) LIKE "%vendor credit%"');
+            });
+
+        // Combine both queries
+        $combined = $appliedPayments->unionAll($unappliedPayments);
+
+        return DB::query()->fromSub($combined, 'all_payments')
+            ->orderBy('bill_date', 'asc');
     }
 
 
+    /**
+     * Optional method if you want to use the html builder.
+     *
+     * @return \Yajra\DataTables\Html\Builder
+     */
     public function html()
     {
         return $this->builder()
@@ -218,13 +282,18 @@ class BillPaymentList extends DataTable
             ]);
     }
 
+    /**
+     * Get columns.
+     *
+     * @return array
+     */
     protected function getColumns()
     {
         return [
             Column::make('bill_date')->title('Date'),
             Column::make('transaction')->title('Transaction'),
             Column::make('vendor')->title('Vendor'), // ✅ added vendor column
-            Column::make('type')->title('Type'),
+            // Column::make('type')->title('Type'),
             Column::make('total_amount')->title('Amount'),
         ];
     }

@@ -21,15 +21,17 @@ class QuickBooksFullImportJob implements ShouldQueue
     public $tries = 3;
 
     protected $importOrder = [
-        // 'customers' => 'Importing Customers',
+        'customers' => 'Importing Customers',
         // 'vendors' => 'Importing Vendors',
         // 'chartOfAccounts' => 'Importing Chart of Accounts',
         // 'items' => 'Importing Items/Products',
+        // 'taxes' => 'Importing Taxes',
         // 'invoices' => 'Importing Invoices',
         // 'bills' => 'Importing Bills',
+        // 'unappliedPayments' => 'Importing Unapplied Payments',
         // 'expenses' => 'Importing Expenses',
         // 'estimates' => 'Importing Estimates',
-        'deposits' => 'Importing Deposits',
+        // 'deposits' => 'Importing Deposits',
         // 'journalReport' => 'Importing Journal Reports',
     ];
 
@@ -111,7 +113,9 @@ class QuickBooksFullImportJob implements ShouldQueue
     }
 
     protected function customers($controller) { return $controller->customers(); }
+    protected function unappliedPayments($controller) { return $controller->importUnappliedPayments(new Request()); }
     protected function deposits($controller) { return $controller->importDeposits(new Request()); }
+    protected function taxes($controller) { return $controller->importTaxes(); }
     protected function vendors($controller) { return $controller->vendors(); }
     protected function chartOfAccounts($controller) { return $controller->chartOfAccounts(); }
     protected function items($controller) { return $controller->items(); }

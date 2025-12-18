@@ -52,7 +52,9 @@ class QuickBooksApiController extends Controller
         $this->authUrl = 'https://appcenter.intuit.com/connect/oauth2';
         $this->tokenUrl = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
         $this->scope = 'com.intuit.quickbooks.accounting openid profile email';
-        $this->redirectUri = 'https://update.creativesuite.co/quickbooks/callback';
+        // $this->redirectUri = 'https://update.creativesuite.co/quickbooks/callback';
+        // $this->redirectUri = 'https://test.creativesuite.co/quickbooks/callback';
+        $this->redirectUri = 'https://demo.creativesuite.co/quickbooks/callback';
         $this->baseUrl = 'https://quickbooks.api.intuit.com';
     }
     // public function __construct()
@@ -76,10 +78,10 @@ class QuickBooksApiController extends Controller
     //     $this->authUrl = env('QB_AUTH_URL', 'https://appcenter.intuit.com/connect/oauth2');
     //     $this->tokenUrl = env('QB_TOKEN_URL', 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer');
     //     $this->scope = env('QB_SCOPE', 'com.intuit.quickbooks.accounting com.intuit.quickbooks.payment openid profile email');
-    //     $this->redirectUri = env('QB_REDIRECT_URI', 'http://localhost:8012/csuite/new/quickbooks/callback');
+    //     $this->redirectUri = env('QB_REDIRECT_URI', 'http://localhost:8012/csuite/update/quickbooks/callback');
     //     $this->baseUrl = env('QB_BASE_URL', 'https://sandbox-quickbooks.api.intuit.com');
     // }
-    
+
     public function license()
     {
         return view('license');
@@ -200,7 +202,7 @@ class QuickBooksApiController extends Controller
     {
         $access = Session::pull('qb_access_token');
         $refresh = Session::pull('qb_refresh_token');
-        Session::forget(['qb_realm_id','qb_token_expires_at','qb_oauth_state']);
+        Session::forget(['qb_realm_id', 'qb_token_expires_at', 'qb_oauth_state']);
 
         if ($access) {
             Http::withBasicAuth($this->clientId, $this->clientSecret)
@@ -281,7 +283,6 @@ class QuickBooksApiController extends Controller
      * Helper to run a QuickBooks query.
      */
     public function runQuery(string $query)
-    
     {
         $token = $this->accessToken();
         $realm = $this->realmId();
@@ -297,8 +298,9 @@ class QuickBooksApiController extends Controller
 
         $response = Http::withToken($token)
             ->accept('application/json')
+            ->timeout(300)
+            ->retry(3, 1000)
             ->get($url);
-
         if ($response->status() === 401) {
             return response()->json([
                 'error' => true,
@@ -325,58 +327,108 @@ class QuickBooksApiController extends Controller
     $allInvoices = [];
 
     do {
-        $query = "SELECT * FROM Invoice STARTPOSITION $startPosition MAXRESULTS $maxResults";
+        $query = "SELECT * FROM Invoice STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
         $data = $this->runQuery($query);
 
         // Protect against unexpected responses
         $invoices = $data['QueryResponse']['Invoice'] ?? [];
         $count = count($invoices);
 
-        // Merge the results
+        // Merge results
         $allInvoices = array_merge($allInvoices, $invoices);
 
-        // Increment start position for next batch (1, 51, 101 ...)
+        // Move to next batch
         $startPosition += $maxResults;
 
-    } while ($count === $maxResults); // Keep looping while we get a full batch
+    } while ($count === $maxResults);
 
-    // Get first invoice safely
+    // Safely get first invoice
     $firstInvoice = $allInvoices[0] ?? null;
 
-    // Use an associative array with dd() to get labeled output
-    dd([
-        'total_invoices' => count($allInvoices),
-        'first_invoice'  => $firstInvoice,
-        'all_invoices'   => $allInvoices,
+    return response()->json([
+        'status'          => 'success',
+        'total_invoices'  => count($allInvoices),
+        'first_invoice'   => $firstInvoice,
+        'all_invoices'    => $allInvoices,
     ]);
 }
 
 
 
-    public function bills()
+
+    // public function bills()
+    // {
+    //     $startPosition = 1;
+    //     $maxResults = 50;
+    //     $allBills = [];
+
+    //     do {
+    //         $query = "SELECT * FROM Bill STARTPOSITION $startPosition MAXRESULTS $maxResults";
+    //         $data = $this->runQuery($query);
+
+    //         $bills = $data['QueryResponse']['Bill'] ?? [];
+    //         $count = count($bills);
+
+    //         // Merge into main array
+    //         $allBills = array_merge($allBills, $bills);
+
+    //         // Next batch
+    //         $startPosition += $maxResults;
+
+    //     } while ($count === $maxResults);
+
+    //     dd(count($allBills), $allBills);
+    // }
+public function bills()
+{
+    $total = $this->runQuery("SELECT COUNT(*) FROM Bill")['QueryResponse']['totalCount'] ?? 0;
+    sleep(1);
+
+    // Bills that have a payment applied
+    $paid = $this->runQuery("
+        SELECT COUNT(*) FROM Bill 
+        WHERE Id IN (SELECT TargetTxnId FROM BillPayment)
+    ")['QueryResponse']['totalCount'] ?? 0;
+sleep(1);
+
+    // Bills that have NO payment applied
+    $unpaid = $this->runQuery("
+        SELECT COUNT(*) FROM Bill 
+        WHERE Id NOT IN (SELECT TargetTxnId FROM BillPayment)
+    ")['QueryResponse']['totalCount'] ?? 0;
+
+    return [
+        'total' => $total,
+        'paid' => $paid,
+        'unpaid' => $unpaid,
+    ];
+}
+
+
+
+    public function purchaseOrders()
     {
-        $startPosition = 1;
-        $maxResults = 50;
-        $allBills = [];
+    $startPosition = 1;
+    $maxResults = 50;
+    $allPurchaseOrders = [];
 
-        do {
-            $query = "SELECT * FROM Bill STARTPOSITION $startPosition MAXRESULTS $maxResults";
-            $data = $this->runQuery($query);
+    do {
+        $query = "SELECT * FROM PurchaseOrder STARTPOSITION $startPosition MAXRESULTS $maxResults";
+        $data = $this->runQuery($query);
 
-            $bills = $data['QueryResponse']['Bill'] ?? [];
-            $count = count($bills);
+        $purchaseOrders = $data['QueryResponse']['PurchaseOrder'] ?? [];
+        $count = count($purchaseOrders);
 
-            // Merge into main array
-            $allBills = array_merge($allBills, $bills);
+        // Merge into main array
+        $allPurchaseOrders = array_merge($allPurchaseOrders, $purchaseOrders);
 
-            // Next batch
-            $startPosition += $maxResults;
+        // Next batch
+        $startPosition += $maxResults;
 
-        } while ($count === $maxResults);
+    } while ($count === $maxResults);
 
-        dd(count($allBills), $allBills);
+    dd(count($allPurchaseOrders), $allPurchaseOrders);
     }
-
 
     public function customers()
     {
@@ -403,6 +455,66 @@ class QuickBooksApiController extends Controller
 
         dd($allCustomer);
     }
+    public function mergedTaxes()
+    {
+        $startPosition = 1;
+        $maxResults = 50;
+        $allTaxRates = [];
+
+        do {
+            $query = "SELECT * FROM TaxRate STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
+            $data = $this->runQuery($query);
+
+            $taxRates = $data['QueryResponse']['TaxRate'] ?? [];
+
+            $allTaxRates = array_merge($allTaxRates, $taxRates);
+
+            $count = count($taxRates);
+            $startPosition += $maxResults;
+
+        } while ($count == $maxResults);
+        $indexedRates = [];
+        foreach ($allTaxRates as $rate) {
+            $indexedRates[$rate['Id']] = [
+                'id' => $rate['Id'],
+                'name' => $rate['Name'] ?? null,
+                'rate_value' => $rate['RateValue'] ?? null,
+                'active' => $rate['Active'] ?? null,
+                'agency_id' => $rate['TaxAgencyId'] ?? null,
+                'effective_from' => $rate['EffectiveTaxRate'][0]['EffectiveDate'] ?? null,
+            ];
+        }
+
+        $query = "SELECT * FROM TaxCode";
+        $data = $this->runQuery($query);
+
+        $taxCodes = $data['QueryResponse']['TaxCode'] ?? [];
+
+
+        $merged = [];
+
+        foreach ($taxCodes as $code) {
+            $row = [
+                'code' => $code['Name'] ?? null,
+                'description' => $code['Description'] ?? null,
+                'active' => $code['Active'] ?? null,
+                'rates' => []
+            ];
+
+            if (!empty($code['SalesTaxRateList']['TaxRateDetail'])) {
+                foreach ($code['SalesTaxRateList']['TaxRateDetail'] as $detail) {
+                    $rateId = $detail['TaxRateRef']['value'] ?? null;
+
+                    if ($rateId && isset($indexedRates[$rateId])) {
+                        $row['rates'][] = $indexedRates[$rateId];
+                    }
+                }
+            }
+
+            $merged[] = $row;
+        }
+        dd($merged);
+    }
 
     public function chartOfAccounts()
     {
@@ -422,7 +534,7 @@ class QuickBooksApiController extends Controller
 
         } while ($count === $maxResults);
 
-        return response()->json(['co'=> count($allAccounts),'coa'=> $allAccounts]);
+        return response()->json(['co' => count($allAccounts), 'coa' => $allAccounts]);
     }
 
 
@@ -566,7 +678,8 @@ class QuickBooksApiController extends Controller
         while ($current->lt($endDate)) {
             $batchStart = $current->copy();
             $batchEnd = $current->copy()->addMonths($batchSizeMonths)->endOfMonth();
-            if ($batchEnd->gt($endDate)) $batchEnd = $endDate->copy();
+            if ($batchEnd->gt($endDate))
+                $batchEnd = $endDate->copy();
             $batches[] = [$batchStart->toDateString(), $batchEnd->toDateString()];
             $current = $batchEnd->copy()->addDay();
         }
@@ -595,9 +708,9 @@ class QuickBooksApiController extends Controller
                     'Accept' => 'application/json',
                     'Content-Type' => 'application/text',
                 ])
-                ->timeout(180)   // 3-minute timeout per batch
-                ->retry(3, 5000) // Retry 3 times, 5s interval
-                ->get($url);
+                    ->timeout(180)   // 3-minute timeout per batch
+                    ->retry(3, 5000) // Retry 3 times, 5s interval
+                    ->get($url);
 
                 if ($response->failed()) {
                     \Log::warning("QuickBooks JournalReport batch failed", [
@@ -630,7 +743,7 @@ class QuickBooksApiController extends Controller
         $createdEntries = [];
         foreach ($groupedEntries as $entryData) {
             $result = $this->createJournalEntry($groupedEntries['11']);
-            
+
             if ($result['status'] == 'created') {
                 $createdEntries[] = $result['data'];
                 $totalImported++;
@@ -639,9 +752,9 @@ class QuickBooksApiController extends Controller
             }
         }
         $excelPath = null;
-            if (!empty($skippedEntries)) {
-                $excelPath = $this->exportSkippedEntriesToExcel($skippedEntries);
-            }
+        if (!empty($skippedEntries)) {
+            $excelPath = $this->exportSkippedEntriesToExcel($skippedEntries);
+        }
 
         $response = [
             'success' => true,
@@ -664,7 +777,7 @@ class QuickBooksApiController extends Controller
         return response()->json($response);
     }
 
-    
+
     private function processJournalRows(array $rows): array
     {
         $groupedEntries = [];
@@ -682,7 +795,8 @@ class QuickBooksApiController extends Controller
                 $colData = $row['ColData'] ?? [];
                 $firstValue = $colData[0]['value'] ?? null;
 
-                if (empty($firstValue) && empty($currentDateValue)) continue;
+                if (empty($firstValue) && empty($currentDateValue))
+                    continue;
 
                 if ($currentDateValue === null && !empty($firstValue)) {
                     $currentDateValue = $firstValue;
@@ -738,12 +852,12 @@ class QuickBooksApiController extends Controller
             // Try to find in Vendors
             $vendor = Vender::where('name', $name)->first();
             if ($vendor) {
-                 return ['vendor', $vendor->id];
+                return ['vendor', $vendor->id];
             } else {
                 // Try to find in Customers
                 $customer = Customer::where('name', $name)->first();
                 if ($customer) {
-                     return ['customer', $customer->id];
+                    return ['customer', $customer->id];
                 } else {
                     // Try to find in Employees
                     $employee = Employee::where('name', $name)->first();
@@ -756,7 +870,7 @@ class QuickBooksApiController extends Controller
         return [null, null];
     }
     private function createJournalEntry($entryData)
-    {   
+    {
         try {
             // Extract data from the first row (assuming it's the header row for the entry)
             $firstRow = $entryData[0] ?? [];
@@ -942,17 +1056,17 @@ class QuickBooksApiController extends Controller
 
     private function ensureCOA($fullName)
     {
- 
+
         $account = ChartOfAccount::where('name', $fullName)->where('created_by', Auth::user()->creatorId())->first();
         if (!$account) {
             $accountId = $this->getAccountIdByFullName($fullName);
-           
-            if($accountId){
+
+            if ($accountId) {
                 $account = ChartOfAccount::where('id', $accountId)->where('created_by', Auth::user()->creatorId())->first();
                 return $account;
             }
             // dd($account);
-          $typeMapping = [
+            $typeMapping = [
                 'accounts payable (a/p)' => 'Liabilities',
                 'accounts payable' => 'Liabilities',
                 'credit card' => 'Liabilities',
@@ -1014,65 +1128,65 @@ class QuickBooksApiController extends Controller
                         break;
                     }
                 }
-                
+
                 // Additional fallback: if the name itself contains "expense"
                 // if (str_contains($typeName, 'expense')) {
                 //     $systemTypeName = 'Expenses';
                 // }
-                    // $type = ChartOfAccountType::firstOrCreate(
-                    //     ['name' => 'Other', 'created_by' => Auth::user()->creatorId()]
-                    // );
-                    // $subType = ChartOfAccountSubType::firstOrCreate([
-                    //     'type' => $type->id,
-                    //     'name' => 'Other',
-                    //     'created_by' => Auth::user()->creatorId(),
-                    // ]);
-                    // $account = ChartOfAccount::create([
-                    //     'name' => $fullName,
-                    //     'type' => $type->id,
-                    //     'sub_type' => $subType->id,
-                    //     'created_by' => Auth::user()->creatorId(),
-                    // ]);
-                }       
-                 $debugNames = [
-                    'Legal & Professional Fees:Lawyer',
-                    'Landscaping Services:Job Materials:Plants and Soil',
-                    'Landscaping Services:Job Materials:Fountains and Garden Lighting',
-                    'Legal & Professional Fees:Accounting',
-                    'Landscaping Services:Job Materials:Sprinklers and Drip Systems',
-                ];
+                // $type = ChartOfAccountType::firstOrCreate(
+                //     ['name' => 'Other', 'created_by' => Auth::user()->creatorId()]
+                // );
+                // $subType = ChartOfAccountSubType::firstOrCreate([
+                //     'type' => $type->id,
+                //     'name' => 'Other',
+                //     'created_by' => Auth::user()->creatorId(),
+                // ]);
+                // $account = ChartOfAccount::create([
+                //     'name' => $fullName,
+                //     'type' => $type->id,
+                //     'sub_type' => $subType->id,
+                //     'created_by' => Auth::user()->creatorId(),
+                // ]);
+            }
+            $debugNames = [
+                'Legal & Professional Fees:Lawyer',
+                'Landscaping Services:Job Materials:Plants and Soil',
+                'Landscaping Services:Job Materials:Fountains and Garden Lighting',
+                'Legal & Professional Fees:Accounting',
+                'Landscaping Services:Job Materials:Sprinklers and Drip Systems',
+            ];
 
-                // if (!in_array($fullName, $debugNames)) {
-                //     dd($fullName, $systemTypeName, $detailType, $typeName);
-                // }
-                // else{
-                //     dd($fullName,$systemTypeName,$detailType,$typeName,$typeMapping,'sds');
-                // }
-                 $type = ChartOfAccountType::firstOrCreate(
-                        ['name' => $systemTypeName, 'created_by' => Auth::user()->creatorId()]
-                    );
+            // if (!in_array($fullName, $debugNames)) {
+            //     dd($fullName, $systemTypeName, $detailType, $typeName);
+            // }
+            // else{
+            //     dd($fullName,$systemTypeName,$detailType,$typeName,$typeMapping,'sds');
+            // }
+            $type = ChartOfAccountType::firstOrCreate(
+                ['name' => $systemTypeName, 'created_by' => Auth::user()->creatorId()]
+            );
 
-                    $subType = ChartOfAccountSubType::firstOrCreate([
-                        'type' => $type->id,
-                        'name' => $detailType ?: 'Other',
-                        'created_by' => Auth::user()->creatorId(),
-                    ]);
-                    $acct = ChartOfAccount::where('name', $fullName)
-                            ->where('type', $type->id)
-                            ->where('sub_type', $subType->id)
-                            ->where('created_by', Auth::user()->creatorId())
-                            ->first();
-                if (!$acct) {
-                    $account = ChartOfAccount::create([
-                        'name' => $fullName,
-                        'type' => $type->id,
-                        'sub_type' => $subType->id,
-                        'created_by' => Auth::user()->creatorId(),
-                    ]);
-                }
+            $subType = ChartOfAccountSubType::firstOrCreate([
+                'type' => $type->id,
+                'name' => $detailType ?: 'Other',
+                'created_by' => Auth::user()->creatorId(),
+            ]);
+            $acct = ChartOfAccount::where('name', $fullName)
+                ->where('type', $type->id)
+                ->where('sub_type', $subType->id)
+                ->where('created_by', Auth::user()->creatorId())
+                ->first();
+            if (!$acct) {
+                $account = ChartOfAccount::create([
+                    'name' => $fullName,
+                    'type' => $type->id,
+                    'sub_type' => $subType->id,
+                    'created_by' => Auth::user()->creatorId(),
+                ]);
+            }
 
 
-           
+
         }
         return $account;
     }
@@ -1093,7 +1207,7 @@ class QuickBooksApiController extends Controller
                         $q->whereNull('parent')->orWhere('parent', 0);
                     })
                     ->first();
-                    // dd($part,$parts,$account);
+                // dd($part,$parts,$account);
             } else {
                 // Find parent name first in chart_of_account_parents
                 $parentRow = \DB::table('chart_of_account_parents')
@@ -1163,14 +1277,17 @@ class QuickBooksApiController extends Controller
         try {
             $token = \App\Models\QuickBooksToken::where('user_id', auth()->id())
                 ->latest()->first();
-            if (!$token) throw new \Exception("No QuickBooks tokens for user {auth()->id()}");
+            if (!$token)
+                throw new \Exception("No QuickBooks tokens for user {auth()->id()}");
 
             if ($token->expires_at && now()->addMinutes(5)->greaterThan($token->expires_at)) {
                 $this->logInfo('Refreshing QuickBooks token...');
                 $api = new QuickBooksApiController();
                 $new = $api->refreshToken($token->refresh_token);
-                if ($new) $this->logSuccess('QuickBooks token refreshed successfully');
-                else throw new \Exception('Token refresh failed');
+                if ($new)
+                    $this->logSuccess('QuickBooks token refreshed successfully');
+                else
+                    throw new \Exception('Token refresh failed');
             }
         } catch (\Throwable $e) {
             dd($e);
@@ -1178,9 +1295,18 @@ class QuickBooksApiController extends Controller
             throw $e;
         }
     }
-    protected function logSuccess($msg) { $this->addLog('[SUCCESS]', $msg); }
-    protected function logError($msg) { $this->addLog('[ERROR]', $msg); }
-    protected function logInfo($msg) { $this->addLog('[INFO]', $msg); }
+    protected function logSuccess($msg)
+    {
+        $this->addLog('[SUCCESS]', $msg);
+    }
+    protected function logError($msg)
+    {
+        $this->addLog('[ERROR]', $msg);
+    }
+    protected function logInfo($msg)
+    {
+        $this->addLog('[INFO]', $msg);
+    }
 
     protected function addLog($type, $msg)
     {
@@ -1237,7 +1363,7 @@ class QuickBooksApiController extends Controller
             // Create file path
             $fileName = 'skipped_entries_' . now()->format('Y-m-d_H-i-s') . '.xlsx';
             $filePath = storage_path('app/exports/' . $fileName);
-            
+
             // Ensure directory exists
             if (!is_dir(dirname($filePath))) {
                 mkdir(dirname($filePath), 0755, true);
@@ -1488,11 +1614,11 @@ class QuickBooksApiController extends Controller
                 $bill['Payments'] = $linkedPayments;
                 return $bill;
             })
-            // ✅ Only keep bills that actually have payments
-            ->filter(function ($bill) {
-                return count($bill['Payments']) > 0;
-            })
-            ->values();
+                // ✅ Only keep bills that actually have payments
+                ->filter(function ($bill) {
+                    return count($bill['Payments']) > 0;
+                })
+                ->values();
 
             // ✅ Return only one bill (the first one with payments)
             $singleBill = $billsWithPayments->first();
@@ -1535,7 +1661,7 @@ class QuickBooksApiController extends Controller
                 $lines = $payment['Line'] ?? [];
 
                 foreach ($lines as $line) {
-                    $amount = isset($line['Amount']) ? (float)$line['Amount'] : 0;
+                    $amount = isset($line['Amount']) ? (float) $line['Amount'] : 0;
 
                     if (isset($line['LinkedTxn'])) {
                         $linkedTxns = is_array($line['LinkedTxn']) ? $line['LinkedTxn'] : [$line['LinkedTxn']];
@@ -1566,9 +1692,9 @@ class QuickBooksApiController extends Controller
             foreach ($allBills as $bill) {
                 $billId = $bill['Id'];
                 $vendorName = $bill['VendorRef']['name'] ?? 'Unknown Vendor';
-                $total = (float)($bill['TotalAmt'] ?? 0);
-                $balance = (float)($bill['Balance'] ?? 0);
-                $paid = (float)($billPaymentsTotal[$billId] ?? 0);
+                $total = (float) ($bill['TotalAmt'] ?? 0);
+                $balance = (float) ($bill['Balance'] ?? 0);
+                $paid = (float) ($billPaymentsTotal[$billId] ?? 0);
 
                 // Case A: Overpaid
                 if ($paid > 0 && $paid > $total) {
@@ -2643,184 +2769,157 @@ class QuickBooksApiController extends Controller
     //         ]);
     //     }
     // }
-    
-public function invoicesWithPayments()
-{
-    try {
-        $targetInvoiceId = '43038';
 
-        // 1) Fetch the target invoice
-        $invoiceResponse = $this->runQuery("SELECT * FROM Invoice WHERE Id = '{$targetInvoiceId}'");
-        $invoiceRaw = $invoiceResponse['QueryResponse']['Invoice'][0] ?? null;
-        if (!$invoiceRaw) {
-            return response()->json([
-                'status' => 'error',
-                'message' => "Invoice {$targetInvoiceId} not found."
-            ], 404);
-        }
+    public function invoicesWithPayments()
+    {
+        try {
+            $logPrefix = "INVOICE_IMPACT_SYNC";
 
-        // 2) Fetch all payments
-        $allPayments = collect();
-        $start = 1;
-        $maxResults = 50;
-        do {
-            $response = $this->runQuery("SELECT * FROM Payment STARTPOSITION {$start} MAXRESULTS {$maxResults}");
-            $paymentsData = $response['QueryResponse']['Payment'] ?? [];
-            $allPayments = $allPayments->merge($paymentsData);
-            $fetched = count($paymentsData);
-            $start += $fetched;
-        } while ($fetched === $maxResults);
+            // 1) Get all invoices paginated
+            $allInvoices = collect();
+            $start = 1;
+            $max = 100;
 
-        // 3) Gather all invoice IDs referenced by payments
-        $allInvoiceIds = [$targetInvoiceId];
-        foreach ($allPayments as $payment) {
-            foreach ($payment['Line'] ?? [] as $line) {
-                if (!empty($line['LinkedTxn'])) {
-                    $linked = is_array($line['LinkedTxn'][0] ?? null) ? $line['LinkedTxn'] : [$line['LinkedTxn']];
-                    foreach ($linked as $txn) {
-                        if (($txn['TxnType'] ?? null) === 'Invoice') {
-                            $allInvoiceIds[] = $txn['TxnId'];
+            do {
+                $resp = $this->runQuery("SELECT * FROM Invoice STARTPOSITION {$start} MAXRESULTS {$max}");
+                $batch = $resp['QueryResponse']['Invoice'] ?? [];
+                $allInvoices = $allInvoices->merge($batch);
+                $count = count($batch);
+                $start += $count;
+            } while ($count === $max);
+
+            $invoiceIds = $allInvoices->pluck('Id')->toArray();
+            \Log::info("{$logPrefix}: Total Invoices Found", ['count' => count($invoiceIds)]);
+
+            /** FETCH ENTITIES */
+            $fetchAll = function ($entity) use ($max, $logPrefix) {
+                $data = collect();
+                $start = 1;
+                do {
+                    $resp = $this->runQuery("SELECT * FROM {$entity} STARTPOSITION {$start} MAXRESULTS {$max}");
+                    $batch = $resp['QueryResponse'][$entity] ?? [];
+                    $data = $data->merge($batch);
+                    $fetched = count($batch);
+                    $start += $fetched;
+                } while ($fetched === $max);
+
+                \Log::info("{$logPrefix}: {$entity} fetched", ['count' => count($data)]);
+                return $data;
+            };
+
+            $payments = $fetchAll("Payment");
+            $creditMemos = $fetchAll("CreditMemo");
+            $deposits = $fetchAll("Deposit");
+
+
+            /** EXTRACT TRUE APPLIED LINKS (Payment & CreditMemo) */
+            $extractLinked = function ($collection, $type) {
+                $map = [];
+                foreach ($collection as $txn) {
+                    foreach ($txn['Line'] ?? [] as $line) {
+                        if (!empty($line['LinkedTxn'])) {
+                            foreach ($line['LinkedTxn'] as $lnk) {
+                                if (($lnk['TxnType'] ?? null) === 'Invoice') {
+                                    $map[] = [
+                                        'TxnSource' => $type,
+                                        'SourceId' => $txn['Id'],
+                                        'InvoiceId' => $lnk['TxnId'],
+                                        'Amount' => $txn['TotalAmt'] ?? 0,
+                                        'Memo' => $txn['PrivateNote'] ?? $txn['Memo'] ?? null,
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                }
+                return $map;
+            };
+
+            $mapPayments = $extractLinked($payments, "Payment");
+            $mapCredits = $extractLinked($creditMemos, "CreditMemo");
+
+
+            /** DEPOSIT MATCHING (LOGGING ONLY | not a real linking) */
+            $matchedDeposits = [];
+            foreach ($deposits as $dep) {
+                foreach ($dep['Line'] ?? [] as $line) {
+                    $cust = $line['DepositLineDetail']['Entity']['Ref'] ?? null;
+                    $memo = $line['Description'] ?? null;
+                    $amount = $line['Amount'] ?? 0;
+
+                    if (!$cust)
+                        continue;
+
+                    // Find same customer invoices with same amount
+                    $possibleInvoices = $allInvoices->filter(function ($inv) use ($cust, $amount) {
+                        return isset($inv['CustomerRef']['value'])
+                            && $inv['CustomerRef']['value'] == $cust
+                            && (float) $inv['TotalAmt'] == (float) $amount;
+                    });
+
+                    if ($possibleInvoices->count() > 0) {
+                        foreach ($possibleInvoices as $inv) {
+                            $matchedDeposits[] = [
+                                'DepositId' => $dep['Id'],
+                                'InvoiceId' => $inv['Id'],
+                                'Amount' => $amount,
+                                'Memo' => $memo
+                            ];
+
+                            \Log::info("{$logPrefix}: Potential Deposit-Invoice match", [
+                                'deposit_id' => $dep['Id'],
+                                'invoice_id' => $inv['Id'],
+                                'amount' => $amount,
+                                'memo' => $memo,
+                            ]);
                         }
                     }
                 }
             }
+
+
+            /** LOG FULL PAYMENT + MEMO + INVOICE DETAILS */
+            foreach ($mapPayments as $pm) {
+                \Log::info("{$logPrefix}: Payment applied", [
+                    'payment_id' => $pm['SourceId'],
+                    'invoice_id' => $pm['InvoiceId'],
+                    'amount' => $pm['Amount'],
+                    'memo' => $pm['Memo'] ?? null
+                ]);
+            }
+
+            foreach ($mapCredits as $cm) {
+                \Log::info("{$logPrefix}: CreditMemo applied", [
+                    'credit_memo_id' => $cm['SourceId'],
+                    'invoice_id' => $cm['InvoiceId'],
+                    'amount' => $cm['Amount'],
+                    'memo' => $cm['Memo'] ?? null
+                ]);
+            }
+
+
+            /** FINAL JSON */
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Invoice payments + memo linking logged',
+                'summary' => [
+                    'invoices' => count($allInvoices),
+                    'paymentsLinked' => count($mapPayments),
+                    'creditMemosLinked' => count($mapCredits),
+                    'depositMatches' => count($matchedDeposits),
+                    'depositMatchLog' => $matchedDeposits,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error("INVOICE_IMPACT_ERROR", ['message' => $e->getMessage()]);
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
         }
-        $allInvoiceIds = array_unique($allInvoiceIds);
-
-        // 4) Fetch all these invoices in a single query (batch)
-        $invoicesMap = [];
-        $batchSize = 30; // QuickBooks has a limit on IN (...) queries, so batch
-        $chunks = array_chunk($allInvoiceIds, $batchSize);
-
-        foreach ($chunks as $chunk) {
-            $idsStr = implode(',', array_map(fn($id) => "'{$id}'", $chunk));
-            $resp = $this->runQuery("SELECT * FROM Invoice WHERE Id IN ({$idsStr})");
-            foreach ($resp['QueryResponse']['Invoice'] ?? [] as $inv) {
-                $invoicesMap[$inv['Id']] = $inv;
-            }
-        }
-
-        // 5) Normalize payments with full invoice details
-        $normalizedPayments = $allPayments->map(function ($payment) use ($invoicesMap) {
-            $linked = [];
-            foreach ($payment['Line'] ?? [] as $line) {
-                if (!empty($line['LinkedTxn'])) {
-                    $linked = array_merge($linked, is_array($line['LinkedTxn'][0] ?? null) ? $line['LinkedTxn'] : [$line['LinkedTxn']]);
-                }
-            }
-
-            $relatedInvoices = [];
-            foreach ($linked as $txn) {
-                $txnId = $txn['TxnId'] ?? null;
-                if ($txnId && isset($invoicesMap[$txnId])) {
-                    $relatedInvoices[] = $invoicesMap[$txnId];
-                }
-            }
-
-            return [
-                'PaymentId' => $payment['Id'] ?? null,
-                'TxnDate' => $payment['TxnDate'] ?? null,
-                'TotalAmount' => $payment['TotalAmt'] ?? 0,
-                'PaymentMethod' => $payment['PaymentMethodRef']['name'] ?? null,
-                'LinkedTxn' => $linked,
-                'RelatedInvoices' => $relatedInvoices,
-                'RawPayment' => $payment,
-            ];
-        });
-
-        // 6) Attach payments relevant to target invoice
-        $paymentsForInvoice = $normalizedPayments->filter(function ($p) use ($targetInvoiceId) {
-            foreach ($p['RelatedInvoices'] as $inv) {
-                if (($inv['Id'] ?? null) === $targetInvoiceId) return true;
-            }
-            return false;
-        })->values()->toArray();
-
-        // 7) Parse invoice lines
-        $itemsRaw = $this->runQuery("SELECT * FROM Item STARTPOSITION 1 MAXRESULTS 500");
-        $accountsRaw = $this->runQuery("SELECT * FROM Account STARTPOSITION 1 MAXRESULTS 500");
-        $itemsMap = collect($itemsRaw['QueryResponse']['Item'] ?? [])->keyBy('Id')->toArray();
-        $accountsMap = collect($accountsRaw['QueryResponse']['Account'] ?? [])->keyBy('Id')->toArray();
-
-        $detectAccountForSalesItem = function ($sid) use ($itemsMap, $accountsMap) {
-            if (!empty($sid['ItemAccountRef']['value'])) {
-                return [
-                    'AccountId' => $sid['ItemAccountRef']['value'],
-                    'AccountName' => $sid['ItemAccountRef']['name'] ?? ($accountsMap[$sid['ItemAccountRef']['value']]['Name'] ?? null)
-                ];
-            }
-            if (!empty($sid['ItemRef']['value'])) {
-                $item = $itemsMap[$sid['ItemRef']['value']] ?? null;
-                if ($item && !empty($item['IncomeAccountRef']['value'])) {
-                    return [
-                        'AccountId' => $item['IncomeAccountRef']['value'],
-                        'AccountName' => $item['IncomeAccountRef']['name'] ?? ($accountsMap[$item['IncomeAccountRef']['value']]['Name'] ?? null)
-                    ];
-                }
-            }
-            return ['AccountId' => null, 'AccountName' => null];
-        };
-
-        $parseInvoiceLine = function ($line) use ($detectAccountForSalesItem) {
-            $out = [];
-            if (!empty($line['GroupLineDetail']['Line'])) {
-                foreach ($line['GroupLineDetail']['Line'] as $child) {
-                    if (!empty($child['SalesItemLineDetail'])) {
-                        $sid = $child['SalesItemLineDetail'];
-                        $acc = $detectAccountForSalesItem($sid);
-                        $out[] = [
-                            'Description' => $child['Description'] ?? $sid['ItemRef']['name'] ?? null,
-                            'Amount' => $child['Amount'] ?? 0,
-                            'Quantity' => $sid['Qty'] ?? 1,
-                            'AccountId' => $acc['AccountId'],
-                            'AccountName' => $acc['AccountName'],
-                            'HasProduct' => true,
-                            'RawLine' => $child,
-                        ];
-                    }
-                }
-                return $out;
-            }
-
-            if (!empty($line['SalesItemLineDetail'])) {
-                $sid = $line['SalesItemLineDetail'];
-                $acc = $detectAccountForSalesItem($sid);
-                $out[] = [
-                    'Description' => $line['Description'] ?? $sid['ItemRef']['name'] ?? null,
-                    'Amount' => $line['Amount'] ?? 0,
-                    'Quantity' => $sid['Qty'] ?? 1,
-                    'AccountId' => $acc['AccountId'],
-                    'AccountName' => $acc['AccountName'],
-                    'HasProduct' => true,
-                    'RawLine' => $line,
-                ];
-            }
-            return $out;
-        };
-
-        $parsedLines = [];
-        foreach ($invoiceRaw['Line'] ?? [] as $line) {
-            $parsedLines = array_merge($parsedLines, $parseInvoiceLine($line));
-        }
-
-        return dd([
-            'status' => 'success',
-            'data' => [
-                'Invoice' => $invoiceRaw,
-                'ParsedLines' => $parsedLines,
-                'Payments' => $paymentsForInvoice,
-            ]
-        ]);
-
-    } catch (\Exception $e) {
-        return response()->json([
-            'status' => 'error',
-            'message' => $e->getMessage(),
-        ], 500);
     }
-}
-
-
+    
     // public function items()
     // {
     //     try {
@@ -2862,58 +2961,58 @@ public function invoicesWithPayments()
     //     }
     // }
 
-public function items()
-{
-    try {
-        $allItems = collect();
-        $start = 1;
-        $maxResults = 1000;   // API maximum
-        $queryBase = "SELECT * FROM Item WHERE Active IN (true, false)";
+    public function items()
+    {
+        try {
+            $allItems = collect();
+            $start = 1;
+            $maxResults = 1000;   // API maximum
+            $queryBase = "SELECT * FROM Item WHERE Active IN (true, false)";
 
-        do {
-            $query = "{$queryBase} STARTPOSITION {$start} MAXRESULTS {$maxResults}";
-            $response = $this->runQuery($query);
+            do {
+                $query = "{$queryBase} STARTPOSITION {$start} MAXRESULTS {$maxResults}";
+                $response = $this->runQuery($query);
 
-            if ($response instanceof \Illuminate\Http\JsonResponse) {
-                return $response;
-            }
+                if ($response instanceof \Illuminate\Http\JsonResponse) {
+                    return $response;
+                }
 
-            $batch = $response['QueryResponse']['Item'] ?? [];
-            $count = count($batch);
+                $batch = $response['QueryResponse']['Item'] ?? [];
+                $count = count($batch);
 
-            $mapped = collect($batch)->map(function ($item) {
-                return [
-                    'ItemId'        => $item['Id'] ?? null,
-                    'Name'          => $item['Name'] ?? null,
-                    'Description'   => $item['Description'] ?? null,
-                    'Type'          => $item['Type'] ?? null,
-                    'Active'        => $item['Active'] ?? null,
-                    'UnitPrice'     => isset($item['UnitPrice']) ? $item['UnitPrice'] : 0,
-                    'QtyOnHand'     => isset($item['QtyOnHand']) ? $item['QtyOnHand'] : 0,
-                    'TrackQtyOnHand'=> $item['TrackQtyOnHand'] ?? false,
-                ];
-            });
+                $mapped = collect($batch)->map(function ($item) {
+                    return [
+                        'ItemId' => $item['Id'] ?? null,
+                        'Name' => $item['Name'] ?? null,
+                        'Description' => $item['Description'] ?? null,
+                        'Type' => $item['Type'] ?? null,
+                        'Active' => $item['Active'] ?? null,
+                        'UnitPrice' => isset($item['UnitPrice']) ? $item['UnitPrice'] : 0,
+                        'QtyOnHand' => isset($item['QtyOnHand']) ? $item['QtyOnHand'] : 0,
+                        'TrackQtyOnHand' => $item['TrackQtyOnHand'] ?? false,
+                    ];
+                });
 
-            $allItems = $allItems->merge($mapped);
-            $start += $maxResults;
-        } while ($count === $maxResults);  // keep fetching while full page returned
+                $allItems = $allItems->merge($mapped);
+                $start += $maxResults;
+            } while ($count === $maxResults);  // keep fetching while full page returned
 
-        \Log::info("QuickBooks import: total items fetched = {$allItems->count()}");
+            \Log::info("QuickBooks import: total items fetched = {$allItems->count()}");
 
-        return response()->json([
-            'status' => 'success',
-            'count'  => $allItems->count(),
-            'data'   => $allItems->values(),
-        ]);
-    } catch (\Exception $e) {
-        \Log::error("QuickBooks import error: " . $e->getMessage());
+            return response()->json([
+                'status' => 'success',
+                'count' => $allItems->count(),
+                'data' => $allItems->values(),
+            ]);
+        } catch (\Exception $e) {
+            \Log::error("QuickBooks import error: " . $e->getMessage());
 
-        return response()->json([
-            'status'  => 'error',
-            'message' => $e->getMessage(),
-        ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
-}
 
 
 
@@ -2981,76 +3080,79 @@ public function items()
 
             $depositsData = $depositResponse['QueryResponse']['Deposit'] ?? [];
             // dd($depositsData);
+            return  response()->json([
+                'data' => $depositsData,
+            ]);
             // 2) Map into a rich, readable shape
             $deposits = collect($depositsData)->map(function ($deposit) {
                 $lines = collect($deposit['Line'] ?? [])->map(function ($line) {
-                    $detail   = $line['DepositLineDetail'] ?? [];
-                    $entity   = $detail['Entity'] ?? [];
+                    $detail = $line['DepositLineDetail'] ?? [];
+                    $entity = $detail['Entity'] ?? [];
                     $entityRef = $entity['EntityRef'] ?? [];
 
                     // Linked transactions that this line is sourced from (your "voucher" links)
                     $linkedTxns = collect($detail['LinkedTxn'] ?? [])->map(function ($lt) {
                         return [
-                            'TxnId'     => $lt['TxnId']     ?? null,
-                            'TxnType'   => $lt['TxnType']   ?? null,  // e.g., Payment, SalesReceipt, RefundReceipt
+                            'TxnId' => $lt['TxnId'] ?? null,
+                            'TxnType' => $lt['TxnType'] ?? null,  // e.g., Payment, SalesReceipt, RefundReceipt
                             'TxnLineId' => $lt['TxnLineId'] ?? null,
                         ];
                     })->values();
 
                     return [
-                        'Amount'        => $line['Amount'] ?? null,
-                        'DetailType'    => $line['DetailType'] ?? null,
-                        'CustomerRef'   => [
-                            'Id'   => $entityRef['value'] ?? null,
-                            'Type' => $entity['type']     ?? null,   // expecting "Customer" for customer-linked lines
-                            'Name' => $entity['name']     ?? null,
+                        'Amount' => $line['Amount'] ?? null,
+                        'DetailType' => $line['DetailType'] ?? null,
+                        'CustomerRef' => [
+                            'Id' => $entityRef['value'] ?? null,
+                            'Type' => $entity['type'] ?? null,   // expecting "Customer" for customer-linked lines
+                            'Name' => $entity['name'] ?? null,
                         ],
-                        'Account'       => $detail['AccountRef']['name'] ?? null,
+                        'Account' => $detail['AccountRef']['name'] ?? null,
                         'PaymentMethod' => $detail['PaymentMethodRef']['name'] ?? null,
-                        'CheckNum'      => $detail['CheckNum'] ?? null,
-                        'LinkedTxn'     => $linkedTxns,            // voucher links
+                        'CheckNum' => $detail['CheckNum'] ?? null,
+                        'LinkedTxn' => $linkedTxns,            // voucher links
                     ];
                 });
 
                 // unique customers involved in this deposit (top-level quick look)
                 $customersInDeposit = $lines->pluck('CustomerRef')
-                    ->filter(fn ($c) => ($c['Id'] ?? null) && strtolower($c['Type'] ?? '') == 'customer')
+                    ->filter(fn($c) => ($c['Id'] ?? null) && strtolower($c['Type'] ?? '') == 'customer')
                     ->unique('Id')
                     ->values();
 
                 return [
-                    'DepositId'   => $deposit['Id'] ?? null,
-                    'DocNumber'   => $deposit['DocNumber'] ?? null, // "voucher"/deposit number
-                    'TxnDate'     => $deposit['TxnDate'] ?? null,
-                    'TotalAmt'    => $deposit['TotalAmt'] ?? 0,
+                    'DepositId' => $deposit['Id'] ?? null,
+                    'DocNumber' => $deposit['DocNumber'] ?? null, // "voucher"/deposit number
+                    'TxnDate' => $deposit['TxnDate'] ?? null,
+                    'TotalAmt' => $deposit['TotalAmt'] ?? 0,
                     'PrivateNote' => $deposit['PrivateNote'] ?? null,
-                    'Currency'    => $deposit['CurrencyRef']['name'] ?? null,
-                    'DepositTo'   => $deposit['DepositToAccountRef']['name'] ?? null,
-                    'LineCount'   => isset($deposit['Line']) ? count($deposit['Line']) : 0,
+                    'Currency' => $deposit['CurrencyRef']['name'] ?? null,
+                    'DepositTo' => $deposit['DepositToAccountRef']['name'] ?? null,
+                    'LineCount' => isset($deposit['Line']) ? count($deposit['Line']) : 0,
 
                     // all lines (full detail)
-                    'Lines'       => $lines,
+                    'Lines' => $lines,
 
                     // quick summary: customers touched by this deposit
-                    'Customers'   => $customersInDeposit,
+                    'Customers' => $customersInDeposit,
                 ];
             });
 
             // 3) If you ONLY want deposits that actually have customer-linked lines, filter here:
             $customerOnly = request()->boolean('customers_only', false);
             $filtered = $customerOnly
-                ? $deposits->filter(fn ($d) => ($d['Customers']->count() ?? 0) > 0)->values()
+                ? $deposits->filter(fn($d) => ($d['Customers']->count() ?? 0) > 0)->values()
                 : $deposits->values();
 
             return response()->json([
                 'status' => 'success',
-                'count'  => $filtered->count(),
-                'data'   => $filtered,
+                'count' => $filtered->count(),
+                'data' => $filtered,
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
-                'status'  => 'error',
+                'status' => 'error',
                 'message' => $e->getMessage(),
             ], 500);
         }
@@ -3204,164 +3306,169 @@ public function items()
     // }
 
 
-public function getSalesReceipts(array $opts = [])
-{
-    try {
-        // ----------- 0) Guard: connection
-        $token = $this->accessToken();
-        $realm = $this->realmId();
-        if (!$token || !$realm) {
-            return response()->json([
-                'error'   => true,
-                'message' => 'Missing QuickBooks connection. Please connect first.',
-            ], 401);
-        }
-
-        // ----------- 1) Build WHERE & paging
-        $startDate  = $opts['start_date']  ?? '2011-01-01'; // 'YYYY-MM-DD'
-        $endDate    = $opts['end_date']    ?? '2025-11-10'; // 'YYYY-MM-DD'
-        $customerId = $opts['customer_id'] ?? null;
-        $pageSize   = max(1, min(1000, (int)($opts['page_size'] ?? 500)));
-        $startPos   = 1;
-
-        $where = [];
-        if ($startDate)  $where[] = "TxnDate >= '{$startDate}'";
-        if ($endDate)    $where[] = "TxnDate <= '{$endDate}'";
-        if ($customerId) $where[] = "CustomerRef = '{$customerId}'";
-        $whereSql = $where ? (' WHERE ' . implode(' AND ', $where)) : '';
-
-        // ----------- 2) Page through SELECT * FROM SalesReceipt
-        $allReceipts = collect();
-        while (true) {
-            $query = "SELECT * FROM SalesReceipt";
-
-            $resp = $this->runQuery($query);
-            if (!is_array($resp)) {
-                // If your runQuery returns a JsonResponse on error, forward it.
-                return $resp;
+    public function getSalesReceipts(array $opts = [])
+    {
+        try {
+            // ----------- 0) Guard: connection
+            $token = $this->accessToken();
+            $realm = $this->realmId();
+            if (!$token || !$realm) {
+                return response()->json([
+                    'error' => true,
+                    'message' => 'Missing QuickBooks connection. Please connect first.',
+                ], 401);
             }
-            dd($resp);
-            $chunk = collect($resp['QueryResponse']['SalesReceipt'] ?? []);
-            $allReceipts = $allReceipts->concat($chunk);
 
-            $returned = $chunk->count();
-            if ($returned < $pageSize) break; // last page
-            $startPos += $pageSize;
-        }
+            // ----------- 1) Build WHERE & paging
+            $startDate = $opts['start_date'] ?? '2011-01-01'; // 'YYYY-MM-DD'
+            $endDate = $opts['end_date'] ?? '2025-11-10'; // 'YYYY-MM-DD'
+            $customerId = $opts['customer_id'] ?? null;
+            $pageSize = max(1, min(1000, (int) ($opts['page_size'] ?? 500)));
+            $startPos = 1;
 
-        if ($allReceipts->isEmpty()) {
-            return response()->json([
-                'status' => 'success',
-                'count'  => 0,
-                'data'   => [],
-                'meta'   => [
-                    'mode'       => 'query+expand',
-                    'start_date' => $startDate,
-                    'end_date'   => $endDate,
-                    'page_size'  => $pageSize,
-                ],
-            ]);
-        }
+            $where = [];
+            if ($startDate)
+                $where[] = "TxnDate >= '{$startDate}'";
+            if ($endDate)
+                $where[] = "TxnDate <= '{$endDate}'";
+            if ($customerId)
+                $where[] = "CustomerRef = '{$customerId}'";
+            $whereSql = $where ? (' WHERE ' . implode(' AND ', $where)) : '';
 
-        // ----------- 3) Collect LinkedTxn by type → ids
-        $byType = [];
-        $linkTriples = []; // [receiptId => [ [TxnType, TxnId], ... ]]
-        foreach ($allReceipts as $sr) {
-            $rid = $sr['Id'] ?? null;
-            $linkTriples[$rid] = [];
-            foreach (($sr['LinkedTxn'] ?? []) as $lt) {
-                $t = $lt['TxnType'] ?? null;
-                $i = $lt['TxnId']   ?? null;
-                if ($t && $i) {
-                    $byType[$t] = $byType[$t] ?? [];
-                    $byType[$t][] = (string)$i;
-                    $linkTriples[$rid][] = [$t, (string)$i];
+            // ----------- 2) Page through SELECT * FROM SalesReceipt
+            $allReceipts = collect();
+            while (true) {
+                $query = "SELECT * FROM SalesReceipt";
+
+                $resp = $this->runQuery($query);
+                if (!is_array($resp)) {
+                    // If your runQuery returns a JsonResponse on error, forward it.
+                    return $resp;
                 }
+                dd($resp);
+                $chunk = collect($resp['QueryResponse']['SalesReceipt'] ?? []);
+                $allReceipts = $allReceipts->concat($chunk);
+
+                $returned = $chunk->count();
+                if ($returned < $pageSize)
+                    break; // last page
+                $startPos += $pageSize;
             }
-        }
-        // Deduplicate per type
-        foreach ($byType as $t => $ids) {
-            $byType[$t] = array_values(array_unique($ids));
-        }
 
-        // ----------- 4) Batch-read referenced entities, by type (chunks of 25)
-        $baseUrl = rtrim($this->baseUrl, '/');
-        $batchUrl = "{$baseUrl}/v3/company/{$realm}/batch?minorversion=75";
+            if ($allReceipts->isEmpty()) {
+                return response()->json([
+                    'status' => 'success',
+                    'count' => 0,
+                    'data' => [],
+                    'meta' => [
+                        'mode' => 'query+expand',
+                        'start_date' => $startDate,
+                        'end_date' => $endDate,
+                        'page_size' => $pageSize,
+                    ],
+                ]);
+            }
 
-        // Build a global lookup: [Type][Id] => Entity
-        $entityLookup = [];
-        foreach ($byType as $type => $ids) {
-            $entityLookup[$type] = [];
-            foreach (array_chunk($ids, 25) as $chunk) {
-                $ops = [];
-                $bId = 1;
-                foreach ($chunk as $id) {
-                    $ops[] = [
-                        'bId'       => (string)$bId++,
-                        'operation' => 'read',
-                        'entity'    => $type,   // e.g. 'Estimate', 'Payment', 'RefundReceipt', 'TimeActivity', etc.
-                        'id'        => (string)$id,
-                    ];
-                }
-
-                $res = Http::withToken($token)
-                    ->accept('application/json')
-                    ->post($batchUrl, ['BatchItemRequest' => $ops]);
-
-                if ($res->status() === 401) {
-                    return response()->json([
-                        'error'   => true,
-                        'message' => 'Unauthorized (401). Access token may be expired. Please reconnect.',
-                    ], 401);
-                }
-
-                $json = $res->json();
-                foreach (($json['BatchItemResponse'] ?? []) as $bir) {
-                    if (!empty($bir['fault'])) continue;
-
-                    // Each response returns a top-level key equal to the entity type, e.g. 'Estimate'
-                    if (isset($bir[$type]) && isset($bir[$type]['Id'])) {
-                        $entityLookup[$type][$bir[$type]['Id']] = $bir[$type];
+            // ----------- 3) Collect LinkedTxn by type → ids
+            $byType = [];
+            $linkTriples = []; // [receiptId => [ [TxnType, TxnId], ... ]]
+            foreach ($allReceipts as $sr) {
+                $rid = $sr['Id'] ?? null;
+                $linkTriples[$rid] = [];
+                foreach (($sr['LinkedTxn'] ?? []) as $lt) {
+                    $t = $lt['TxnType'] ?? null;
+                    $i = $lt['TxnId'] ?? null;
+                    if ($t && $i) {
+                        $byType[$t] = $byType[$t] ?? [];
+                        $byType[$t][] = (string) $i;
+                        $linkTriples[$rid][] = [$t, (string) $i];
                     }
                 }
             }
-        }
-
-        // ----------- 5) Attach expanded entities back onto each receipt
-        $enriched = $allReceipts->map(function ($sr) use ($linkTriples, $entityLookup) {
-            $rid = $sr['Id'] ?? null;
-            $linked = [];
-            foreach ($linkTriples[$rid] ?? [] as [$t, $i]) {
-                $linked[] = [
-                    'TxnType' => $t,
-                    'TxnId'   => $i,
-                    'Entity'  => $entityLookup[$t][$i] ?? null, // null if not found/accessible
-                ];
+            // Deduplicate per type
+            foreach ($byType as $t => $ids) {
+                $byType[$t] = array_values(array_unique($ids));
             }
-            $sr['LinkedEntities'] = $linked;
-            return $sr;
-        })->values();
 
-        // ----------- 6) Respond
-        return response()->json([
-            'status' => 'success',
-            'count'  => $enriched->count(),
-            'data'   => $enriched,
-            'meta'   => [
-                'mode'       => 'query+batch-expand',
-                'start_date' => $startDate,
-                'end_date'   => $endDate,
-                'page_size'  => $pageSize,
-                'types_expanded' => array_keys($byType),
-            ],
-        ]);
-    } catch (\Throwable $e) {
-        return response()->json([
-            'status'  => 'error',
-            'message' => $e->getMessage(),
-        ], 500);
+            // ----------- 4) Batch-read referenced entities, by type (chunks of 25)
+            $baseUrl = rtrim($this->baseUrl, '/');
+            $batchUrl = "{$baseUrl}/v3/company/{$realm}/batch?minorversion=75";
+
+            // Build a global lookup: [Type][Id] => Entity
+            $entityLookup = [];
+            foreach ($byType as $type => $ids) {
+                $entityLookup[$type] = [];
+                foreach (array_chunk($ids, 25) as $chunk) {
+                    $ops = [];
+                    $bId = 1;
+                    foreach ($chunk as $id) {
+                        $ops[] = [
+                            'bId' => (string) $bId++,
+                            'operation' => 'read',
+                            'entity' => $type,   // e.g. 'Estimate', 'Payment', 'RefundReceipt', 'TimeActivity', etc.
+                            'id' => (string) $id,
+                        ];
+                    }
+
+                    $res = Http::withToken($token)
+                        ->accept('application/json')
+                        ->post($batchUrl, ['BatchItemRequest' => $ops]);
+
+                    if ($res->status() === 401) {
+                        return response()->json([
+                            'error' => true,
+                            'message' => 'Unauthorized (401). Access token may be expired. Please reconnect.',
+                        ], 401);
+                    }
+
+                    $json = $res->json();
+                    foreach (($json['BatchItemResponse'] ?? []) as $bir) {
+                        if (!empty($bir['fault']))
+                            continue;
+
+                        // Each response returns a top-level key equal to the entity type, e.g. 'Estimate'
+                        if (isset($bir[$type]) && isset($bir[$type]['Id'])) {
+                            $entityLookup[$type][$bir[$type]['Id']] = $bir[$type];
+                        }
+                    }
+                }
+            }
+
+            // ----------- 5) Attach expanded entities back onto each receipt
+            $enriched = $allReceipts->map(function ($sr) use ($linkTriples, $entityLookup) {
+                $rid = $sr['Id'] ?? null;
+                $linked = [];
+                foreach ($linkTriples[$rid] ?? [] as [$t, $i]) {
+                    $linked[] = [
+                        'TxnType' => $t,
+                        'TxnId' => $i,
+                        'Entity' => $entityLookup[$t][$i] ?? null, // null if not found/accessible
+                    ];
+                }
+                $sr['LinkedEntities'] = $linked;
+                return $sr;
+            })->values();
+
+            // ----------- 6) Respond
+            return response()->json([
+                'status' => 'success',
+                'count' => $enriched->count(),
+                'data' => $enriched,
+                'meta' => [
+                    'mode' => 'query+batch-expand',
+                    'start_date' => $startDate,
+                    'end_date' => $endDate,
+                    'page_size' => $pageSize,
+                    'types_expanded' => array_keys($byType),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
     }
-}
 
 
     /**
@@ -3639,7 +3746,7 @@ public function getSalesReceipts(array $opts = [])
     private function runEntity($entity)
     {
         $accessToken = $this->accessToken();
-            $realmId = $this->realmId();
+        $realmId = $this->realmId();
 
         $url = "https://quickbooks.api.intuit.com/v3/company/{$realmId}/{$entity}";
         $response = Http::withToken($accessToken)
@@ -3660,125 +3767,125 @@ public function getSalesReceipts(array $opts = [])
         return $response->json();
     }
 
-   public function creditCardCredits(Request $request)
-{
-    try {
-        $startDate = $request->get('start_date', '2010-01-01');
-        $endDate   = $request->get('end_date', date('Y-m-d'));
+    public function creditCardCredits(Request $request)
+    {
+        try {
+            $startDate = $request->get('start_date', '2010-01-01');
+            $endDate = $request->get('end_date', date('Y-m-d'));
 
-        // 1️⃣ Fetch report from QuickBooks (TransactionList for CreditCardCredit)
-        $token = $this->accessToken();
-        $realm = $this->realmId();
-        $url = "https://quickbooks.api.intuit.com/v3/company/{$realm}/reports/TransactionList" .
-               "?start_date={$startDate}&end_date={$endDate}&transaction_type=CreditCardCredit&minorversion=65";
+            // 1️⃣ Fetch report from QuickBooks (TransactionList for CreditCardCredit)
+            $token = $this->accessToken();
+            $realm = $this->realmId();
+            $url = "https://quickbooks.api.intuit.com/v3/company/{$realm}/reports/TransactionList" .
+                "?start_date={$startDate}&end_date={$endDate}&transaction_type=CreditCardCredit&minorversion=65";
 
-        $response = Http::withToken($token)
-            ->withHeaders(['Accept' => 'application/json'])
-            ->get($url)
-            ->throw()
-            ->json();
+            $response = Http::withToken($token)
+                ->withHeaders(['Accept' => 'application/json'])
+                ->get($url)
+                ->throw()
+                ->json();
 
-        $columns = collect($response['Columns']['Column'] ?? [])->pluck('ColTitle')->toArray();
-        $rows = collect($response['Rows']['Row'] ?? []);
+            $columns = collect($response['Columns']['Column'] ?? [])->pluck('ColTitle')->toArray();
+            $rows = collect($response['Rows']['Row'] ?? []);
 
-        // 2️⃣ Map each row into a key-value structure
-        $entries = $rows->map(function ($row) use ($columns) {
-            $colData = $row['ColData'] ?? [];
-            $mapped = [];
-            foreach ($colData as $index => $col) {
-                $key = $columns[$index] ?? "Column_{$index}";
-                $mapped[$key] = $col['value'] ?? null;
+            // 2️⃣ Map each row into a key-value structure
+            $entries = $rows->map(function ($row) use ($columns) {
+                $colData = $row['ColData'] ?? [];
+                $mapped = [];
+                foreach ($colData as $index => $col) {
+                    $key = $columns[$index] ?? "Column_{$index}";
+                    $mapped[$key] = $col['value'] ?? null;
+                }
+                return $mapped;
+            })->filter(function ($entry) {
+                return ($entry['Transaction Type'] ?? '') === 'Credit Card Credit';
+            })->values();
+
+            if ($entries->isEmpty()) {
+                return response()->json([
+                    'status' => 'success',
+                    'count' => 0,
+                    'data' => [],
+                    'message' => 'No Credit Card Credit entries found for this date range.',
+                ]);
             }
-            return $mapped;
-        })->filter(function ($entry) {
-            return ($entry['Transaction Type'] ?? '') === 'Credit Card Credit';
-        })->values();
 
-        if ($entries->isEmpty()) {
+            // 3️⃣ Collect unique account and split names for lookup
+            $accountNames = collect($entries)->pluck('Account')
+                ->merge($entries->pluck('Split'))
+                ->unique()
+                ->filter()
+                ->values();
+
+            // 4️⃣ Fetch all account details in batches (QuickBooks limits query size)
+            $accountDetails = collect();
+            foreach ($accountNames->chunk(20) as $chunk) {
+                $query = "SELECT Id, Name, AccountType, AccountSubType, Classification 
+                      FROM Account WHERE Name IN ('" .
+                    implode("','", $chunk->map(fn($n) => addslashes($n))->toArray()) . "')";
+
+                $resp = $this->runQuery($query);
+
+                // Some QuickBooks responses may come back as JsonResponse, so handle that
+                if ($resp instanceof \Illuminate\Http\JsonResponse) {
+                    $resp = $resp->getData(true);
+                }
+
+                $accountDetails = $accountDetails->merge($resp['QueryResponse']['Account'] ?? []);
+            }
+
+            // 5️⃣ Create lookup table by Name
+            $accountsByName = $accountDetails->keyBy('Name');
+
+            // 6️⃣ Merge account info back into each entry
+            $detailedEntries = $entries->map(function ($e) use ($accountsByName) {
+                $account = $accountsByName[$e['Account']] ?? null;
+                $split = $accountsByName[$e['Split']] ?? null;
+
+                return [
+                    'Date' => $e['Date'] ?? null,
+                    'TransactionType' => $e['Transaction Type'] ?? null,
+                    'Name' => $e['Name'] ?? null,
+                    'Memo' => $e['Memo/Description'] ?? null,
+                    'Amount' => $e['Amount'] ?? null,
+                    'Posting' => $e['Posting'] ?? null,
+                    'Account' => $account ? [
+                        'Id' => $account['Id'] ?? null,
+                        'Name' => $account['Name'] ?? null,
+                        'AccountType' => $account['AccountType'] ?? null,
+                        'AccountSubType' => $account['AccountSubType'] ?? null,
+                        'Classification' => $account['Classification'] ?? null,
+                    ] : [
+                        'Id' => null,
+                        'Name' => $e['Account'] ?? null
+                    ],
+                    'Split' => $split ? [
+                        'Id' => $split['Id'] ?? null,
+                        'Name' => $split['Name'] ?? null,
+                        'AccountType' => $split['AccountType'] ?? null,
+                        'AccountSubType' => $split['AccountSubType'] ?? null,
+                        'Classification' => $split['Classification'] ?? null,
+                    ] : [
+                        'Id' => null,
+                        'Name' => $e['Split'] ?? null
+                    ],
+                ];
+            });
+
+            // ✅ 7️⃣ Return complete formatted response
             return response()->json([
                 'status' => 'success',
-                'count' => 0,
-                'data' => [],
-                'message' => 'No Credit Card Credit entries found for this date range.',
+                'count' => $detailedEntries->count(),
+                'data' => $detailedEntries->values(),
             ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
         }
-
-        // 3️⃣ Collect unique account and split names for lookup
-        $accountNames = collect($entries)->pluck('Account')
-            ->merge($entries->pluck('Split'))
-            ->unique()
-            ->filter()
-            ->values();
-
-        // 4️⃣ Fetch all account details in batches (QuickBooks limits query size)
-        $accountDetails = collect();
-        foreach ($accountNames->chunk(20) as $chunk) {
-            $query = "SELECT Id, Name, AccountType, AccountSubType, Classification 
-                      FROM Account WHERE Name IN ('" .
-                      implode("','", $chunk->map(fn($n) => addslashes($n))->toArray()) . "')";
-            
-            $resp = $this->runQuery($query);
-
-            // Some QuickBooks responses may come back as JsonResponse, so handle that
-            if ($resp instanceof \Illuminate\Http\JsonResponse) {
-                $resp = $resp->getData(true);
-            }
-
-            $accountDetails = $accountDetails->merge($resp['QueryResponse']['Account'] ?? []);
-        }
-
-        // 5️⃣ Create lookup table by Name
-        $accountsByName = $accountDetails->keyBy('Name');
-
-        // 6️⃣ Merge account info back into each entry
-        $detailedEntries = $entries->map(function ($e) use ($accountsByName) {
-            $account = $accountsByName[$e['Account']] ?? null;
-            $split   = $accountsByName[$e['Split']] ?? null;
-
-            return [
-                'Date' => $e['Date'] ?? null,
-                'TransactionType' => $e['Transaction Type'] ?? null,
-                'Name' => $e['Name'] ?? null,
-                'Memo' => $e['Memo/Description'] ?? null,
-                'Amount' => $e['Amount'] ?? null,
-                'Posting' => $e['Posting'] ?? null,
-                'Account' => $account ? [
-                    'Id' => $account['Id'] ?? null,
-                    'Name' => $account['Name'] ?? null,
-                    'AccountType' => $account['AccountType'] ?? null,
-                    'AccountSubType' => $account['AccountSubType'] ?? null,
-                    'Classification' => $account['Classification'] ?? null,
-                ] : [
-                    'Id' => null,
-                    'Name' => $e['Account'] ?? null
-                ],
-                'Split' => $split ? [
-                    'Id' => $split['Id'] ?? null,
-                    'Name' => $split['Name'] ?? null,
-                    'AccountType' => $split['AccountType'] ?? null,
-                    'AccountSubType' => $split['AccountSubType'] ?? null,
-                    'Classification' => $split['Classification'] ?? null,
-                ] : [
-                    'Id' => null,
-                    'Name' => $e['Split'] ?? null
-                ],
-            ];
-        });
-
-        // ✅ 7️⃣ Return complete formatted response
-        return response()->json([
-            'status' => 'success',
-            'count' => $detailedEntries->count(),
-            'data' => $detailedEntries->values(),
-        ]);
-
-    } catch (\Exception $e) {
-        return response()->json([
-            'status' => 'error',
-            'message' => $e->getMessage(),
-        ], 500);
     }
-}
 
 
 
@@ -4108,32 +4215,32 @@ GRAPHQL;
             ], 500);
         }
     }
-// public function getAllTransactionsGrouped(Request $request)
+    // public function getAllTransactionsGrouped(Request $request)
 // {
 //     try {
 //         $start = (int) $request->get('start', 1);
 //         $max = (int) $request->get('max', 50);
 
-//         $types = [
+    //         $types = [
 //             'Invoice', 'Bill', 'Payment', 'Expense', 'JournalEntry',
 //             'Deposit', 'Transfer', 'CreditMemo', 'Purchase', 'Estimate',
 //             'VendorCredit', 'SalesReceipt', 'RefundReceipt', 'PurchaseOrder',
 //             'TimeActivity'
 //         ];
 
-//         $grouped = [];
+    //         $grouped = [];
 
-//         foreach ($types as $type) {
+    //         foreach ($types as $type) {
 //             try {
 //                 $query = "SELECT * FROM {$type} STARTPOSITION {$start} MAXRESULTS {$max}";
 //                 $response = $this->runQuery($query);
 
-//                 // Handle token or connection issues
+    //                 // Handle token or connection issues
 //                 if ($response instanceof \Illuminate\Http\JsonResponse) {
 //                     continue;
 //                 }
 
-//                 // Skip if Fault
+    //                 // Skip if Fault
 //                 if (isset($response['Fault'])) {
 //                     $grouped[$type] = [
 //                         'status' => 'error',
@@ -4142,10 +4249,10 @@ GRAPHQL;
 //                     continue;
 //                 }
 
-//                 // Extract transactions of this type
+    //                 // Extract transactions of this type
 //                 $data = collect($response['QueryResponse'][$type] ?? []);
 
-//                 $grouped[$type] = [
+    //                 $grouped[$type] = [
 //                     'count' => $data->count(),
 //                     'data' => $data->values(),
 //                 ];
@@ -4157,106 +4264,112 @@ GRAPHQL;
 //             }
 //         }
 
-//         return dd([
+    //         return dd([
 //             'status' => 'success',
 //             'types_count' => count($types),
 //             'data' => $grouped,
 //         ]);
 
-//     } catch (\Exception $e) {
+    //     } catch (\Exception $e) {
 //         return response()->json([
 //             'status' => 'error',
 //             'message' => $e->getMessage(),
 //         ], 500);
 //     }
 // }
-  public function getAllTransactionsGrouped(Request $request)
-{
-    try {
-        $start = (int) $request->get('start', 1);
-        $max = (int) $request->get('max', 100);
+    public function getAllTransactionsGrouped(Request $request)
+    {
+        try {
+            $start = (int) $request->get('start', 1);
+            $max = (int) $request->get('max', 100);
 
-        // 1️⃣ Fetch Invoices
-        $invoiceQuery = "SELECT * FROM Invoice STARTPOSITION {$start} MAXRESULTS {$max}";
-        $invoiceResponse = $this->runQuery($invoiceQuery);
+            // 1️⃣ Fetch Invoices
+            $invoiceQuery = "SELECT * FROM Invoice STARTPOSITION {$start} MAXRESULTS {$max}";
+            $invoiceResponse = $this->runQuery($invoiceQuery);
 
-        if ($invoiceResponse instanceof \Illuminate\Http\JsonResponse) return $invoiceResponse;
-        if (isset($invoiceResponse['Fault'])) {
-            throw new \Exception($invoiceResponse['Fault']['Error'][0]['Message'] ?? 'Error fetching invoices');
-        }
+            if ($invoiceResponse instanceof \Illuminate\Http\JsonResponse)
+                return $invoiceResponse;
+            if (isset($invoiceResponse['Fault'])) {
+                throw new \Exception($invoiceResponse['Fault']['Error'][0]['Message'] ?? 'Error fetching invoices');
+            }
 
-        $invoices = collect($invoiceResponse['QueryResponse']['Invoice'] ?? []);
+            $invoices = collect($invoiceResponse['QueryResponse']['Invoice'] ?? []);
 
-        // 2️⃣ Fetch Payments
-        $paymentQuery = "SELECT * FROM Payment STARTPOSITION {$start} MAXRESULTS {$max}";
-        $paymentResponse = $this->runQuery($paymentQuery);
+            // 2️⃣ Fetch Payments
+            $paymentQuery = "SELECT * FROM Payment STARTPOSITION {$start} MAXRESULTS {$max}";
+            $paymentResponse = $this->runQuery($paymentQuery);
 
-        if ($paymentResponse instanceof \Illuminate\Http\JsonResponse) return $paymentResponse;
-        if (isset($paymentResponse['Fault'])) {
-            throw new \Exception($paymentResponse['Fault']['Error'][0]['Message'] ?? 'Error fetching payments');
-        }
+            if ($paymentResponse instanceof \Illuminate\Http\JsonResponse)
+                return $paymentResponse;
+            if (isset($paymentResponse['Fault'])) {
+                throw new \Exception($paymentResponse['Fault']['Error'][0]['Message'] ?? 'Error fetching payments');
+            }
 
-        $payments = collect($paymentResponse['QueryResponse']['Payment'] ?? []);
+            $payments = collect($paymentResponse['QueryResponse']['Payment'] ?? []);
 
-        // 3️⃣ Fetch Accounts
-        $accountQuery = "SELECT * FROM Account STARTPOSITION 1 MAXRESULTS 500";
-        $accountResponse = $this->runQuery($accountQuery);
+            // 3️⃣ Fetch Accounts
+            $accountQuery = "SELECT * FROM Account STARTPOSITION 1 MAXRESULTS 500";
+            $accountResponse = $this->runQuery($accountQuery);
 
-        if ($accountResponse instanceof \Illuminate\Http\JsonResponse) return $accountResponse;
-        if (isset($accountResponse['Fault'])) {
-            throw new \Exception($accountResponse['Fault']['Error'][0]['Message'] ?? 'Error fetching accounts');
-        }
+            if ($accountResponse instanceof \Illuminate\Http\JsonResponse)
+                return $accountResponse;
+            if (isset($accountResponse['Fault'])) {
+                throw new \Exception($accountResponse['Fault']['Error'][0]['Message'] ?? 'Error fetching accounts');
+            }
 
-        $accounts = collect($accountResponse['QueryResponse']['Account'] ?? []);
+            $accounts = collect($accountResponse['QueryResponse']['Account'] ?? []);
 
-        // 4️⃣ Combine — only invoices that have payments
-        $invoicePayments = collect();
+            // 4️⃣ Combine — only invoices that have payments
+            $invoicePayments = collect();
 
-        foreach ($payments as $payment) {
-            if (!isset($payment['Line'])) continue;
+            foreach ($payments as $payment) {
+                if (!isset($payment['Line']))
+                    continue;
 
-            foreach ($payment['Line'] as $line) {
-                if (!isset($line['LinkedTxn'])) continue;
+                foreach ($payment['Line'] as $line) {
+                    if (!isset($line['LinkedTxn']))
+                        continue;
 
-                foreach ($line['LinkedTxn'] as $txn) {
-                    if ($txn['TxnType'] === 'Invoice') {
-                        $invoiceId = $txn['TxnId'];
-                        $invoice = $invoices->firstWhere('Id', $invoiceId);
-                        if (!$invoice) continue;
+                    foreach ($line['LinkedTxn'] as $txn) {
+                        if ($txn['TxnType'] === 'Invoice') {
+                            $invoiceId = $txn['TxnId'];
+                            $invoice = $invoices->firstWhere('Id', $invoiceId);
+                            if (!$invoice)
+                                continue;
 
-                        // Invoice account
-                        $invoiceAccountId = $invoice['ARAccountRef']['value'] ?? null;
-                        $invoiceAccount = $accounts->firstWhere('Id', $invoiceAccountId);
+                            // Invoice account
+                            $invoiceAccountId = $invoice['ARAccountRef']['value'] ?? null;
+                            $invoiceAccount = $accounts->firstWhere('Id', $invoiceAccountId);
 
-                        // Payment account
-                        $paymentAccountId = $payment['DepositToAccountRef']['value'] ?? null;
-                        $paymentAccount = $accounts->firstWhere('Id', $paymentAccountId);
+                            // Payment account
+                            $paymentAccountId = $payment['DepositToAccountRef']['value'] ?? null;
+                            $paymentAccount = $accounts->firstWhere('Id', $paymentAccountId);
 
-                        $invoicePayments->push([
-                            'invoice' => $invoice,
-                            'invoice_account' => $invoiceAccount ?? null,
-                            'payment' => $payment,
-                            'payment_account' => $paymentAccount ?? null,
-                        ]);
+                            $invoicePayments->push([
+                                'invoice' => $invoice,
+                                'invoice_account' => $invoiceAccount ?? null,
+                                'payment' => $payment,
+                                'payment_account' => $paymentAccount ?? null,
+                            ]);
+                        }
                     }
                 }
             }
+
+            // 5️⃣ Show only a single clean linked record
+            $first = $invoicePayments->first();
+
+            return dd([
+                'status' => 'success',
+                'count' => $invoicePayments->count(),
+                'linked_record' => $first
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
         }
-
-        // 5️⃣ Show only a single clean linked record
-        $first = $invoicePayments->first();
-
-        return dd([
-            'status' => 'success',
-            'count' => $invoicePayments->count(),
-            'linked_record' => $first
-        ]);
-
-    } catch (\Exception $e) {
-        return response()->json([
-            'status' => 'error',
-            'message' => $e->getMessage(),
-        ], 500);
     }
-}
 }

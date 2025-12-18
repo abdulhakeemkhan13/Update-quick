@@ -3,6 +3,7 @@
 namespace App\DataTables;
 
 use App\Models\Invoice;
+use App\Models\CreditNote;
 use Carbon\Carbon;
 use Yajra\DataTables\Html\Column;
 use Yajra\DataTables\Services\DataTable;
@@ -12,13 +13,38 @@ class OpenInvoiceList extends DataTable
 {
     public function dataTable($query)
     {
-        $data = collect($query->get());
+        // Get invoice data from query
+        $invoiceData = collect($query->get())->filter(function ($row) {
+            $balance = isset($row->balance_due) ? (float)$row->balance_due : 0;
+            return round($balance, 2) != 0.00;
+        })->map(function ($row) {
+            $row->txn_type = 'Invoice';
+            $row->open_amount = $row->balance_due;
+            return $row;
+        });
+
+        // Get unapplied deposits (customer payments/deposits)
+        // $depositData = $this->getUnappliedDeposits();
+
+        // Get unapplied credit notes (credit notes not linked to invoices or payments)
+        // $creditNoteData = $this->getUnappliedCreditNotes();
+
+        // Get overpayments (customer credits from excess payments)
+        $overpaymentData = $this->getCustomerOverpayments();
+
+        // Merge all data: invoices + overpayments (negative)
+        // $allData = $invoiceData
+        //     ->merge($depositData)
+        //     ->merge($creditNoteData);
+
+        // For now, show invoices and overpayments
+        $allData = $invoiceData->merge($overpaymentData);
 
         $grandTotalAmount = 0;
         $grandBalanceDue = 0;
 
-        // ✅ Group by Customer Name
-        $groupedData = $data->groupBy('name');
+        // Group by Customer Name
+        $groupedData = $allData->groupBy('name');
 
         $finalData = collect();
 
@@ -26,17 +52,35 @@ class OpenInvoiceList extends DataTable
             $subtotalAmount = 0;
             $subtotalDue = 0;
 
+            if (empty($customer)) {
+                $customer = 'Unknown Customer';
+            }
+
+            // Calculate subtotals first
+            $customerRows = collect();
+            foreach ($rows as $row) {
+                $amount = $row->open_amount ?? $row->balance_due ?? 0;
+                $subtotalAmount += abs($amount);
+                $subtotalDue += (float)$amount;
+                
+                $row->customer = $customer;
+                $row->past_due = isset($row->age) && $row->age > 0 ? $row->age . ' Days' : '-';
+                $customerRows->push($row);
+            }
+
+            // Skip customers with 0 or near-zero balance (after netting invoices, deposits, credits)
+            if (round($subtotalDue, 2) == 0.00) {
+                continue;
+            }
+
             // Header row for this customer
             $finalData->push((object) [
-                // 'customer' => '<strong>' . $customer . '</strong>',
-                // 'transaction' => '<strong>' . $customer . '</strong>',
                 'customer' => $customer,
                 'transaction' => '<span class="" data-bucket="' . \Str::slug($customer) . '"> <span class="icon">▼</span> <strong>' . $customer . '</strong></span>',
                 'due_date' => '',
                 'past_due' => null,
                 'type' => null,
                 'status_label' => '',
-                // 'age' => '',
                 'total_amount' => null,
                 'balance_due' => null,
                 'isPlaceholder' => true,
@@ -45,51 +89,30 @@ class OpenInvoiceList extends DataTable
                 'isParent' => true
             ]);
 
-            foreach ($rows as $row) {
-                $subtotalAmount += ($row->subtotal ?? 0) + ($row->total_tax ?? 0);
-                $subtotalDue += $row->balance_due;
-                $row->customer = $customer;
-                $row->past_due = $row->age > 0 ? $row->age . ' Days' : '-'; // 👈 Past Due column
-                // $row->customer = $customer;
+            // Add all rows for this customer
+            foreach ($customerRows as $row) {
                 $finalData->push($row);
             }
 
             // Subtotal row for this customer
             $finalData->push((object) [
-                // 'customer' => '<strong>Subtotal</strong>',
                 'customer' => $customer,
                 'transaction' => '<strong>Subtotal for ' . $customer . '</strong>',
                 'due_date' => '',
                 'past_due' => '',
                 'type' => '',
                 'status_label' => '',
-                // 'age' => '',
                 'total_amount' => $subtotalAmount,
                 'balance_due' => $subtotalDue,
                 'isSubtotal' => true,
             ]);
 
-            // $finalData->push((object) [
-            //     'customer' => '',
-            //     'transaction' => '',
-            //     'due_date' => '',
-            //     'past_due' => '',
-            //     'type' => '',
-            //     'status_label' => '',
-            //     // 'age' => '',
-            //     'total_amount' => 0,
-            //     'balance_due' => 0,
-            //     'isPlaceholder' => true,
-            //     'isSubtotal' => true
-            // ]);
-
             $grandTotalAmount += $subtotalAmount;
             $grandBalanceDue += $subtotalDue;
         }
 
-        // ✅ Add grand total row
+        // Grand total row
         $finalData->push((object) [
-            // 'customer' => '<strong>Grand Total</strong>',
             'transaction' => '<strong>Grand Total</strong>',
             'due_date' => '',
             'past_due' => '',
@@ -108,51 +131,32 @@ class OpenInvoiceList extends DataTable
                     return $row->transaction ?? '';
                 }
 
-                return \Auth::user()->invoiceNumberFormat($row->invoice ?? ($row->id ?? ''));
+                $txnType = $row->txn_type ?? 'Invoice';
+                if ($txnType === 'Invoice') {
+                    return \Auth::user()->invoiceNumberFormat($row->invoice ?? ($row->id ?? ''));
+                } elseif ($txnType === 'Payment') {
+                    return 'Payment #' . ($row->payment_no ?? $row->id ?? '');
+                } elseif ($txnType === 'Deposit') {
+                    return 'Deposit #' . ($row->doc_number ?? $row->id ?? '');
+                } elseif ($txnType === 'Credit Memo') {
+                    return 'Credit Memo #' . ($row->credit_note_id ?? $row->id ?? '');
+                }
+                return $row->id ?? '';
             })
-
             ->addColumn('due_date', fn($row) => $row->due_date ?? '')
-            // ->addColumn('past_due', fn($row) => $row->past_due ?? '')
-            ->addColumn(
-                'type',
-                fn($row) =>
-                isset($row->isSubtotal) || isset($row->isGrandTotal) ? '' : 'Invoice'
-            )
-            // ->addColumn('status_label', function ($row) {
-            //     if (isset($row->isSubtotal) || isset($row->isGrandTotal)) {
-            //         return '';
-            //     }
-            //     $status = $row->status ?? 0;
-            //     $labels = \App\Models\Invoice::$statues;
-            //     $classes = [
-            //         0 => 'bg-secondary',
-            //         1 => 'bg-warning',
-            //         2 => 'bg-danger',
-            //         3 => 'bg-info',
-            //         4 => 'bg-primary',
-            //     ];
-            //     return '<span class="status_badge badge text-white ' . ($classes[$status] ?? 'bg-secondary') . ' p-2 px-3 rounded">'
-            //         . __($labels[$status] ?? '-') . '</span>';
-            // })
+            ->addColumn('type', function ($row) {
+                if (isset($row->isSubtotal) || isset($row->isGrandTotal)) {
+                    return '';
+                }
+                return $row->txn_type ?? 'Invoice';
+            })
             ->addColumn('issue_date', fn($row) => $row->issue_date ?? '')
-            // ->editColumn('total_amount', function ($row) {
-            //     if (isset($row->isPlaceholder)) {
-            //         return '';
-            //     }
-            //     if (isset($row->isSubtotal) || isset($row->isGrandTotal)) {
-            //         return number_format($row->total_amount ?? 0);
-            //     }
-            //     $total = ($row->subtotal ?? 0) + ($row->total_tax ?? 0);
-            //     return number_format($total);
-            // })
             ->addColumn('open_balance', function ($row) {
                 if (isset($row->isPlaceholder)) {
                     return '';
                 }
-                if (isset($row->isSubtotal) || isset($row->isGrandTotal)) {
-                    return number_format($row->balance_due ?? 0);
-                }
-                return number_format($row->balance_due ?? 0);
+                $amount = $row->open_amount ?? $row->balance_due ?? 0;
+                return number_format($amount, 2);
             })
             ->setRowClass(function ($row) {
                 if (property_exists($row, 'isParent') && $row->isParent) {
@@ -178,96 +182,202 @@ class OpenInvoiceList extends DataTable
 
                 return '';
             })
-            // ->editColumn(
-            //     'balance_due',
-            //     fn($row) =>
-            //     isset($row->isPlaceholder) ? '' : number_format($row->balance_due ?? 0)
-            // )
             ->rawColumns(['customer', 'transaction', 'status_label']);
     }
 
-   public function query(Invoice $model)
-{
-    $start = request()->get('start_date')
-        ?? request()->get('startDate')
-        ?? Carbon::now()->startOfYear()->format('Y-m-d');
+    /**
+     * Get customer overpayments (excess payments) as negative rows
+     * These are stored in transactions table with category = 'customer credit'
+     */
+    private function getCustomerOverpayments()
+    {
+        $creatorId = \Auth::user()->creatorId();
+        
+        // Get overpayments from transactions where category is 'customer credit'
+        // user_id is the customer_id and user_type is 'customer'
+        // payment_no references invoice_payments.txn_id
+        $overpayments = DB::table('transactions')
+            ->leftJoin('customers', 'customers.id', '=', 'transactions.user_id')
+            ->leftJoin('invoice_payments', 'invoice_payments.txn_id', '=', 'transactions.payment_no')
+            ->where('transactions.category', 'customer credit')
+            ->where('transactions.user_type', 'customer')
+            ->where('transactions.created_by', $creatorId)
+            ->select(
+                'transactions.id',
+                'transactions.payment_no',
+                'transactions.date as issue_date',
+                'transactions.amount',
+                'transactions.description',
+                'customers.name'
+            )
+            ->get();
 
-    $end = request()->get('end_date')
-        ?? request()->get('endDate')
-        ?? Carbon::now()->endOfDay()->format('Y-m-d');
+        return $overpayments->map(function ($payment) {
+            return (object) [
+                'id' => $payment->id,
+                'payment_no' => $payment->payment_no,
+                'issue_date' => $payment->issue_date,
+                'due_date' => '',
+                'name' => $payment->name ?? 'Unknown Customer',
+                'txn_type' => 'Payment',
+                'description' => $payment->description,
+                'open_amount' => -1 * abs($payment->amount), // Negative amount (customer credit)
+                'balance_due' => -1 * abs($payment->amount),
+                'age' => 0,
+            ];
+        });
+    }
 
-    return $model->newQuery()
-        ->select(
-            'invoices.id',
-            'invoices.invoice_id as invoice',
-            'invoices.issue_date',
-            'invoices.due_date',
-            'invoices.status',
-            'customers.name',
+    /**
+     * Get unapplied deposits as negative rows
+     */
+    private function getUnappliedDeposits()
+    {
+        $creatorId = \Auth::user()->creatorId();
+        
+        // Get deposits with customer links
+        $deposits = DB::table('deposits')
+            ->join('deposit_lines', 'deposits.id', '=', 'deposit_lines.deposit_id')
+            ->leftJoin('customers', 'customers.id', '=', 'deposit_lines.customer_id')
+            // ->where('deposits.created_by', $creatorId)
+            ->where('deposit_lines.customer_id', '>', 0)
+            ->select(
+                'deposits.id',
+                'deposits.deposit_id',
+                'deposits.doc_number',
+                'deposits.txn_date as issue_date',
+                'deposit_lines.amount',
+                'customers.name'
+            )
+            ->get();
 
-            // ✅ total (sum of line items)
-            DB::raw('(
-                SELECT IFNULL(SUM((price * quantity) - discount), 0)
-                FROM invoice_products
-                WHERE invoice_products.invoice_id = invoices.id
-            ) AS subtotal'),
+        return $deposits->map(function ($deposit) {
+            return (object) [
+                'id' => $deposit->id,
+                'doc_number' => $deposit->doc_number ?? $deposit->deposit_id,
+                'issue_date' => $deposit->issue_date,
+                'due_date' => '',
+                'name' => $deposit->name ?? 'Unknown Customer',
+                'txn_type' => 'Deposit',
+                'open_amount' => -1 * abs($deposit->amount), // Negative amount
+                'balance_due' => -1 * abs($deposit->amount),
+                'age' => 0,
+            ];
+        });
+    }
 
-            // ✅ tax
-            DB::raw('(
-                SELECT IFNULL(SUM((price * quantity - discount) * (taxes.rate / 100)), 0)
-                FROM invoice_products
-                LEFT JOIN taxes ON FIND_IN_SET(taxes.id, invoice_products.tax) > 0
-                WHERE invoice_products.invoice_id = invoices.id
-            ) AS total_tax'),
+    /**
+     * Get unapplied credit notes as negative rows
+     */
+    private function getUnappliedCreditNotes()
+    {
+        $creatorId = \Auth::user()->creatorId();
+        
+        // Credit notes that are not linked to any invoice (invoice = 0 or null) 
+        // and not linked to any payment (payment_id = 0 or null)
+        $creditNotes = DB::table('credit_notes')
+            ->leftJoin('customers', 'customers.id', '=', 'credit_notes.customer')
+            ->where('credit_notes.created_by', $creatorId)
+            ->where(function ($q) {
+                $q->whereNull('credit_notes.invoice')
+                  ->orWhere('credit_notes.invoice', 0);
+            })
+            ->where(function ($q) {
+                $q->whereNull('credit_notes.payment_id')
+                  ->orWhere('credit_notes.payment_id', 0);
+            })
+            ->select(
+                'credit_notes.id',
+                'credit_notes.credit_note_id',
+                'credit_notes.date as issue_date',
+                'credit_notes.amount',
+                'customers.name'
+            )
+            ->get();
 
-            // ✅ paid
-            DB::raw('(
-                SELECT IFNULL(SUM(amount), 0)
-                FROM invoice_payments
-                WHERE invoice_payments.invoice_id = invoices.id
-            ) AS pay_price'),
+        return $creditNotes->map(function ($credit) {
+            return (object) [
+                'id' => $credit->id,
+                'credit_note_id' => $credit->credit_note_id,
+                'issue_date' => $credit->issue_date,
+                'due_date' => '',
+                'name' => $credit->name ?? 'Unknown Customer',
+                'txn_type' => 'Credit Memo',
+                'open_amount' => -1 * abs($credit->amount),
+                'balance_due' => -1 * abs($credit->amount),
+                'age' => 0,
+            ];
+        });
+    }
 
-            // ✅ credit notes
-            DB::raw('(
-                SELECT IFNULL(SUM(amount), 0)
-                FROM credit_notes
-                WHERE credit_notes.invoice = invoices.id
-            ) AS credit_price'),
+    public function query(Invoice $model)
+    {
+        $start = request()->get('start_date')
+            ?? request()->get('startDate')
+            ?? Carbon::now()->startOfYear()->format('Y-m-d');
 
-            // ✅ open balance = subtotal + tax − paid − credit
-            DB::raw('(
-                (
-                    (SELECT IFNULL(SUM((price * quantity) - discount), 0)
-                     FROM invoice_products
-                     WHERE invoice_products.invoice_id = invoices.id)
-                    +
-                    (SELECT IFNULL(SUM((price * quantity - discount) * (taxes.rate / 100)), 0)
-                     FROM invoice_products
-                     LEFT JOIN taxes ON FIND_IN_SET(taxes.id, invoice_products.tax) > 0
-                     WHERE invoice_products.invoice_id = invoices.id)
-                    -
+        $end = request()->get('end_date')
+            ?? request()->get('endDate')
+            ?? Carbon::now()->endOfDay()->format('Y-m-d');
+
+        return $model->newQuery()
+            ->select(
+                'invoices.id',
+                'invoices.invoice_id as invoice',
+                'invoices.issue_date',
+                'invoices.due_date',
+                'invoices.status',
+                'customers.name',
+
+                // Subtotal (without tax)
+                DB::raw('(
+                    SELECT IFNULL(SUM((price * quantity) - discount), 0)
+                    FROM invoice_products
+                    WHERE invoice_products.invoice_id = invoices.id
+                ) AS subtotal'),
+
+                // Tax
+                DB::raw('(
+                    SELECT IFNULL(SUM((price * quantity - discount) * (taxes.rate / 100)), 0)
+                    FROM invoice_products
+                    LEFT JOIN taxes ON FIND_IN_SET(taxes.id, invoice_products.tax) > 0
+                    WHERE invoice_products.invoice_id = invoices.id
+                ) AS total_tax'),
+
+                // Payments (already includes credit memo applications from QBO)
+                DB::raw('(
+                    SELECT IFNULL(SUM(amount), 0)
+                    FROM invoice_payments
+                    WHERE invoice_payments.invoice_id = invoices.id
+                ) AS pay_price'),
+
+                // balance_due = subtotal + tax - payments
+                DB::raw('(
                     (
-                        (SELECT IFNULL(SUM(amount), 0)
-                         FROM invoice_payments
-                         WHERE invoice_payments.invoice_id = invoices.id)
+                        (SELECT IFNULL(SUM((price * quantity) - discount), 0)
+                         FROM invoice_products
+                         WHERE invoice_products.invoice_id = invoices.id)
                         +
-                        (SELECT IFNULL(SUM(amount), 0)
-                         FROM credit_notes
-                         WHERE credit_notes.invoice = invoices.id)
+                        (SELECT IFNULL(SUM((price * quantity - discount) * (taxes.rate / 100)), 0)
+                         FROM invoice_products
+                         LEFT JOIN taxes ON FIND_IN_SET(taxes.id, invoice_products.tax) > 0
+                         WHERE invoice_products.invoice_id = invoices.id)
                     )
-                )
-            ) AS balance_due'),
+                    -
+                    (SELECT IFNULL(SUM(amount), 0)
+                     FROM invoice_payments
+                     WHERE invoice_payments.invoice_id = invoices.id)
+                ) AS balance_due'),
 
-            DB::raw('GREATEST(DATEDIFF(CURDATE(), invoices.due_date), 0) AS age')
-        )
-        ->leftJoin('customers', 'customers.id', '=', 'invoices.customer_id')
-        ->where('invoices.created_by', \Auth::user()->creatorId())
-        ->where('invoices.issue_date', '<', $end)
-        ->where('invoices.status', '!=', 4)
-        ->orderBy('customers.name', 'asc')
-        ->orderBy('invoices.issue_date', 'asc');
-}
-
+                DB::raw('GREATEST(DATEDIFF(CURDATE(), invoices.due_date), 0) AS age')
+            )
+            ->leftJoin('customers', 'customers.id', '=', 'invoices.customer_id')
+            ->where('invoices.created_by', \Auth::user()->creatorId())
+            ->where('invoices.issue_date', '<', $end)
+            ->where('invoices.status', '!=', 4)
+            ->orderBy('customers.name', 'asc')
+            ->orderBy('invoices.issue_date', 'asc');
+    }
 
     public function html()
     {
@@ -293,12 +403,8 @@ class OpenInvoiceList extends DataTable
             Column::make('issue_date')->title('Date'),
             Column::make('transaction')->title('Transaction'),
             Column::make('type')->title('Type'),
-            // Column::make('status_label')->title('Status'), // Removed
             Column::make('due_date')->title('Due Date'),
-            // Column::make('past_due')->title('Past Due'), // Will remove
-            // Column::make('total_amount')->title('Amount'), // Will remove
-            // Column::make('balance_due')->title('Balance Due'), // Will remove
-            Column::make('open_balance')->title('Open Balance'), // Added
+            Column::make('open_balance')->title('Open Balance'),
         ];
     }
 }

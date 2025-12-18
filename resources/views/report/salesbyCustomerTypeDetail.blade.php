@@ -351,6 +351,56 @@
             text-align: right;
         }
 
+        /* Column widths */
+        .product-service-table th:nth-child(1),
+        .product-service-table td:nth-child(1) {
+            width: 100px; /* Transaction date */
+        }
+
+        .product-service-table th:nth-child(2),
+        .product-service-table td:nth-child(2) {
+            width: 120px; /* Transaction type */
+        }
+
+        .product-service-table th:nth-child(3),
+        .product-service-table td:nth-child(3) {
+            width: 100px; /* Num */
+        }
+
+        .product-service-table th:nth-child(4),
+        .product-service-table td:nth-child(4) {
+            width: 150px; /* Product/Service */
+        }
+
+        .product-service-table th:nth-child(5),
+        .product-service-table td:nth-child(5) {
+            width: 200px; /* Memo/Description - FIXED WIDTH */
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .product-service-table th:nth-child(6),
+        .product-service-table td:nth-child(6) {
+            width: 80px; /* Quantity */
+        }
+
+        .product-service-table th:nth-child(7),
+        .product-service-table td:nth-child(7) {
+            width: 100px; /* Sales price */
+        }
+
+        .product-service-table th:nth-child(8),
+        .product-service-table td:nth-child(8) {
+            width: 120px; /* Amount */
+        }
+
+        .product-service-table th:nth-child(9),
+        .product-service-table td:nth-child(9) {
+            width: 120px; /* Balance */
+        }
+
         /* Drawer-style Modals (IBCS) */
         .modal-overlay {
             display: none;
@@ -819,24 +869,17 @@
                 <div class="left-controls"
                     style="display:flex; gap:12px; align-items:flex-end; flex-wrap:nowrap; flex-shrink:0;">
                     <div class="filter-item">
-                        <label class="filter-label">Report period</label>
-                        <select class="form-select" id="report-period" style="width: 160px; font-size: 13px;">
-                            <option value="all_dates">All Dates</option>
-                            <option value="today">Today</option>
-                            <option value="this_week">This week</option>
-                            <option value="this_month">This month</option>
-                            <option value="this_quarter">This quarter</option>
-                            <option value="this_year">This year</option>
-                            <option value="last_week">Last week</option>
-                            <option value="last_month">Last month</option>
-                            <option value="last_quarter">Last quarter</option>
-                            <option value="last_year">Last year</option>
-                            <option value="last_7_days">Last 7 days</option>
-                            <option value="last_30_days">Last 30 days</option>
-                            <option value="last_90_days">Last 90 days</option>
-                            <option value="last_12_months">Last 12 months</option>
-                            <option value="custom">Custom</option>
-                        </select>
+                        <label class="filter-label">From</label>
+                        <input type="date" class="form-control" id="start-date" 
+                               value="{{ $filter['startDateRange'] ?? date('Y-01-01') }}" 
+                               style="width: 145px; font-size: 13px;">
+                    </div>
+
+                    <div class="filter-item">
+                        <label class="filter-label">To</label>
+                        <input type="date" class="form-control" id="end-date" 
+                               value="{{ $filter['endDateRange'] ?? date('Y-m-d') }}" 
+                               style="width: 145px; font-size: 13px;">
                     </div>
 
                     <div class="filter-item">
@@ -881,16 +924,15 @@
                 <table class="table product-service-table" id="ledger-table">
                     <thead>
                         <tr>
-                            <th>Transaction Type</th>
-                            <th>Transaction Date</th>
-                            <th>Invoice Number / Num</th>
+                            <th>Transaction date</th>
+                            <th>Transaction type</th>
+                            <th>Num</th>
+                            <th>Product/Service full name</th>
                             <th>Memo/Description</th>
-                            <th>Customer Name</th>
                             <th class="text-right">Quantity</th>
-                            <th class="text-right">Sales Price</th>
+                            <th class="text-right">Sales price</th>
                             <th class="text-right">Amount</th>
                             <th class="text-right">Balance</th>
-                            <th class="text-right">Sales With Tax</th>
                         </tr>
                     </thead>
                     <tbody><!-- DataTables rows --></tbody>
@@ -1308,30 +1350,35 @@
                         d.reportOptions = window.reportOptions || {};
                     },
                     dataSrc: function(json) {
+                        console.log('DataTable Response:', json);
+                        console.log('Total records:', json.data ? json.data.length : 0);
+                        if (json.data && json.data.length > 0) {
+                            console.log('Sample record:', json.data[0]);
+                        }
                         return json.data;
                     }
                 },
-                columns: [{
-                        data: 'transaction_type',
-                        name: 'transaction_type'
-                    },
+                columns: [
                     {
                         data: 'transaction_date',
                         name: 'transaction_date'
                     },
                     {
-                        data: 'invoice_number',
-                        name: 'invoice_number'
+                        data: 'transaction_type',
+                        name: 'transaction_type'
+                    },
+                    {
+                        data: 'num',
+                        name: 'num'
+                    },
+                    {
+                        data: 'product_service',
+                        name: 'product_service'
                     },
                     {
                         data: 'memo_description',
                         name: 'memo_description'
                     },
-                    {
-                        data: 'customer_name',
-                        name: 'customer_name'
-                    },
-
                     {
                         data: 'quantity',
                         name: 'quantity',
@@ -1371,23 +1418,179 @@
                             const out = formatAmount(row.balance_raw ?? data, true);
                             return `<span class="${out.classes}">${out.html}</span>`;
                         }
-                    },
-                    {
-                        data: 'sales_with_tax',
-                        name: 'sales_with_tax',
-                        className: 'text-right',
-                        render: function(data, type, row) {
-                            if (type !== 'display') return data;
-                            const out = formatAmount(row.sales_with_tax_raw ?? data, true);
-                            return `<span class="${out.classes}">${out.html}</span>`;
-                        }
-                    },
+                    }
                 ],
                 dom: 't',
                 paging: false,
                 searching: false,
                 info: false,
-                ordering: false
+                ordering: false,
+                drawCallback: function(settings) {
+                    var api = this.api();
+                    var data = api.rows({page:'current'}).data().toArray();
+
+                    // Group data by customer type and count entries
+                    var typeGroups = {};
+                    data.forEach(function(row) {
+                        var customerType = row.customer_type || '-';
+                        var amount = parseFloat(String(row.amount).replace(/[^0-9.-]/g, '')) || 0;
+                        var quantity = parseFloat(String(row.quantity).replace(/[^0-9.-]/g, '')) || 0;
+                        
+                        if (!typeGroups[customerType]) {
+                            typeGroups[customerType] = {
+                                total: 0,
+                                quantityTotal: 0,
+                                count: 0,
+                                rows: []
+                            };
+                        }
+                        typeGroups[customerType].total += amount;
+                        
+                        // Only count quantity if amount is not zero
+                        if (Math.abs(amount) > 0.001) {
+                            typeGroups[customerType].quantityTotal += quantity;
+                        }
+                        
+                        typeGroups[customerType].count += 1;
+                        typeGroups[customerType].rows.push(row);
+                    });
+
+                    // Clear table body
+                    var tbody = $(api.table().body());
+                    tbody.empty();
+
+                    // Calculate grand total
+                    var grandTotal = 0;
+                    var grandQuantityTotal = 0;
+                    Object.keys(typeGroups).forEach(function(type) {
+                        grandTotal += typeGroups[type].total;
+                        grandQuantityTotal += typeGroups[type].quantityTotal;
+                    });
+
+                    // Render each customer type group
+                    Object.keys(typeGroups).forEach(function(customerType) {
+                        var group = typeGroups[customerType];
+                        
+                        // Sort rows by transaction date within this group (chronological order)
+                        // Then by invoice number for same dates
+                        group.rows.sort(function(a, b) {
+                            var dateA = new Date(a.transaction_date || '1970-01-01');
+                            var dateB = new Date(b.transaction_date || '1970-01-01');
+                            
+                            // First, compare dates
+                            if (dateA.getTime() !== dateB.getTime()) {
+                                return dateA - dateB; // Ascending by date
+                            }
+                            
+                            // If dates are equal, compare invoice numbers
+                            var numA = parseInt(String(a.num).replace(/[^0-9]/g, '')) || 0;
+                            var numB = parseInt(String(b.num).replace(/[^0-9]/g, '')) || 0;
+                            return numA - numB; // Ascending by invoice number
+                        });
+                        
+                        var totalFormatted = group.total.toLocaleString(undefined, { 
+                            minimumFractionDigits: 2, 
+                            maximumFractionDigits: 2 
+                        });
+                        
+                        var quantityTotalFormatted = group.quantityTotal.toLocaleString(undefined, { 
+                            minimumFractionDigits: 2, 
+                            maximumFractionDigits: 2 
+                        });
+                        
+                        // Group header row with count
+                        var header = $('<tr class="group-header" style="cursor:pointer; background:#f9fafb; font-weight:600;">' +
+                            '<td colspan="9" style="padding:10px 16px;">' +
+                                '<span class="toggle-arrow" style="display:inline-block; width:20px;">▶</span> ' +
+                                customerType + ' (' + group.count + ')' +
+                            '</td>' +
+                        '</tr>');
+                        tbody.append(header);
+
+                        // Calculate running balance for this group
+                        var runningBalance = 0;
+                        
+                        // Type detail rows (hidden by default)
+                        group.rows.forEach(function(rowData) {
+                            var amount = parseFloat(String(rowData.amount).replace(/[^0-9.-]/g, '')) || 0;
+                            runningBalance += amount;
+                            
+                            var balanceFormatted = runningBalance.toLocaleString(undefined, { 
+                                minimumFractionDigits: 2, 
+                                maximumFractionDigits: 2 
+                            });
+                            
+                            // Truncate memo/description and add tooltip
+                            var memoFull = rowData.memo_description || '-';
+                            var memoShort = memoFull.length > 30 ? memoFull.substring(0, 30) + '...' : memoFull;
+                            
+                            var rowNode = $('<tr class="type-detail-row" style="display:none;">' +
+                                '<td style="padding:8px 16px; padding-left:40px;">' + (rowData.transaction_date || '-') + '</td>' +
+                                '<td style="padding:8px 16px;">' + (rowData.transaction_type || '-') + '</td>' +
+                                '<td style="padding:8px 16px;">' + (rowData.num || '-') + '</td>' +
+                                '<td style="padding:8px 16px;">' + (rowData.product_service || '-') + '</td>' +
+                                '<td style="padding:8px 16px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + memoFull.replace(/"/g, '&quot;') + '">' + memoShort + '</td>' +
+                                '<td class="text-right" style="padding:8px 16px;">' + (rowData.quantity || '0.00') + '</td>' +
+                                '<td class="text-right" style="padding:8px 16px;">' + (rowData.sales_price || '0.00') + '</td>' +
+                                '<td class="text-right" style="padding:8px 16px;">' + (rowData.amount || '0.00') + '</td>' +
+                                '<td class="text-right" style="padding:8px 16px;">' + balanceFormatted + '</td>' +
+                            '</tr>');
+                            tbody.append(rowNode);
+                        });
+                        
+                        // Subtotal row for this type (hidden by default) - show final running balance and quantity total
+                        var subtotalRow = $('<tr class="type-subtotal" style="display:none; font-weight:600; background:#f3f4f6;">' +
+                            '<td colspan="5" class="text-right" style="padding:8px 16px;"></td>' +
+                            '<td class="text-right" style="padding:8px 16px;">' + quantityTotalFormatted + '</td>' +
+                            '<td class="text-right" style="padding:8px 16px;"></td>' +
+                            '<td class="text-right" style="padding:8px 16px;">' + totalFormatted + ' (Total)</td>' +
+                            '<td class="text-right" style="padding:8px 16px;">' + runningBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>' +
+                        '</tr>');
+                        tbody.append(subtotalRow);
+                    });
+
+                    // Add TOTAL row at the bottom
+                    var grandTotalFormatted = grandTotal.toLocaleString(undefined, { 
+                        minimumFractionDigits: 2, 
+                        maximumFractionDigits: 2 
+                    });
+                    var grandQuantityTotalFormatted = grandQuantityTotal.toLocaleString(undefined, { 
+                        minimumFractionDigits: 2, 
+                        maximumFractionDigits: 2 
+                    });
+                    var totalRow = $('<tr style="font-weight:700; background:#e5e7eb; border-top:2px solid #9ca3af;">' +
+                        '<td colspan="5" style="padding:12px 16px;">TOTAL</td>' +
+                        '<td class="text-right" style="padding:12px 16px;">' + grandQuantityTotalFormatted + '</td>' +
+                        '<td></td>' +
+                        '<td class="text-right" style="padding:12px 16px;">$' + grandTotalFormatted + '</td>' +
+                        '<td></td>' +
+                    '</tr>');
+                    tbody.append(totalRow);
+
+                    // Toggle expand/collapse on group header click
+                    $('.group-header').off('click').on('click', function() {
+                        var arrow = $(this).find('.toggle-arrow');
+                        var detailRows = $(this).nextUntil('.group-header, tr:not(.type-detail-row,.type-subtotal)').filter('.type-detail-row');
+                        var subtotal = $(this).nextUntil('.group-header').filter('.type-subtotal');
+                        
+                        if (detailRows.first().is(':visible')) {
+                            // Collapse
+                            detailRows.hide();
+                            subtotal.hide();
+                            arrow.text('▶');
+                        } else {
+                            // Expand
+                            detailRows.show();
+                            subtotal.show();
+                            arrow.text('▼');
+                        }
+                    });
+
+                    // Start with all groups collapsed
+                    $('.group-header').each(function() {
+                        $(this).find('.toggle-arrow').text('▶');
+                    });
+                }
             });
 
             // Spinner + timer like IBCS
@@ -1430,6 +1633,27 @@
                 $(this).find('i').addClass('fa-spin');
                 table.ajax.reload(null, false);
             });
+            
+            /* ================= Date Filter Change Handlers ================= */
+            $('#start-date, #end-date').on('change', function() {
+                const startDate = $('#start-date').val();
+                const endDate = $('#end-date').val();
+                
+                // Update the date range display
+                if (startDate && endDate) {
+                    const startFormatted = new Date(startDate).toLocaleDateString('en-US', { 
+                        year: 'numeric', month: 'long', day: 'numeric' 
+                    });
+                    const endFormatted = new Date(endDate).toLocaleDateString('en-US', { 
+                        year: 'numeric', month: 'long', day: 'numeric' 
+                    });
+                    $('#date-range-display').text(startFormatted + ' - ' + endFormatted);
+                }
+                
+                // Reload the DataTable with new dates
+                table.ajax.reload(null, false);
+            });
+            
             // $('#btn-print').on('click', () => window.print());
             // $('#btn-export').on('click', () => alert('Export action triggered'));
             $('#btn-more').on('click', () => alert('More options clicked'));

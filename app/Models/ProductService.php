@@ -7,13 +7,27 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
+use Laravel\Scout\Searchable;
+
 class ProductService extends Model
 {
+    use Searchable;
+
+    public function toSearchableArray()
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'sku' => $this->sku,
+        ];
+    }
     protected $fillable = [
         'name',
         'sku',
         'sale_price',
         'purchase_price',
+        'quantity',
+        'qb_balance',
         'tax_id',
         'category_id',
         'unit_id',
@@ -23,6 +37,7 @@ class ProductService extends Model
         'asset_chartaccount_id',
         'cogs_chartaccount_id',
         'created_by',
+        'owned_by',
     ];
 
     public static $types = [

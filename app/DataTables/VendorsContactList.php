@@ -25,15 +25,22 @@ class VendorsContactList extends DataTable
             ->editColumn('email', fn($row) => e($row->email ?? '-'))
             ->editColumn('billing_name', fn($row) => e($row->billing_name ?? '-'))
             ->editColumn('billing_address', fn($row) => e($row->billing_address ?? '-'))
-            ->editColumn('vender_id', fn($row) => e($row->vender_id ?: '-'));
+            ->editColumn('vender_id', fn($row) => e($row->vender_id ?: '-'))
+            ->editColumn('company_name', fn($row) => e($row->company_name ?: '-'))
+            ->editColumn('is_active', function ($row) {
+                return $row->is_active == 1 ? 'Active' : 'Deactive';
+            })
+            ->rawColumns(['is_active']);
     }
 
     public function query(Vender $model)
     {
+        $this->status = request('status', 1);
         return $model->newQuery()
-            ->select('id', 'vender_id', 'name', 'contact', 'email', 'billing_name', 'billing_address')
+            ->select('id', 'vender_id', 'name', 'contact', 'email', 'billing_name', 'billing_address','company_name','is_active')
             ->whereNotNull('name')
-            ->where('name', '!=', '');
+            ->where('name', '!=', '')
+            ->where('is_active', $this->status);
     }
 
     public function html()
@@ -72,6 +79,8 @@ class VendorsContactList extends DataTable
             Column::make('billing_name')->title('Full Name'),
             Column::make('billing_address')->title('Billing Address'),
             Column::make('vender_id')->title('Account #'),
+            Column::make('company_name')->title('Company Name'),
+            Column::make('is_active')->title('Status'),
         ];
     }
 }

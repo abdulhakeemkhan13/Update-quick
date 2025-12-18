@@ -13,6 +13,7 @@ class DepositLines extends Model
         'amount',
         'detail_type',
         'customer_id',
+        'entity_type',
         'chart_account_id',
         'payment_method',
         'check_num',

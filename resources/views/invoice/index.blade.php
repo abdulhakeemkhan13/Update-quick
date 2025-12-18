@@ -59,7 +59,7 @@
         .section-header {
             display: flex;
             //justify-content: space-between;
-            gap:20px;
+            gap: 20px;
             align-items: center;
             margin-bottom: 20px;
         }
@@ -215,6 +215,42 @@
                 chevron.classList.remove('rotated');
             }
         }
+
+        function openInvoiceModal(url, mode) {
+            // Load content into modal
+            $.ajax({
+                url: url,
+                type: 'GET',
+                success: function(data) {
+                    $('#createInvoiceModalBody').html(data);
+                    // Update browser URL
+                    window.history.pushState({}, '', url);
+                    // Mark content as loaded to prevent create content override
+                    $('#createInvoiceModal').data('contentLoaded', true);
+                    $('#createInvoiceModal').data('isEdit', true); // Flag to prevent URL override
+                },
+                error: function() {
+                    $('#createInvoiceModalBody').html(
+                        '<div class="text-center py-5"><p class="text-danger">{{ __('Error loading invoice form') }}</p></div>'
+                        );
+                }
+            });
+            // Show modal
+            $('#createInvoiceModal').modal('show');
+        }
+
+        /*
+        // Global function to populate invoice data - DEPRECATED: Handled in create_modal.blade.php
+        function populateInvoiceData() {
+            // ... (code removed to prevent conflict) ...
+        }
+        */
+
+        // Format price according to user pattern
+        function formatPrice(amount) {
+            amount = parseFloat(amount || 0).toFixed(2);
+            return '{{ Auth::user()->priceFormat() }}'.replace("0.00", amount);
+        }
     </script>
 @endpush
 
@@ -241,6 +277,24 @@
                 <i class="ti ti-plus"></i>
             </a>
         @endcan --}}
+    </div>
+    <div class="modal fade qb-invoice-modal" id="createInvoiceModal" tabindex="-1" aria-labelledby="createInvoiceModalLabel"
+        aria-hidden="true" style="z-index: 1200;">
+        <div class="modal-dialog qb-modal-dialog" style="max-width: 100vw; margin: 0; height: 100vh; max-height: 100vh;">
+            <div class="modal-content qb-modal-content"
+                style="height: 100vh; max-height: 100vh; border: none; border-radius: 0; display: flex; flex-direction: column;">
+                <div class="modal-body p-0" id="createInvoiceModalBody"
+                    style="flex: 1; overflow-y: auto; max-height: calc(100vh - 60px);">
+                    <!-- Content will be loaded here via AJAX -->
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">{{ __('Loading...') }}</span>
+                        </div>
+                        <p class="mt-2">{{ __('Loading ...') }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 @endsection
 
@@ -389,8 +443,8 @@
                     </div>
                     <div class="col-auto mt-4">
                         @can('create invoice')
-                            <a href="{{ route('invoice.create', 0) }}" class="btn btn-sm btn-primary" data-bs-toggle="tooltip"
-                                title="{{ __('Create') }}">
+                            <a href="{{ route('invoice.create', 0) }}" class="btn btn-sm btn-primary" data-bs-toggle="modal"
+                                data-bs-target="#createInvoiceModal" data-bs-toggle="tooltip" title="{{ __('Create') }}">
                                 {{ __('Create Invoice') }}
                                 <i class="ti ti-plus"></i>
                             </a>
@@ -402,6 +456,76 @@
     </div>
 
     <script>
+        $(document).ready(function() {
+            // Check URL parameters for modal state
+            const urlParams = new URLSearchParams(window.location.search);
+            const showModal = urlParams.get('create') === 'true';
+
+            // Function to load modal content
+            function loadModalContent() {
+                if ($('#createInvoiceModal').data('loading')) return;
+                $('#createInvoiceModal').data('loading', true);
+
+                $.ajax({
+                    url: '{{ route('invoice.create', 0) }}',
+                    type: 'GET',
+                    success: function(data) {
+                        $('#createInvoiceModalBody').html(data);
+                        $('#createInvoiceModal').data('contentLoaded', true);
+                    },
+                    error: function() {
+                        $('#createInvoiceModalBody').html(
+                            '<div class="text-center py-5"><p class="text-danger">{{ __('Error loading invoice form') }}</p></div>'
+                            );
+                    },
+                    complete: function() {
+                        $('#createInvoiceModal').data('loading', false);
+                    }
+                });
+            }
+
+            // Show modal on page load if URL parameter is set
+            if (showModal) {
+                loadModalContent();
+                $('#createInvoiceModal').modal('show');
+            }
+
+            // Load create invoice modal content when manually opened
+            $('#createInvoiceModal').on('show.bs.modal', function(e) {
+                // If the modal is being opened by the edit button (which loads its own content),
+                // we should NOT load the create content.
+                // The edit button calls openInvoiceModal which sets contentLoaded to true.
+                if (!$(this).data('contentLoaded') && !showModal) {
+                    loadModalContent();
+                }
+
+                // Update URL to maintain state ONLY if it's the create modal
+                // We can check if we are in "create" mode by checking if we just loaded the create content
+                // or if the URL param is already set.
+                // However, for simplicity, let's just set it if we are not in edit mode.
+                // But wait, openInvoiceModal sets the URL for edit mode.
+                // So we should probably only set the 'create' param if we are actually creating.
+
+                if (!$(this).data('isEdit')) {
+                    const newUrl = new URL(window.location);
+                    newUrl.searchParams.set('create', 'true');
+                    window.history.pushState({}, '', newUrl);
+                }
+            });
+
+            // Remove URL parameter when modal is closed
+            $('#createInvoiceModal').on('hidden.bs.modal', function() {
+                const newUrl = new URL(window.location);
+                newUrl.searchParams.delete('create');
+                window.history.pushState({}, '', newUrl);
+                // Reset content loaded flag and edit flag
+                $(this).data('contentLoaded', false);
+                $(this).data('isEdit', false);
+                $('#createInvoiceModalBody').html(
+                    '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">{{ __('Loading...') }}</span></div><p class="mt-2">{{ __('Loading ...') }}</p></div>'
+                    );
+            });
+        });
         document.addEventListener('DOMContentLoaded', function() {
             // Auto-submit form when select filters change (customer, status)
             const selectFilterElements = document.querySelectorAll('select.auto-filter');
@@ -560,27 +684,19 @@
                                                 </div>
                                             @endcan
                                             @can('show invoice')
-                                                {{--                                                        @if (\Auth::guard('customer')->check()) --}}
-                                                {{--                                                            <div class="action-btn bg-info ms-2"> --}}
-                                                {{--                                                                    <a href="{{ route('customer.invoice.show', \Crypt::encrypt($invoice->id)) }}" --}}
-                                                {{--                                                                       class="mx-3 btn btn-sm align-items-center" data-bs-toggle="tooltip" title="Show " --}}
-                                                {{--                                                                       data-original-title="{{ __('Detail') }}"> --}}
-                                                {{--                                                                        <i class="ti ti-eye text-white"></i> --}}
-                                                {{--                                                                    </a> --}}
-                                                {{--                                                                </div> --}}
-                                                {{--                                                        @else --}}
                                                 <div class="action-btn bg-info ms-2">
-                                                    <a href="{{ route('invoice.show', \Crypt::encrypt($invoice->id)) }}"
+                                                    <a href="#"
+                                                        onclick="openInvoiceModal('{{ route('invoice.show', \Crypt::encrypt($invoice->id)) }}', 'show')"
                                                         class="mx-3 btn btn-sm align-items-center" data-bs-toggle="tooltip"
                                                         title="Show " data-original-title="{{ __('Detail') }}">
                                                         <i class="ti ti-eye text-white"></i>
                                                     </a>
                                                 </div>
-                                                {{--                                                        @endif --}}
                                             @endcan
                                             @can('edit invoice')
                                                 <div class="action-btn bg-primary ms-2">
-                                                    <a href="{{ route('invoice.edit', \Crypt::encrypt($invoice->id)) }}"
+                                                    <a href="#"
+                                                        onclick="openInvoiceModal('{{ route('invoice.edit', \Crypt::encrypt($invoice->id)) }}', 'edit')"
                                                         class="mx-3 btn btn-sm align-items-center" data-bs-toggle="tooltip"
                                                         title="Edit " data-original-title="{{ __('Edit') }}">
                                                         <i class="ti ti-pencil text-white"></i>

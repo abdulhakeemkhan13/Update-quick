@@ -12,15 +12,20 @@ class JournalItem extends Model
         'debit',
         'credit',
         'description',
+        'product_id',
         'product_ids',
-        'created_at',
-        'updated_at',
-        'quickbooks_id',
+        'prod_tax_id',
         'type',
         'name',
         'customer_id',
         'vendor_id',
         'employee_id',
+        'created_by',
+        'created_user',
+        'company_id',
+        'created_at',
+        'updated_at',
+        'quickbooks_id',
     ];
 
     public function accounts()

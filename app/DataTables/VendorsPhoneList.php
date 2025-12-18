@@ -9,20 +9,28 @@ use Yajra\DataTables\Html\Button;
 
 class VendorsPhoneList extends DataTable
 {
+    protected $status;
+
+    public function __construct()
+    {
+        parent::__construct();
+
+        // Default: 2 months ago to today
+    }
     public function dataTable($query)
     {
-        return datatables()
-            ->eloquent($query)
-            ->editColumn('name', fn($row) => $row->name)
-            ->editColumn('contact', fn($row) => $row->contact ? $row->contact : '-');
+        return datatables()->eloquent($query)->editColumn('name', fn($row) => $row->name)
+        ->editColumn('contact', fn($row) => $row->contact ? $row->contact : '-');
     }
 
     public function query(Vender $model)
     {
+        $this->status = request('status', 1);
         return $model->newQuery()
             ->select('id', 'name', 'contact')
             ->whereNotNull('name')
-            ->where('name', '!=', '');
+            ->where('name', '!=', '')
+            ->where('is_active', $this->status);
     }
 
     public function html()
@@ -41,6 +49,7 @@ class VendorsPhoneList extends DataTable
                 'info' => false,
                 'ordering' => false,
                 'responsive' => true,
+                'fixedHeader' => true,
                 'dom' => 'Bfrtip',
                 'buttons' => [
                     // Button::make('excel')

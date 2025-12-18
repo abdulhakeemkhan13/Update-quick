@@ -111,6 +111,7 @@
                                      <th>{{ __('Category') }}</th>
                                      <th>{{ __('Unit') }}</th>
                                      <th>{{ __('Quantity') }}</th>
+                                     <th>{{ __('Balance') }}</th>
                                      <th>{{ __('Type') }}</th>
                                      <th>{{ __('Action') }}</th>
                                  </tr>
@@ -151,6 +152,7 @@
                                          @else
                                              <td>-</td>
                                          @endif
+                                         <td>{{ $productService->qb_balance }}</td>
                                          <td>{{ ucwords($productService->type) }}</td>
 
                                          @if (Gate::check('edit product & service') || Gate::check('delete product & service'))

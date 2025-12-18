@@ -13,21 +13,38 @@ class Purchase extends Model
 
     protected $fillable = [
         'purchase_id',
+        'txn_id',
+        'txn_type',
         'vender_id',
         'warehouse_id',
         'purchase_date',
         'purchase_number',
         'discount_apply',
         'category_id',
+        'txn_id',
+        'txn_type',
+        'owned_by',
         'created_by',
         'voucher_id',
+        'po_date',
+        'ship_via',
+        'ref_no',
+        'tax',
+        'ship_to',
+        'mailing_address',
+        'terms',
+        'notes',
+        'vendor_message',
+        'type',
+        'status',
+        'expected_date',
+        'ship_to_address',
     ];
+
     public static $statues = [
         'Draft',
         'Sent',
-        'Unpaid',
-        'Partialy Paid',
-        'Paid',
+        'Print',
     ];
     public function vender()
     {
@@ -43,6 +60,12 @@ class Purchase extends Model
     {
         return $this->hasMany('App\Models\PurchaseProduct', 'purchase_id', 'id');
     }
+
+    public function accounts()
+    {
+        return $this->hasMany('App\Models\PurchaseOrderAccount', 'ref_id', 'id')->orderBy('order', 'asc');
+    }
+
     public function payments()
     {
         return $this->hasMany('App\Models\PurchasePayment', 'purchase_id', 'id');
@@ -59,6 +82,11 @@ class Purchase extends Model
         {
 
             $subTotal += ($product->price * $product->quantity);
+        }
+
+        foreach($this->accounts as $account)
+        {
+            $subTotal += $account->price;
         }
 
         return $subTotal;

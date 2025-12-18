@@ -59,7 +59,12 @@ use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\FedapayController;
 use App\Http\Controllers\FlutterwavePaymentController;
 use App\Http\Controllers\FormBuilderController;
+use App\Http\Controllers\GlobalSearchController;
 use App\Http\Controllers\GoalController;
+
+Route::get('/global-search', [GlobalSearchController::class, 'search'])->name('global.search')->middleware(['auth', 'XSS']);
+Route::get('/global-search/recent', [GlobalSearchController::class, 'recentTransactions'])->name('global.search.recent')->middleware(['auth', 'XSS']);
+
 use App\Http\Controllers\GoalTrackingController;
 use App\Http\Controllers\GoalTypeController;
 use App\Http\Controllers\HolidayController;
@@ -100,6 +105,8 @@ use App\Http\Controllers\PaystackPaymentController;
 use App\Http\Controllers\PaytabController;
 use App\Http\Controllers\PaytmPaymentController;
 use App\Http\Controllers\PaytrController;
+use App\Http\Controllers\SalesReceipt;
+use App\Http\Controllers\ReceivePaymentController;
 use App\Http\Controllers\sync\TrialBalanceController;
 use App\Http\Controllers\sync\VoucherController;
 use App\Http\Controllers\WorkflowController;
@@ -204,6 +211,14 @@ Route::get('/fix-autoload', function () {
     return 'Autoload fixed';
 });
 
+// for time activity
+Route::get('/timeActivity', [ExpenseController::class, 'timeActivityCreate'])->name('timeActivity.create');
+Route::post('/timeActivity/store', [ExpenseController::class, 'storeTimeActivity'])->name('timeActivity.store');
+Route::put('/timeActivity/update/{id}', [ExpenseController::class, 'updateTimeActivity'])->name('timeActivity.update');
+
+// for checks(cheque)
+Route::get('/check', [ExpenseController::class, 'checksCreate'])->name('checks.create');
+
 // page and api endpoints
 Route::get('/quickbooks/sync', [QuickBooksApiController::class, 'index'])->name('quickbooks.sync');
 Route::get('/quickbooks/connect', [QuickBooksApiController::class, 'connect'])->name('quickbooks.connect');
@@ -220,6 +235,7 @@ Route::post('/quickbooks/getPayrollRuns', [QuickBooksApiController::class, 'getP
 Route::post('/quickbooks/getEstimates', [QuickBooksApiController::class, 'getEstimates'])->name('quickbooks.getEstimates');
 Route::post('/quickbooks/sales-tax-payments', [QuickBooksApiController::class, 'salesTaxPayments'])->name('quickbooks.taxpayments');
 Route::post('/quickbooks/refunds', [QuickBooksApiController::class, 'refunds'])->name('quickbooks.refunds');
+Route::post('/quickbooks/purchase-orders', [QuickBooksApiController::class, 'purchaseOrders'])->name('quickbooks.PurchaseOrders');
 Route::post('/quickbooks/credit-memos', [QuickBooksApiController::class, 'creditMemos'])->name('quickbooks.creditmemos');
 Route::post('/quickbooks/credit-card-credits', [QuickBooksApiController::class, 'creditCardCredits'])->name('quickbooks.creditcardcredits');
 Route::post('/quickbooks/credit-card-credits-with-bills', [QuickBooksApiController::class, 'creditCardCreditsWithBills'])->name('quickbooks.creditcardcreditswithbills');
@@ -238,6 +254,7 @@ Route::post('/quickbooks/items', [QuickBooksApiController::class, 'items'])->nam
 Route::post('/quickbooks/journals', [QuickBooksApiController::class, 'journalEntries'])->name('quickbooks.journals');
 Route::post('/quickbooks/api/invoices', [QuickBooksApiController::class, 'invoices'])->name('quickbooks.api.invoices');
 Route::post('/quickbooks/api/bills', [QuickBooksApiController::class, 'bills'])->name('quickbooks.api.bills');
+Route::post('/quickbooks/import/taxes',[QuickBooksApiController::class,'mergedTaxes'])->name('quickbooks.taxes');
 Route::post('/quickbooks/api/customers', [QuickBooksApiController::class, 'customers'])->name('quickbooks.api.customers');
 Route::post('/quickbooks/api/chart-of-accounts', [QuickBooksApiController::class, 'chartOfAccounts'])->name('quickbooks.api.chartOfAccounts');
 Route::post('/quickbooks/api/vendors', [QuickBooksApiController::class, 'vendors'])->name('quickbooks.api.vendors');
@@ -255,6 +272,8 @@ Route::post('/quickbooks/import/journalReport', [QuickBooksImportController::cla
 Route::post('/quickbooks/api/query', [QuickBooksApiController::class, 'rawQuery'])->name('quickbooks.api.rawQuery'); 
 Route::post('/quickbooks/import/full', [QuickBooksImportController::class, 'startFullImport'])->name('quickbooks.import.full');
 Route::get('/quickbooks/import/progress', [QuickBooksImportController::class, 'getImportProgress'])->name('quickbooks.import.progress');
+Route::post('/quickbooks/sync-payments', [QuickBooksImportController::class, 'syncPaymentsForExistingInvoices'])->name('quickbooks.sync.payments');
+Route::get('/quickbooks/missing-payments-report', [QuickBooksImportController::class, 'getMissingPaymentsReport'])->name('quickbooks.missing.payments.report');
 Route::get('/Journalledger', [VoucherController::class, 'Journalledger'])->name('Journalledger.index');
 
 // All Reports Route
@@ -314,6 +333,8 @@ Route::get('invoice/recurring-invoices', [InvoiceController::class, 'recurringIn
 Route::get('/vender/bill/{id}/', [BillController::class, 'invoiceLink'])->name('bill.link.copy');
 Route::get('/vendor/purchase/{id}/', [PurchaseController::class, 'purchaseLink'])->name('purchase.link.copy');
 Route::get('/customer/proposal/{id}/', [ProposalController::class, 'invoiceLink'])->name('proposal.link.copy');
+Route::get('/invoice/customer-proposals', [ProposalController::class, 'customerProposalsForInvoice'])->name('invoice.customer.proposals');
+Route::get('/invoice/customer-suggestions', [InvoiceController::class, 'customerSuggestionsForInvoice'])->name('invoice.customer.suggestions');
 Route::get('proposal/pdf/{id}', [ProposalController::class, 'proposal'])->name('proposal.pdf')->middleware(['XSS', 'revalidate']);
 
 //================================= Invoice Payment Gateways  ====================================//
@@ -443,10 +464,26 @@ Route::group(['middleware' => ['verified']], function () {
     // Route::get('/home', [DashboardController::class, 'account_dashboard_index'])->name('home')->middleware(['XSS', 'revalidate']);
 
     Route::get('/account-dashboard', [DashboardController::class, 'account_dashboard_index'])->name('dashboard')->middleware(['auth', 'XSS', 'revalidate']);
+    Route::post('/dashboard/account/layout', [DashboardController::class, 'saveAccountLayout'])->name('dashboard.account.layout')->middleware(['auth', 'XSS']);
+    Route::post('/dashboard/widget/toggle', [DashboardController::class, 'toggleWidget'])->name('dashboard.widget.toggle')->middleware(['auth', 'XSS']);
+    Route::post('/dashboard/widgets/update', [DashboardController::class, 'updateWidgets'])->name('dashboard.widgets.update')->middleware(['auth', 'XSS']);
     Route::get('/project-dashboard', [DashboardController::class, 'project_dashboard_index'])->name('project.dashboard')->middleware(['auth', 'XSS', 'revalidate']);
     Route::get('/hrm-dashboard', [DashboardController::class, 'hrm_dashboard_index'])->name('hrm.dashboard')->middleware(['auth', 'XSS', 'revalidate']);
     Route::get('/crm-dashboard', [DashboardController::class, 'crm_dashboard_index'])->name('crm.dashboard')->middleware(['auth', 'XSS', 'revalidate']);
     Route::get('/pos-dashboard', [DashboardController::class, 'pos_dashboard_index'])->name('pos.dashboard')->middleware(['auth', 'XSS', 'revalidate']);
+
+    // QBO Menu Routes
+    Route::get('/qbo-menu/config', [\App\Http\Controllers\QboMenuController::class, 'getMenuConfig'])->name('qbo.menu.config')->middleware(['auth']);
+    Route::post('/qbo-menu/config', [\App\Http\Controllers\QboMenuController::class, 'saveMenuConfig'])->name('qbo.menu.config.save')->middleware(['auth']);
+    Route::get('/qbo-menu/bookmarks', [\App\Http\Controllers\QboMenuController::class, 'getBookmarks'])->name('qbo.menu.bookmarks')->middleware(['auth']);
+    Route::post('/qbo-menu/bookmarks', [\App\Http\Controllers\QboMenuController::class, 'saveBookmarks'])->name('qbo.menu.bookmarks.save')->middleware(['auth']);
+    Route::get('/qbo-menu/available-pages', [\App\Http\Controllers\QboMenuController::class, 'getAvailablePages'])->name('qbo.menu.available.pages')->middleware(['auth']);
+    Route::put('/qbo-menu/bookmarks/{id}', [\App\Http\Controllers\QboMenuController::class, 'updateBookmark'])->name('qbo.menu.bookmarks.update')->middleware(['auth']);
+    Route::delete('/qbo-menu/bookmarks/{id}', [\App\Http\Controllers\QboMenuController::class, 'deleteBookmark'])->name('qbo.menu.bookmarks.delete')->middleware(['auth']);
+    Route::post('/qbo-menu/bookmarks/reset', [\App\Http\Controllers\QboMenuController::class, 'resetBookmarks'])->name('qbo.menu.bookmarks.reset')->middleware(['auth']);
+    Route::get('/qbo-menu/pinned', [\App\Http\Controllers\QboMenuController::class, 'getPinnedItems'])->name('qbo.menu.pinned')->middleware(['auth']);
+    Route::post('/qbo-menu/toggle-pin', [\App\Http\Controllers\QboMenuController::class, 'togglePin'])->name('qbo.menu.toggle.pin')->middleware(['auth']);
+    Route::post('/qbo-menu/reset', [\App\Http\Controllers\QboMenuController::class, 'resetToDefault'])->name('qbo.menu.reset')->middleware(['auth']);
 
     Route::get('profile', [UserController::class, 'profile'])->name('profile')->middleware(['auth', 'XSS', 'revalidate']);
 
@@ -604,8 +641,13 @@ Route::group(['middleware' => ['verified']], function () {
             ],
         ],
         function () {
+            // Customer contact list routes - MUST come before resource('customer') to prevent {customer} from matching
+            Route::get('customer/contact-list', [App\Http\Controllers\sync\VoucherController::class, 'customerContactList'])->name('customer.contact.list');
+            Route::get('customer/phone-list', [App\Http\Controllers\sync\VoucherController::class, 'customerContactListPhoneNumbers'])->name('customer.contact.list.phone.numbers');
+            
             Route::get('customer/{id}/show', [CustomerController::class, 'show'])->name('customer.show');
             Route::resource('customer', CustomerController::class);
+            Route::resource('payment-terms', \App\Http\Controllers\PaymentTermController::class);
         }
     );
 
@@ -658,6 +700,16 @@ Route::group(['middleware' => ['verified']], function () {
     Route::post('product-category/getaccount', [ProductServiceCategoryController::class, 'getAccount'])->name('productServiceCategory.getaccount')->middleware(['auth', 'XSS', 'revalidate']);
 
     Route::resource('product-unit', ProductServiceUnitController::class)->middleware(['auth', 'XSS', 'revalidate']);
+    Route::resource('sales-receipt', SalesReceipt::class)->middleware(['auth', 'XSS']);
+    Route::get('sales-receipt/{id}/resent', [SalesReceipt::class, 'resent'])->name('sales-receipt.resent')->middleware(['auth', 'XSS']);
+    Route::get('sales-receipt/pdf/{id}', [SalesReceipt::class, 'pdf'])->name('sales-receipt.pdf')->middleware(['auth', 'XSS']);
+    Route::get('sales-receipt/link/copy/{id}', [SalesReceipt::class, 'linkCopy'])->name('sales-receipt.link.copy')->middleware(['auth', 'XSS']);
+
+    // Receive Payment routes
+    Route::resource('receive-payment', ReceivePaymentController::class)->middleware(['auth', 'XSS']);
+    Route::get('receive-payment/create/{customerId?}', [ReceivePaymentController::class, 'create'])->name('receive-payment.create')->middleware(['auth', 'XSS']);
+    Route::post('receive-payment/outstanding-invoices', [ReceivePaymentController::class, 'getOutstandingInvoices'])->name('receive-payment.outstanding-invoices')->middleware(['auth', 'XSS']);
+    Route::post('receive-payment/payment/{invoice_id?}', [ReceivePaymentController::class, 'createPayment'])->name('receive-payment.payment')->middleware(['auth', 'XSS']);
 
     Route::group(
         [
@@ -687,6 +739,14 @@ Route::group(['middleware' => ['verified']], function () {
             Route::get('invoice/items', [InvoiceController::class, 'items'])->name('invoice.items');
             Route::resource('invoice', InvoiceController::class);
             Route::get('invoice/create/{cid}', [InvoiceController::class, 'create'])->name('invoice.create');
+            //sales reciepts index
+            Route::get('sales-reciepts/index', [InvoiceController::class, 'salesRecieptsIndex'])->name('sales.reciepts.index');
+            //sales reciepts create
+            Route::get('sales-reciepts/create/{cid}', [InvoiceController::class, 'salesRecieptsCreate'])->name('sales.reciepts.create');
+            // invoice tabs
+            Route::get('/invoice/{invoice}/tab', [InvoiceController::class, 'tab'])->name('invoice.tab');
+            // New recieve payments
+            Route::get('invoice/{id}/recievepayment', [InvoiceController::class, 'newQboRecievePayment'])->name('invoice.newQboRecievePayment');
         }
     );
 
@@ -711,6 +771,11 @@ Route::group(['middleware' => ['verified']], function () {
             Route::get('invoice/{id}/credit-note/edit/{cn_id}', [CreditNoteController::class, 'edit'])->name('invoice.edit.credit.note');
             Route::post('invoice/{id}/credit-note/edit/{cn_id}', [CreditNoteController::class, 'update'])->name('invoice.edit.credit.note');
             Route::delete('invoice/{id}/credit-note/delete/{cn_id}', [CreditNoteController::class, 'destroy'])->name('invoice.delete.credit.note');
+            // new credit memos
+            //sales reciepts index
+            Route::get('creditmemo', [CreditNoteController::class, 'creditmemoIndex'])->name('creditmemo.index');
+            //sales reciepts create
+            Route::get('creditmemo/create/{cid}', [CreditNoteController::class, 'creditmemoCreate'])->name('creditmemo.create');
         }
     );
 
@@ -776,9 +841,9 @@ Route::group(['middleware' => ['verified']], function () {
             Route::resource('bill', BillController::class);
             Route::get('bill/create/{cid}', [BillController::class, 'create'])->name('bill.create');
         }
-    );
-    Route::get('customer-contact-list', [CustomerController::class, 'contactList'])->name('customercontact.list');
-    Route::get('customer-contact-list-phone-numbers', [CustomerController::class, 'customerContactListPhoneNumbers'])->name('customercontact.list.phone.numbers');
+    ); 
+    // Route::get('customer-contact-list', [CustomerController::class, 'contactList'])->name('customercontact.list');
+    // Route::get('customer-contact-list-phone-numbers', [CustomerController::class, 'customerContactListPhoneNumbers'])->name('customercontact.list.phone.numbers');
     Route::get('payment/index', [PaymentController::class, 'index'])->name('payment.index')->middleware(['auth', 'XSS', 'revalidate']);
     Route::resource('payment', PaymentController::class)->middleware(['auth', 'XSS', 'revalidate']);
 
@@ -853,8 +918,7 @@ Route::group(['middleware' => ['verified']], function () {
             Route::get('report/payables', [ReportController::class, 'PayablesReport'])->name('report.payables');
             Route::get('report/recurring-invoices', [ReportController::class, 'RecurringInvoices'])->name('report.recurring');
             Route::get('report/recurring-payments', [ReportController::class, 'RecurringPayments'])->name('report.recurring-payments');
-            Route::get('customer/customer-contact-list', [CustomerController::class, 'customerContactList'])->name('customer.contact.list');
-            Route::get('customer/customer-contact-list-phone-numbers', [CustomerController::class, 'customerContactListPhoneNumbers'])->name('customer.contact.list.phone.numbers');
+            // Note: customer/contact-list and customer/phone-list routes moved to line ~642 before Route::resource('customer')
         }
     );
 
@@ -878,6 +942,10 @@ Route::group(['middleware' => ['verified']], function () {
             Route::get('proposal/{id}/resent', [ProposalController::class, 'resent'])->name('proposal.resent');
             Route::resource('proposal', ProposalController::class);
             Route::get('proposal/create/{cid}', [ProposalController::class, 'create'])->name('proposal.create');
+            Route::get(
+    '/invoice/customer-proposals',
+    [ProposalController::class, 'customerProposalsForInvoice']
+)->name('invoice.customer.proposals');
         }
     );
 
@@ -942,6 +1010,16 @@ Route::group(['middleware' => ['verified']], function () {
             Route::resource('cash-payment-voucher', CashPaymentVoucherController::class);
         }
     );
+
+    Route::group(
+        [
+            'middleware' => [
+                'auth',
+                'XSS',
+                'revalidate',
+            ],
+        ],
+        function () {
     //syncsuite data
     Route::get('/ledger', [VoucherController::class, 'ledger'])->name('ledger.index');
     Route::get('/trial-balance', [TrialBalanceController::class, 'index'])->name('trial-balance.index');
@@ -1011,7 +1089,9 @@ Route::group(['middleware' => ['verified']], function () {
         ->name("expenses.purchase_list");
 
     Route::get("/expensesandvendors/transactionlistbyvendor", [VoucherController::class, 'transactionlistbyvendor'])
-        ->name("expenses.transaction_list_by_vendor");
+        ->name("expenses.transaction_list_by_vendor")->middleware('auth');
+    Route::get("/expensesandvendors/checkdetail", [VoucherController::class, 'checkdetail'])
+        ->name("expenses.check_detail")->middleware('auth');
 
     Route::get("/expensesandvendors/purchasebyvendor", [VoucherController::class, 'purchasebyvendor'])
         ->name("expenses.purchase_by_vendor");
@@ -1025,6 +1105,9 @@ Route::group(['middleware' => ['verified']], function () {
     Route::get("/expensesandvendors/expensesbyvendorsummary", [VoucherController::class, 'expensesbyvendorsummary'])
         ->name("expenses.expenses_by_vendor_summary");
 
+    Route::get("/expensesandvendors/purchasesbyproductservicedetail", [VoucherController::class, 'purchasesbyproductservicedetail'])
+        ->name("expenses.purchases_by_product_service_detail");
+
 
     // Abdullah For My Accountant
     Route::get("/formyaccountant/account-list", [VoucherController::class, 'AccountList'])
@@ -1032,7 +1115,8 @@ Route::group(['middleware' => ['verified']], function () {
 
     // Abdullah Excel Export Route
     Route::post('/export-datatable', [VoucherController::class, 'ExportReport'])->name('export.datatable');
-
+    }
+    );
 
     // cya routes
     Route::post('/ai/ask-assistant', [ciaController::class, 'performaction'])->name('askassistant');
@@ -1866,8 +1950,8 @@ Route::group(['middleware' => ['verified']], function () {
     Route::get('export/customer', [CustomerController::class, 'export'])->name('customer.export');
     Route::get('import/customer/file', [CustomerController::class, 'importFile'])->name('customer.file.import');
     Route::post('import/customer', [CustomerController::class, 'import'])->name('customer.import');
-    Route::post('customer/customer-contact-list', [CustomerController::class, 'customerContactList'])->name('customer.contact.list');
-    Route::post('customer/customer-contact-list-phone-numbers', [CustomerController::class, 'customerContactListPhoneNumbers'])->name('customer.contact.list.phone.numbers');
+    // Route::post('customer/customer-contact-list', [CustomerController::class, 'customerContactList'])->name('customer.contact.list');
+    // Route::post('customer/customer-contact-list-phone-numbers', [CustomerController::class, 'customerContactListPhoneNumbers'])->name('customer.contact.list.phone.numbers');
     Route::get('export/vender', [VenderController::class, 'export'])->name('vender.export');
     Route::get('import/vender/file', [VenderController::class, 'importFile'])->name('vender.file.import');
     Route::post('import/vender', [VenderController::class, 'import'])->name('vender.import');
@@ -2127,6 +2211,7 @@ Route::group(['middleware' => ['verified']], function () {
             Route::any('expense/customer', [ExpenseController::class, 'customer'])->name('expense.customer');
             Route::post('expense/vender', [ExpenseController::class, 'vender'])->name('expense.vender');
             Route::post('expense/employee', [ExpenseController::class, 'employee'])->name('expense.employee');
+            Route::post('expense/payee-address', [ExpenseController::class, 'getPayeeAddress'])->name('expense.payee.address');
 
             Route::post('expense/product/destroy', [ExpenseController::class, 'productDestroy'])->name('expense.product.destroy');
 

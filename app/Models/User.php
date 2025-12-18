@@ -111,8 +111,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->lang;
     }
 
-    public function priceFormat($price)
+    public function priceFormat($price = null)
     {
+        if($price == null){
+            $price = 0;
+        }
         $number = explode('.', $price);
         $length = strlen(trim($number[0]));
         $float_number = Utility::getValByName('float_number') == 'dot' ? '.' : ',';
@@ -206,7 +209,11 @@ class User extends Authenticatable implements MustVerifyEmail
 
         return $settings["invoice_prefix"] . sprintf("%05d", $number);
     }
+    public function salesReceiptNumberFormat($number){
+        $settings = Utility::settings();
 
+        return $settings["invoice_prefix"] . sprintf("%05d", $number);
+    }
     public function proposalNumberFormat($number)
     {
         $settings = Utility::settings();

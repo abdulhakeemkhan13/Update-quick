@@ -15,6 +15,13 @@ class InvoiceProduct extends Model
         'total',
         'price',
         'description',
+        'taxable',
+        'item_tax_price',
+        'item_tax_rate',
+        'amount',
+        'estimate_id',
+        'line_type',
+        'proposal_product_id',
     ];
 
     public function product(){

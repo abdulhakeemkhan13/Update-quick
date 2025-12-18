@@ -2,11 +2,10 @@
 
 namespace App\DataTables;
 
-use App\Models\Bill;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Yajra\DataTables\Html\Column;
 use Yajra\DataTables\Services\DataTable;
-use Illuminate\Support\Facades\DB;
 
 class VendorBalanceDetail extends DataTable
 {
@@ -15,246 +14,346 @@ class VendorBalanceDetail extends DataTable
         $data = collect($query->get());
 
         $grandTotalAmount = 0;
-        $grandOpenBalance = 0;
-        $runningBalance = 0; // 👈 keep track of running balance
-
-        // Group invoices by vendor name
-        $groupedData = $data->groupBy(function ($row) {
-            return $row->name ?? 'Unknown Vendor';
-        });
-
+        $grandTotalOpenBalance = 0;
         $finalData = collect();
 
-        foreach ($groupedData as $vendor => $rows) {
-            $subtotalAmount = 0;
-            $subtotalOpen = 0;
-            $runningBalance = 0; // 👈 reset here for each vendor
+        // Group by vendor
+        $vendors = $data->groupBy('vendor_name');
 
+        foreach ($vendors as $vendor => $rows) {
+            $vendorSubtotalAmount = 0;
+            $vendorSubtotalOpenBalance = 0;
+            $runningBalance = 0;
+            $transactionCount = $rows->count();
+            $vendorDisplay = $vendor ?: 'Unknown Vendor';
+
+            // Calculate vendor total first to check if should be displayed
+            foreach ($rows as $row) {
+                $vendorSubtotalOpenBalance += (float) ($row->open_balance ?? 0);
+            }
+
+            // Skip vendors with zero total open balance (like QuickBooks)
+            if (abs($vendorSubtotalOpenBalance) < 0.01) {
+                continue;
+            }
+
+            // Reset for actual processing
+            $vendorSubtotalOpenBalance = 0;
 
             // Vendor header row
             $finalData->push((object) [
-                'vendor' => $vendor,
-                'id' => null,
-                'bill_date' => '',
+                'transaction_date' => '<span class="toggle-bucket" data-bucket="' . \Str::slug($vendorDisplay) . '"><span class="icon">▼</span> <strong>' . e($vendorDisplay) . ' (' . $transactionCount . ')</strong></span>',
+                'transaction_type' => '',
+                'num' => '',
                 'due_date' => '',
-                // 'transaction' => '<strong>' . $vendor . '</strong>',
-                'transaction' => '<span class="" data-bucket="' . \Str::slug($vendor) . '"> <span class="icon">▼</span> <strong>' . $vendor . '</strong></span>',
-                'type' => '',
-                'total_amount' => null,
-                'open_balance' => null,
-                'balance' => null,
-                'isPlaceholder' => true,
-                'isSubtotal' => false,
-                'isParent' => true
+                'amount' => '',
+                'open_balance' => '',
+                'balance' => '',
+                'vendor_name' => $vendor,
+                'isVendorHeader' => true,
             ]);
 
             foreach ($rows as $row) {
-                $subtotalAmount += ($row->subtotal ?? 0) + ($row->total_tax ?? 0);
-                $subtotalOpen += $row->open_balance;
-                // 👈 running balance logic
-                $runningBalance += $row->open_balance;
-                $row->balance = $runningBalance;
-                $row->vendor = $vendor;
-                $finalData->push($row);
+                $amount = (float) ($row->amount ?? 0);
+                $openBalance = (float) ($row->open_balance ?? 0);
+                
+                // Running balance uses Amount (like QuickBooks Balance column)
+                $runningBalance += $amount;
+                
+                $vendorSubtotalAmount += $amount;
+                $vendorSubtotalOpenBalance += $openBalance;
+
+                $finalData->push((object) [
+                    'transaction_date' => $row->transaction_date,
+                    'transaction_type' => $row->transaction_type,
+                    'num' => $row->transaction_number ?? '',
+                    'due_date' => $row->due_date ?? '',
+                    'amount' => $amount,
+                    'open_balance' => $openBalance,
+                    'balance' => $runningBalance,
+                    'vendor_name' => $vendor,
+                    'isDetail' => true,
+                ]);
             }
 
-            // Vendor subtotal row
+            // Vendor subtotal
             $finalData->push((object) [
-                'vendor' => $vendor,
-                'id' => null,
-                'bill_date' => '',
+                'transaction_date' => "<strong>Total for {$vendorDisplay}</strong>",
+                'transaction_type' => '',
+                'num' => '',
                 'due_date' => '',
-                'transaction' => '<strong>Subtotal for ' . $vendor . '</strong>',
-                'type' => '',
-                'total_amount' => $subtotalAmount,
-                'open_balance' => $subtotalOpen,
-                'balance' => null,
+                'amount' => $vendorSubtotalAmount,
+                'open_balance' => $vendorSubtotalOpenBalance,
+                'balance' => '',
+                'vendor_name' => $vendor,
                 'isSubtotal' => true,
             ]);
 
+            // Placeholder row
             $finalData->push((object) [
-                'vendor' => $vendor,
-                'id' => null,
-                'bill_date' => '',
+                'transaction_date' => '',
+                'transaction_type' => '',
+                'num' => '',
                 'due_date' => '',
-                'transaction' => '',
-                'type' => '',
-                'total_amount' => '',
+                'amount' => '',
                 'open_balance' => '',
                 'balance' => '',
+                'vendor_name' => $vendor,
                 'isPlaceholder' => true,
             ]);
 
-            $grandTotalAmount += $subtotalAmount;
-            $grandOpenBalance += $subtotalOpen;
+            $grandTotalAmount += $vendorSubtotalAmount;
+            $grandTotalOpenBalance += $vendorSubtotalOpenBalance;
         }
 
         // Grand total row
         $finalData->push((object) [
-            'vendor' => '',
-            'id' => null,
-            'bill_date' => '',
+            'transaction_date' => '<strong>TOTAL</strong>',
+            'transaction_type' => '',
+            'num' => '',
             'due_date' => '',
-            'transaction' => '<strong>Grand Total</strong>',
-            'type' => '',
-            'total_amount' => $grandTotalAmount,
-            'open_balance' => $grandOpenBalance,
-            'balance' => null,
+            'amount' => $grandTotalAmount,
+            'open_balance' => $grandTotalOpenBalance,
+            'balance' => '',
             'isGrandTotal' => true,
         ]);
 
         return datatables()
             ->collection($finalData)
-            ->addColumn('bill_date', fn($row) => isset($row->isSubtotal) || isset($row->isGrandTotal) ? '' : $row->bill_date)
-            ->addColumn('due_date', fn($row) => isset($row->isSubtotal) || isset($row->isGrandTotal) ? '' : $row->due_date) // 👈 add due date
-            ->addColumn('transaction', function ($row) {
-                if (isset($row->isSubtotal) || isset($row->isGrandTotal) || (isset($row->isPlaceholder) && $row->isPlaceholder)) {
-                    return $row->transaction;
+            ->editColumn('transaction_date', function ($row) {
+                if (isset($row->isDetail)) {
+                    return $row->transaction_date ? Carbon::parse($row->transaction_date)->format('m/d/Y') : '';
                 }
-                return \Auth::user()->billNumberFormat($row->bill ?? $row->id);
+                return $row->transaction_date;
             })
-            ->addColumn('type', function ($row) {
-                if (isset($row->isSubtotal) || isset($row->isGrandTotal) || (isset($row->isPlaceholder) && $row->isPlaceholder)) {
-                    return '';
+            ->editColumn('due_date', function ($row) {
+                if (isset($row->isDetail) && $row->due_date) {
+                    return Carbon::parse($row->due_date)->format('m/d/Y');
                 }
-                return 'Bill';
-            })
-            ->editColumn('total_amount', function ($row) {
-                if (isset($row->isPlaceholder)) {
-                    return '';
-                }
-                if (isset($row->isSubtotal) || isset($row->isGrandTotal)) {
-                    return number_format($row->total_amount ?? 0);
-                }
-                return number_format(($row->subtotal ?? 0) + ($row->total_tax ?? 0));
-            })
-            ->editColumn('open_balance', function ($row) {
-                if (isset($row->isPlaceholder)) {
-                    return '';
-                }
-                if (isset($row->isSubtotal) || isset($row->isGrandTotal)) {
-                    return number_format($row->open_balance ?? 0);
-                }
-                return number_format($row->open_balance ?? 0);
-            })
-            ->editColumn('balance', function ($row) { // 👈 show running balance
-                if (isset($row->isPlaceholder) || isset($row->isSubtotal) || isset($row->isGrandTotal)) {
-                    return '';
-                }
-                return number_format($row->balance ?? 0);
-            })
-            ->setRowClass(function ($row) {
-                if (property_exists($row, 'isParent') && $row->isParent) {
-                    return 'parent-row toggle-bucket bucket-' . \Str::slug($row->vendor ?? 'na');
-                }
-
-                if (property_exists($row, 'isSubtotal') && $row->isSubtotal && !property_exists($row, 'isGrandTotal')) {
-                    return 'subtotal-row bucket-' . \Str::slug($row->vendor ?? 'na');
-                }
-
-                if (
-                    !property_exists($row, 'isParent') &&
-                    !property_exists($row, 'isSubtotal') &&
-                    !property_exists($row, 'isGrandTotal') &&
-                    !property_exists($row, 'isPlaceholder')
-                ) {
-                    return 'child-row bucket-' . \Str::slug($row->vendor ?? 'na');
-                }
-
-                if (property_exists($row, 'isGrandTotal') && $row->isGrandTotal) {
-                    return 'grandtotal-row';
-                }
-
                 return '';
             })
-            ->rawColumns(['transaction']);
+            ->editColumn('amount', function ($row) {
+                if (isset($row->isVendorHeader) || isset($row->isPlaceholder)) return '';
+                return number_format((float) $row->amount, 2);
+            })
+            ->editColumn('open_balance', function ($row) {
+                if (isset($row->isVendorHeader) || isset($row->isPlaceholder)) return '';
+                return number_format((float) $row->open_balance, 2);
+            })
+            ->editColumn('balance', function ($row) {
+                if (!isset($row->isDetail)) return '';
+                return number_format((float) $row->balance, 2);
+            })
+            ->setRowClass(function ($row) {
+                $vendorSlug = isset($row->vendor_name) ? \Str::slug($row->vendor_name) : 'no-vendor';
+                if (isset($row->isVendorHeader)) return 'parent-row toggle-bucket bucket-' . $vendorSlug;
+                if (isset($row->isSubtotal)) return 'subtotal-row bucket-' . $vendorSlug;
+                if (isset($row->isGrandTotal)) return 'grandtotal-row';
+                if (isset($row->isPlaceholder)) return 'placeholder-row bucket-' . $vendorSlug;
+                return 'child-row bucket-' . $vendorSlug;
+            })
+            ->rawColumns(['transaction_date']);
     }
 
-    public function query(Bill $model)
+public function query()
     {
+        $userId = \Auth::user()->creatorId();
         $start = request()->get('start_date') ?? request()->get('startDate') ?? Carbon::now()->startOfYear()->format('Y-m-d');
-        $end = request()->get('end_date') ?? request()->get('endDate') ?? Carbon::now()->endOfDay()->format('Y-m-d');
+        $end   = request()->get('end_date') ?? request()->get('endDate') ?? Carbon::now()->endOfDay()->format('Y-m-d');
 
-        return $model->newQuery()
-            ->select(
-                'bills.id',
-                'bills.bill_id as bill',
-                'bills.bill_date',
-                'bills.due_date', // 👈 add due date to query
-                'bills.status',
-                'venders.name',
-                DB::raw('SUM((bill_products.price * bill_products.quantity) - bill_products.discount) as subtotal'),
-                DB::raw('IFNULL(SUM(bill_payments.amount), 0) as pay_price'),
-                DB::raw('(SELECT IFNULL(SUM((price * quantity - discount) * (taxes.rate / 100)),0) 
-                    FROM bill_products 
-                    LEFT JOIN taxes ON FIND_IN_SET(taxes.id, bill_products.tax) > 0
-                    WHERE bill_products.bill_id = bills.id) as total_tax'),
-                DB::raw('(SELECT IFNULL(SUM(debit_notes.amount),0) 
-                    FROM debit_notes 
-                    WHERE debit_notes.bill = bills.id) as debit_price'),
-                DB::raw('(SUM((bill_products.price * bill_products.quantity) - bill_products.discount) 
-                    + (SELECT IFNULL(SUM((price * quantity - discount) * (taxes.rate / 100)),0) 
-                        FROM bill_products 
-                        LEFT JOIN taxes ON FIND_IN_SET(taxes.id, bill_products.tax) > 0
-                        WHERE bill_products.bill_id = bills.id)
-                    - (IFNULL(SUM(bill_payments.amount),0) 
-                    + (SELECT IFNULL(SUM(debit_notes.amount),0) FROM debit_notes WHERE debit_notes.bill = bills.id))
-                ) as open_balance')
+        // Reuse this SQL logic to determine if a bill is "Open" (Not fully paid)
+        // (Bill Total) - (Payments) - (Debit Notes)
+        // FIX: Use COALESCE with bills.total for Check/Expense types
+        $billOpenBalanceLogic = '
+            (
+                COALESCE(
+                    NULLIF(
+                        (SELECT IFNULL(SUM(bp.price * bp.quantity - IFNULL(bp.discount,0)),0) FROM bill_products bp WHERE bp.bill_id = bills.id)
+                        +
+                        (SELECT IFNULL(SUM(ba.price),0) FROM bill_accounts ba WHERE ba.ref_id = bills.id),
+                        0
+                    ),
+                    bills.total
+                )
+                -
+                (SELECT IFNULL(SUM(amount),0) FROM bill_payments WHERE bill_payments.bill_id = bills.id)
+                -
+                (SELECT IFNULL(SUM(debit_notes.amount),0) FROM debit_notes WHERE debit_notes.bill = bills.id)
             )
-            ->leftJoin('venders', 'venders.id', '=', 'bills.vender_id')
-            ->leftJoin('bill_products', 'bill_products.bill_id', '=', 'bills.id')
-            ->leftJoin('bill_payments', 'bill_payments.bill_id', '=', 'bills.id')
-            ->where('bills.created_by', \Auth::user()->creatorId())
-            ->whereBetween('bills.bill_date', [$start, $end])
-            ->groupBy('bills.id');
+        ';
+
+        /* ---------------------------------------------------------
+         | 1. BILLS  (Only fetch if Open Balance is NOT 0)
+         --------------------------------------------------------- */
+        $bills = DB::table('bills')
+            ->select(
+                DB::raw('bills.id as transaction_id'),
+                'bills.bill_date as transaction_date',
+                'bills.due_date',
+                'venders.name as vendor_name',
+                'bills.bill_id as transaction_number',
+                DB::raw('"Bill" as transaction_type'),
+
+                // Total amount - FIX: Use COALESCE with bills.total for Check/Expense types
+                DB::raw('COALESCE(
+                    NULLIF(
+                        (SELECT IFNULL(SUM(bp.price * bp.quantity - IFNULL(bp.discount,0)),0) FROM bill_products bp WHERE bp.bill_id = bills.id)
+                        +
+                        (SELECT IFNULL(SUM(ba.price),0) FROM bill_accounts ba WHERE ba.ref_id = bills.id),
+                        0
+                    ),
+                    bills.total
+                ) as amount'),
+
+                // Open balance logic
+                DB::raw("($billOpenBalanceLogic) as open_balance")
+            )
+            ->join('venders', 'venders.id', '=', 'bills.vender_id')
+            ->whereRaw('LOWER(bills.type) IN (?, ?, ?)', ['bill', 'check', 'expense'])
+            ->where('bills.created_by', $userId)
+            ->where('bills.bill_date','<=', $end)
+            // ->where('bills.status', '!=','4')
+            // FILTER: Only show bills that have an open balance (positive or negative, but not 0)
+            ->havingRaw("ABS(open_balance) > 0");
+
+
+        /* ---------------------------------------------------------
+         | 2. VENDOR CREDITS (Included as requested)
+         --------------------------------------------------------- */
+        $vendorCredits = DB::table('vendor_credits')
+            ->select(
+                DB::raw('vendor_credits.id as transaction_id'),
+                'vendor_credits.date as transaction_date',
+                DB::raw('NULL as due_date'),
+                'venders.name as vendor_name',
+                DB::raw('vendor_credits.vendor_credit_id as transaction_number'),
+                DB::raw('"Vendor Credit" as transaction_type'),
+
+                // Always NEGATIVE
+                DB::raw('
+                -1 * (
+                    IFNULL((SELECT SUM(vcp.price * vcp.quantity)
+                        FROM vendor_credit_products vcp
+                        WHERE vcp.vendor_credit_id = vendor_credits.id),0)
+                    +
+                    IFNULL((SELECT SUM(vca.price)
+                        FROM vendor_credit_accounts vca
+                        WHERE vca.vendor_credit_id = vendor_credits.id),0)
+                ) as amount
+            '),
+
+                // Open balance same as amount
+                DB::raw('
+                -1 * (
+                    IFNULL((SELECT SUM(vcp.price * vcp.quantity)
+                        FROM vendor_credit_products vcp
+                        WHERE vcp.vendor_credit_id = vendor_credits.id),0)
+                    +
+                    IFNULL((SELECT SUM(vca.price)
+                        FROM vendor_credit_accounts vca
+                        WHERE vca.vendor_credit_id = vendor_credits.id),0)
+                ) as open_balance
+            ')
+            )
+            ->join('venders', 'venders.id', '=', 'vendor_credits.vender_id')
+            ->where('vendor_credits.created_by', $userId)
+            ->where('vendor_credits.date', '<=', $end);
+
+
+        /* ---------------------------------------------------------
+         | 3. BILL PAYMENTS (Only fetch if the linked Bill is still Open)
+         --------------------------------------------------------- */
+        $billPayments = DB::table('bill_payments')
+            ->select(
+                DB::raw('bill_payments.id as transaction_id'),
+                'bill_payments.date as transaction_date',
+                'bill_payments.date as due_date',
+                'venders.name as vendor_name',
+                'bill_payments.reference as transaction_number',
+                DB::raw('CASE 
+                WHEN bank_accounts.account_subtype = "credit_card" THEN "Bill Payment (Credit Card)"
+                ELSE "Bill Payment (Check)"
+            END as transaction_type'),
+                DB::raw('-1 * bill_payments.amount as amount'),
+                DB::raw('-1 * bill_payments.amount as open_balance')
+            )
+            ->join('bills', 'bills.id', '=', 'bill_payments.bill_id')
+            ->join('venders', 'venders.id', '=', 'bills.vender_id')
+            ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'bill_payments.account_id')
+            ->where('bills.created_by', $userId)
+            ->where('bills.type', 'Bill')
+            // ->where('bills.status', '!=','4')
+            ->where('bill_payments.date', '<=', $end)
+            // FILTER: Only show payments if the PARENT BILL still has an open balance.
+            // If the bill is fully paid, we hide the bill AND its payments.
+            ->whereRaw("ABS($billOpenBalanceLogic) > 0");
+
+
+        /* ---------------------------------------------------------
+         | 4. UNAPPLIED PAYMENTS (not linked to any bill yet)
+         --------------------------------------------------------- */
+        $unappliedPayments = DB::table('unapplied_payments')
+            ->select(
+                DB::raw('unapplied_payments.id as transaction_id'),
+                'unapplied_payments.txn_date as transaction_date',
+                DB::raw('NULL as due_date'),
+                'venders.name as vendor_name',
+                'unapplied_payments.reference as transaction_number',
+                DB::raw('"Unapplied Payment" as transaction_type'),
+                DB::raw('-1 * unapplied_payments.unapplied_amount as amount'),
+                DB::raw('-1 * unapplied_payments.unapplied_amount as open_balance')
+            )
+            ->join('venders', 'venders.id', '=', 'unapplied_payments.vendor_id')
+            ->where('unapplied_payments.created_by', $userId)
+            ->where('unapplied_payments.unapplied_amount', '>', 0);
+
+
+        /* ---------------------------------------------------------
+         | COMBINE ALL
+         --------------------------------------------------------- */
+        $combined = $bills
+            ->unionAll($vendorCredits)
+            ->unionAll($billPayments)
+            ->unionAll($unappliedPayments);
+
+        return DB::query()->fromSub($combined, 'transactions')
+            ->orderBy('vendor_name', 'asc')
+            ->orderBy('transaction_date', 'asc');
     }
+
 
     public function html()
     {
         return $this->builder()
-            ->setTableId('customer-balance-table')
+            ->setTableId('vendor-balance-detail-table')
             ->columns($this->getColumns())
-            ->minifiedAjax()
+            ->ajax([
+                'url' => route('payables.vendor_balance_detail'),
+                'type' => 'GET',
+                'headers' => [
+                    'X-CSRF-TOKEN' => csrf_token(),
+                ],
+            ])
             ->orderBy(0, 'asc')
             ->parameters([
                 'paging' => false,
                 'searching' => false,
                 'info' => false,
                 'ordering' => false,
-                'footerCallback' => <<<JS
-function (row, data, start, end, display) {
-    var api = this.api();
-    var parseVal = function (i) {
-        return typeof i === 'string'
-            ? parseFloat(i.replace(/[^0-9.-]+/g, '')) || 0
-            : typeof i === 'number'
-                ? i
-                : 0;
-    };
-
-    var totalAmount = api.column(4, { page: 'all' }).data()
-        .reduce((a, b) => parseVal(a) + parseVal(b), 0);
-
-    var totalOpen = api.column(5, { page: 'all' }).data()
-        .reduce((a, b) => parseVal(a) + parseVal(b), 0);
-
-    $(api.column(4).footer()).html(totalAmount.toLocaleString());
-    $(api.column(5).footer()).html(totalOpen.toLocaleString());
-}
-JS
+                'dom' => 't',
             ]);
     }
 
     protected function getColumns()
     {
         return [
-            Column::make('bill_date')->title('Date'),
-            Column::make('transaction')->title('Transaction'),
-            Column::make('type')->title('Type'),
-            Column::make('due_date')->title('Due Date'), // 👈 add due date column
-            Column::make('total_amount')->title('Amount'),
-            Column::make('open_balance')->title('Open Balance'),
-            Column::make('balance')->title('Balance'), // 👈 new running balance column
+            Column::make('transaction_date')->title('Date'),
+            Column::make('transaction_type')->title('Transaction type'),
+            Column::make('num')->title('Num'),
+            Column::make('due_date')->title('Due date'),
+            Column::make('amount')->title('Amount')->addClass('text-right'),
+            Column::make('open_balance')->title('Open balance')->addClass('text-right'),
+            Column::make('balance')->title('Balance')->addClass('text-right'),
         ];
     }
 }

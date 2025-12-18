@@ -8,10 +8,23 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Traits\HasRoles;
 
+use Laravel\Scout\Searchable;
+
 class Customer extends Authenticatable
 {
     use HasRoles;
     use Notifiable;
+    use Searchable;
+
+    public function toSearchableArray()
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'email' => $this->email,
+            'contact' => $this->contact,
+        ];
+    }
 
     protected $guard_name = 'web';
 
@@ -24,8 +37,10 @@ class Customer extends Authenticatable
         'avatar',
         'is_active',
         'qb_balance',
+        'type_id',
         'balance',
         'created_by',
+        'owned_by',
         'email_verified_at',
         'billing_name',
         'billing_country',
@@ -243,9 +258,9 @@ class Customer extends Authenticatable
     {
         $dueInvoices = Invoice:: where('customer_id', $customerId)->whereNotIn(
             'status', [
-                        '0',
-                        '4',
-                    ]
+                '0',
+                '4',
+            ]
         )->where('due_date', '<', date('Y-m-d'))->get();
         $due         = 0;
         foreach($dueInvoices as $invoice)
@@ -259,6 +274,11 @@ class Customer extends Authenticatable
     public function invoices()
     {
         return $this->hasMany(Invoice::class, 'customer_id');
+    }
+
+    public function customerType()
+    {
+        return $this->belongsTo(CustomerType::class, 'type_id');
     }
 
     public function customerTotalInvoiceSum($customerId)

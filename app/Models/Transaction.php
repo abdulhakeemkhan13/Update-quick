@@ -7,14 +7,19 @@ use Illuminate\Database\Eloquent\Model;
 class Transaction extends Model
 {
     protected $fillable = [
+        'user_id',
+        'user_type',
         'account',
         'type',
         'amount',
         'description',
         'date',
         'created_by',
+        'owned_by',
+        'category',
         'customer_id',
         'payment_id',
+        'payment_no',
     ];
 
 
@@ -38,6 +43,7 @@ class Transaction extends Model
         $transaction->created_by  = $request->created_by;
         $transaction->payment_id  = $request->payment_id;
         $transaction->category    = $request->category;
+        $transaction->payment_no  = $request->payment_no ?? null;
         $transaction->save();
     }
 

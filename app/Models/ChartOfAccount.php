@@ -10,6 +10,7 @@ class ChartOfAccount extends Model
         'name',
         'code',
         'type',
+        'qb_balance',
         'sub_type',
         'parent',
         'is_enabled',

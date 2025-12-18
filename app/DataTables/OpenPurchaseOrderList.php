@@ -29,10 +29,10 @@ class OpenPurchaseOrderList extends DataTable
 
             // Vendor header row
             $finalData->push((object) [
-                'transaction_date' => '',
-                'vendor' => $vendor,
-                'transaction' => '<span class="" data-bucket="' . \Str::slug($vendor) . '">
+                'transaction_date' => '<span class="" data-bucket="' . \Str::slug($vendor) . '">
                     <span class="icon">▼</span> <strong>' . $vendor . '</strong></span>',
+                'vendor' => $vendor,
+                'transaction' => '',
                 'memo' => '',
                 'ship_via' => '',
                 'amount' => '',
@@ -57,8 +57,8 @@ class OpenPurchaseOrderList extends DataTable
             // Vendor subtotal
             $finalData->push((object) [
                 'vendor' => $vendor,
-                'transaction_date' => '',
-                'transaction' => "<strong>Subtotal for {$vendor}</strong>",
+                'transaction_date' => '<strong>Subtotal for ' . $vendor . '</strong>',
+                'transaction' => "",
                 'memo' => '',
                 'ship_via' => '',
                 'amount' => $vendorTotals['amount'],
@@ -86,8 +86,8 @@ class OpenPurchaseOrderList extends DataTable
 
         // Grand total
         $finalData->push((object) [
-            'transaction_date' => '',
-            'transaction' => '<strong>Grand Total</strong>',
+            'transaction_date' => '<strong>Grand Total</strong>',
+            'transaction' => '',
             'memo' => '',
             'ship_via' => '',
             'amount' => $grandTotal['amount'],
@@ -101,7 +101,7 @@ class OpenPurchaseOrderList extends DataTable
                 'transaction_date',
                 fn($row) =>
                 isset($row->isSubtotal) || isset($row->isParent) || isset($row->isGrandTotal) || isset($row->isPlaceholder)
-                ? ''
+                ? $row->transaction_date // <-- keep HTML for special rows
                 : ($row->transaction_date ? Carbon::parse($row->transaction_date)->format('Y-m-d') : '')
             )
             ->setRowClass(function ($row) {
@@ -119,70 +119,117 @@ class OpenPurchaseOrderList extends DataTable
 
                 return 'child-row bucket-' . \Str::slug($row->vendor ?? 'na');
             })
-            ->rawColumns(['transaction']);
+            ->rawColumns(['transaction_date']);
     }
 
-    public function query()
-    {
-        $start = request()->get('start_date')
-            ?? request()->get('startDate')
-            ?? Carbon::now()->startOfYear()->format('Y-m-d');
+   public function query()
+{
+    $start = request()->get('start_date')
+        ?? request()->get('startDate')
+        ?? Carbon::now()->startOfYear()->format('Y-m-d');
 
-        $end = request()->get('end_date')
-            ?? request()->get('endDate')
-            ?? Carbon::now()->endOfDay()->format('Y-m-d');
+    $end = request()->get('end_date')
+        ?? request()->get('endDate')
+        ?? Carbon::now()->endOfDay()->format('Y-m-d');
 
-        return DB::table('purchases')
-            ->select(
-                'purchases.id',
-                'purchases.purchase_id',
-                'purchases.purchase_number',
-                'purchases.purchase_date as transaction_date',
-                'venders.name as vendor_name',
-                // Total amount (sum of product lines + taxes)
-                DB::raw('(
-                SELECT IFNULL(SUM(
-                    (pp.price * pp.quantity)
-                    - IFNULL(pp.discount, 0)
-                    + IFNULL(
-                        (SELECT IFNULL(SUM((pp2.price * pp2.quantity - pp2.discount) * (taxes.rate / 100)), 0)
-                         FROM purchase_products pp2
-                         LEFT JOIN taxes ON FIND_IN_SET(taxes.id, pp2.tax) > 0
-                         WHERE pp2.purchase_id = purchases.id),
-                    0)
-                ), 0)
+   return DB::table('purchases')
+    ->select(
+        'purchases.id',
+        'purchases.purchase_id',
+        'purchases.purchase_number',
+        'purchases.notes as memo',
+        'purchases.ship_via',
+        'purchases.purchase_date as transaction_date',
+        'venders.name as vendor_name',
+
+        // PRODUCT TOTAL
+        DB::raw('(
+            SELECT IFNULL(SUM(
+                (pp.price * pp.quantity)
+                - IFNULL(pp.discount, 0)
+                + (
+                    SELECT IFNULL(SUM(
+                        (pp2.price * pp2.quantity - IFNULL(pp2.discount,0)) 
+                        * (t.rate / 100)
+                    ), 0)
+                    FROM purchase_products pp2
+                    LEFT JOIN taxes t ON FIND_IN_SET(t.id, pp2.tax) > 0
+                    WHERE pp2.purchase_id = purchases.id
+                )
+            ), 0)
+            FROM purchase_products pp
+            WHERE pp.purchase_id = purchases.id
+        ) AS product_total'),
+
+        // ACCOUNT TOTAL
+        DB::raw('(
+            SELECT IFNULL(SUM(
+                poa.price
+            ), 0)
+            FROM purchase_order_accounts poa
+            WHERE poa.ref_id = purchases.id
+        ) AS account_total'),
+
+        // AMOUNT = PRODUCTS + ACCOUNTS
+        DB::raw('(
+            (
+                SELECT IFNULL(SUM(pp.price - IFNULL(pp.discount, 0)), 0)
                 FROM purchase_products pp
                 WHERE pp.purchase_id = purchases.id
-            ) as amount'),
-                // Total payments applied to this purchase
-                DB::raw('(
+            )
+            +
+            (
+                SELECT IFNULL(SUM(poa.price), 0)
+                FROM purchase_order_accounts poa
+                WHERE poa.ref_id = purchases.id
+            )
+        ) AS amount'),
+
+        // PAYMENT TOTAL (not for PO)
+        DB::raw('(
+            CASE WHEN purchases.type = "Purchase Order" THEN 0
+            ELSE (
                 SELECT IFNULL(SUM(amount), 0)
                 FROM purchase_payments
                 WHERE purchase_id = purchases.id
-            ) as payments_total'),
-                // Open balance = amount - payments_total
-                DB::raw('(
-                (SELECT IFNULL(SUM(
-                    (pp.price * pp.quantity)
-                    - IFNULL(pp.discount, 0)
-                    + IFNULL(
-                        (SELECT IFNULL(SUM((pp2.price * pp2.quantity - pp2.discount) * (taxes.rate / 100)), 0)
-                         FROM purchase_products pp2
-                         LEFT JOIN taxes ON FIND_IN_SET(taxes.id, pp2.tax) > 0
-                         WHERE pp2.purchase_id = purchases.id),
-                    0)
-                ), 0)
-                FROM purchase_products pp
-                WHERE pp.purchase_id = purchases.id)
-                -
-                (SELECT IFNULL(SUM(amount), 0) FROM purchase_payments WHERE purchase_id = purchases.id)
-            ) as open_balance')
             )
-            ->join('venders', 'venders.id', '=', 'purchases.vender_id')
-            ->where('purchases.created_by', \Auth::user()->creatorId())
-            ->whereBetween('purchases.purchase_date', [$start, $end])
-            ->orderBy('purchases.purchase_date', 'asc');
-    }
+            END
+        ) AS payments_total'),
+
+        // OPEN BALANCE
+        DB::raw('(
+            (
+                (
+                    SELECT IFNULL(SUM(pp.price - IFNULL(pp.discount, 0)), 0)
+                    FROM purchase_products pp
+                    WHERE pp.purchase_id = purchases.id
+                )
+                +
+                (
+                    SELECT IFNULL(SUM(poa.price), 0)
+                    FROM purchase_order_accounts poa
+                    WHERE poa.ref_id = purchases.id
+                )
+            )
+            -
+            CASE 
+                WHEN purchases.type = "Purchase Order" THEN 0
+                ELSE (
+                    SELECT IFNULL(SUM(amount), 0)
+                    FROM purchase_payments
+                    WHERE purchase_id = purchases.id
+                )
+            END
+        ) AS open_balance')
+    )
+    ->join('venders', 'venders.id', '=', 'purchases.vender_id')
+    ->where('purchases.created_by', \Auth::user()->creatorId())
+    ->whereBetween('purchases.purchase_date', [$start, $end])
+    ->where('purchases.status', '!=', '2')
+    ->orderBy('purchases.purchase_date', 'asc');
+
+}
+
 
 
     public function html()

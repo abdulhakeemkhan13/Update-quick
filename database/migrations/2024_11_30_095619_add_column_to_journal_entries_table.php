@@ -12,10 +12,18 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('journal_entries', function (Blueprint $table) {
-            $table->text('voucher_type',50)->default('JV')->after('journal_id');
-            $table->unsignedInteger('reference_id')->nullable()->after('voucher_type');
-            $table->unsignedInteger('prod_id')->nullable()->after('reference_id');
-            $table->text('category',50)->nullable()->after('prod_id');
+            if (!Schema::hasColumn('journal_entries', 'voucher_type')) {
+                $table->text('voucher_type', 50)->default('JV')->after('journal_id');
+            }
+            if (!Schema::hasColumn('journal_entries', 'reference_id')) {
+                $table->unsignedInteger('reference_id')->nullable()->after('voucher_type');
+            }
+            if (!Schema::hasColumn('journal_entries', 'prod_id')) {
+                $table->unsignedInteger('prod_id')->nullable()->after('reference_id');
+            }
+            if (!Schema::hasColumn('journal_entries', 'category')) {
+                $table->text('category', 50)->nullable()->after('prod_id');
+            }
         });
         Schema::table('journal_items', function (Blueprint $table) {
             $table->unsignedInteger('product_id')->nullable()->after('description');

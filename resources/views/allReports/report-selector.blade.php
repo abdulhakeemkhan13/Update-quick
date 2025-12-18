@@ -524,7 +524,7 @@
                 },
                 {
                     category: "Sales and Customers",
-                    value: "{{ route('customercontact.list') }}",
+                    value: "{{ route('customer.contact.list') }}",
                     label: "Customer Contact List",
                     icon: "bi bi-file-earmark-text"
                 },
@@ -548,7 +548,7 @@
                 },
                 {
                     category: "Sales and Customers",
-                    value: "{{ route('customercontact.list.phone.numbers') }}",
+                    value: "{{ route('customer.contact.list.phone.numbers') }}",
                     label: "Customer Phone List",
                     icon: "bi bi-file-earmark-text"
                 },
