@@ -360,7 +360,7 @@ class VenderController extends Controller
             if ($request->ajax() || $request->wantsJson()) {
                 return response()->json(['message' => $e->getMessage()], 500);
             }
-            return redirect()->back()->with('error', $e);
+            return redirect()->back()->with('error', $e->getMessage());
         }
     }
 

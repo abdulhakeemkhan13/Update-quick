@@ -349,62 +349,322 @@
 }
 
 /* =====================================================
-   Header Styles
+   Header Styles - QBO Exact Layout
    ===================================================== */
 .qbo-header {
     position: fixed;
     top: 0;
     left: 0;
-    /* Full width header like QBO */
     right: 0;
     height: var(--qbo-header-height);
     background: #fff;
-    display: flex;
-    align-items: center;
-    padding: 0 20px;
     border-bottom: 1px solid var(--qbo-sidebar-border);
     z-index: 1060;
-    /* Higher than sidebar */
-    gap: 16px;
 }
 
-/* Header Brand Section - Logo & Company Name */
-.qbo-header-brand {
+.qbo-header-nav {
     display: flex;
     align-items: center;
-    gap: 12px;
+    height: 100%;
+    padding: 0;
+    margin: 0;
+    width: 100%;
+}
+
+/* 3 Main Container Layout - Fixed Widths Like QBO */
+.qbo-header-container {
+    display: flex;
+    align-items: center;
+    height: 100%;
+}
+
+/* Left Container: Logo + Divider + Company Name - Fixed Width */
+.qbo-container-left {
+    width: 200px;
+    min-width: 200px;
+    padding-left: 12px;
+    padding-right: 16px;
+    gap: 0;
     flex-shrink: 0;
 }
 
-.qbo-header-logo {
+/* Center Container: Search Bar - Flexible Width */
+.qbo-container-center {
+    flex: 1;
+    display: flex;
+    justify-content: flex-start;
+    padding: 0 16px;
+    min-width: 0;
+}
+
+/* Right Container: Action Icons - Auto Width */
+.qbo-container-right {
+    margin-left: auto;
+    padding-right: 12px;
+    gap: 0;
+    flex-shrink: 0;
+}
+
+/* Header Item Wrapper */
+.qbo-header-item {
+    display: flex;
+    align-items: center;
+    height: 100%;
+}
+
+/* App Logo */
+.qbo-app-logo {
     display: flex;
     align-items: center;
     text-decoration: none;
+    padding: 0 4px;
+}
+
+.qbo-logo-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.qbo-logo-icon {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
 }
 
 .qbo-logo-img {
-    height: 32px;
+    height: 24px;
     width: auto;
-    max-width: 120px;
+    max-width: 100px;
     object-fit: contain;
 }
 
-.qbo-header-company-name {
+/* Vertical Divider - QBO Style */
+.qbo-header-divider {
+    width: 1px;
+    height: 28px;
+    background-color: #c4c6c8;
+    margin: 0 12px;
+}
+
+/* Company Name - QBO Style */
+.qbo-company-name {
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 600;
     color: #393a3d;
-    text-decoration: none;
     white-space: nowrap;
-    max-width: 200px;
+    max-width: 150px;
     overflow: hidden;
     text-overflow: ellipsis;
+    letter-spacing: -0.01em;
 }
 
-.qbo-header-company-name:hover {
-    color: #0077c5;
+/* Global Search Container - Larger Width Like QBO */
+.qbo-global-search-container {
+    position: relative;
+    width: 100%;
+    max-width: 520px;
 }
 
-/* Search Bar */
+.qbo-search-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.qbo-search-icon {
+    position: absolute;
+    left: 14px;
+    color: #6b6c72;
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Search Input - Rounded Border Like QBO */
+.qbo-search-input {
+    width: 100%;
+    height: 40px;
+    padding: 0 20px 0 44px;
+    border: 1px solid #c4c6c8;
+    border-radius: 20px;
+    font-size: 14px;
+    color: #393a3d;
+    background: #fff;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.qbo-search-input:focus {
+    outline: none;
+    border-color: #0077c5;
+    box-shadow: 0 0 0 2px rgba(0, 119, 197, 0.15);
+}
+
+.qbo-search-input::placeholder {
+    color: #6b6c72;
+    font-size: 14px;
+}
+
+
+/* Header Item Button - QBO Style */
+.qbo-header-item-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 0 8px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: #6b6c72;
+    transition: background-color 0.15s ease;
+    gap: 4px;
+    position: relative;
+}
+
+.qbo-header-item-button:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.qbo-header-item-icon {
+    width: 24px;
+    height: 24px;
+    color: #6b6c72;
+}
+
+.qbo-icon-label {
+    font-size: 12px;
+    color: #6b6c72;
+    white-space: nowrap;
+}
+
+/* Avatar Button - QBO Style */
+.qbo-oia-btn {
+    padding: 0 8px;
+}
+
+.qbo-user-profile-btn {
+    padding: 0 8px;
+}
+
+.qbo-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    overflow: hidden;
+    position: relative;
+}
+
+.qbo-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Alert Avatar - First avatar with red badge */
+.qbo-avatar-alert {
+    background: linear-gradient(135deg, #ff8a80 0%, #ff5252 100%);
+}
+
+.qbo-avatar-alert::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 10px;
+    height: 10px;
+    background: #e21836;
+    border-radius: 50%;
+    border: 2px solid #fff;
+}
+
+/* Profile Avatar - Final avatar */
+.qbo-avatar-profile {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+
+/* Notification Badge */
+.qbo-notification-badge {
+    position: absolute;
+    top: 8px;
+    right: 4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    background: #e21836;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Badge Dot - New notification indicator */
+.qbo-badge-dot {
+    position: absolute;
+    top: 10px;
+    right: 6px;
+    width: 8px;
+    height: 8px;
+    background: #2ca01c;
+    border-radius: 50%;
+}
+
+/* Mobile Menu Button */
+.qbo-mobile-menu-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: none;
+    color: #393a3d;
+    cursor: pointer;
+    margin-right: 8px;
+}
+
+@media (max-width: 768px) {
+    .qbo-mobile-menu-btn {
+        display: flex;
+    }
+
+    .qbo-container-left {
+        padding-left: 8px;
+    }
+
+    .qbo-logo-wrapper .qbo-logo-img {
+        display: none;
+    }
+
+    .qbo-header-divider {
+        display: none;
+    }
+
+    .qbo-company-name {
+        display: none;
+    }
+
+    .qbo-container-center {
+        display: none;
+    }
+
+    .qbo-icon-label {
+        display: none;
+    }
+}
+
+/* Legacy class support - keep for backward compatibility */
 .qbo-header-search {
     flex: 1;
     max-width: 600px;

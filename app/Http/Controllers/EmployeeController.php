@@ -108,7 +108,10 @@ class EmployeeController extends Controller
                 
                 if ($validator->fails()) {
                     $messages = $validator->getMessageBag();
-                    return response()->json(['message' => $messages->first()], 422);
+                    if ($request->ajax() || $request->wantsJson()) {
+                        return response()->json(['message' => $messages->first()], 422);
+                    }
+                    return redirect()->back()->withInput()->with('error', $messages->first());
                 }
                 
                 // Build full name from parts
@@ -123,6 +126,7 @@ class EmployeeController extends Controller
                     'display_name' => $fullName,
                     'email' => $request->email,
                     'hire_date' => $request->hire_date,
+                    'company_doj' => $request->hire_date,
                     'status' => 'Active',
                     'is_active' => 1,
                     'employee_id' => $this->employeeNumber(),
@@ -133,7 +137,11 @@ class EmployeeController extends Controller
                 Utility::makeActivityLog(\Auth::user()->id, 'Employee', $employee->id, 'Create Employee', $employee->name);
                 \DB::commit();
                 
-                return response()->json(['success' => true, 'message' => __('Employee successfully created.')]);
+                // Return appropriate response based on request type
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json(['success' => true, 'message' => __('Employee successfully created.')]);
+                }
+                return redirect()->route('employee.index')->with('success', __('Employee successfully created.'));
             }
             
             // Original full form validation
@@ -372,7 +380,10 @@ class EmployeeController extends Controller
         }
         } catch (\Exception $e) {
             \DB::rollback();
-            return redirect()->back()->with('error', $e);
+            if (request()->ajax() || request()->wantsJson()) {
+                return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+            }
+            return redirect()->back()->with('error', $e->getMessage());
         }
     }
 
@@ -443,6 +454,10 @@ class EmployeeController extends Controller
                         'state' => $request->state,
                         'zip' => $request->zip,
                         'mailing_address_same' => $request->has('mailing_address_same') ? 1 : 0,
+                        'mailing_address' => $request->mailing_address,
+                        'mailing_city' => $request->mailing_city,
+                        'mailing_state' => $request->mailing_state,
+                        'mailing_zip' => $request->mailing_zip,
                         'birth_date' => $request->birth_date,
                         'dob' => $request->birth_date,
                         'gender' => $request->gender,
@@ -476,7 +491,11 @@ class EmployeeController extends Controller
                 
                 Utility::makeActivityLog(\Auth::user()->id, 'Employee', $employee->id, 'Update Employee', $employee->name);
                 
-                return redirect()->back()->with('success', __('Employee updated successfully.'));
+                // Return appropriate response based on request type
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json(['success' => true, 'message' => __('Employee updated successfully.')]);
+                }
+                return redirect()->route('employee.show', Crypt::encrypt($employee->id))->with('success', __('Employee updated successfully.'));
             }
             
             // Original full form validation for legacy edit page

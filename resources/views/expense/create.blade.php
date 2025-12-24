@@ -2461,7 +2461,8 @@
         .modal-footer-custom {
             background: #ffffff;
             padding: 0.75rem 1.5rem;
-            border-top: 1px solid #dee2e6;
+            border-top: 1px solid #e4e4e7;
+            box-shadow: 0 -2px 4px rgba(0, 0, 0, .1);
             display: flex;
             justify-content: space-between;
             /* Left / center / right */

@@ -336,13 +336,8 @@ class OpenInvoiceList extends DataTable
                     WHERE invoice_products.invoice_id = invoices.id
                 ) AS subtotal'),
 
-                // Tax
-                DB::raw('(
-                    SELECT IFNULL(SUM((price * quantity - discount) * (taxes.rate / 100)), 0)
-                    FROM invoice_products
-                    LEFT JOIN taxes ON FIND_IN_SET(taxes.id, invoice_products.tax) > 0
-                    WHERE invoice_products.invoice_id = invoices.id
-                ) AS total_tax'),
+                // Tax - use sales_tax_amount directly from invoices table
+                DB::raw('IFNULL(invoices.sales_tax_amount, 0) AS total_tax'),
 
                 // Payments (already includes credit memo applications from QBO)
                 DB::raw('(
@@ -358,10 +353,7 @@ class OpenInvoiceList extends DataTable
                          FROM invoice_products
                          WHERE invoice_products.invoice_id = invoices.id)
                         +
-                        (SELECT IFNULL(SUM((price * quantity - discount) * (taxes.rate / 100)), 0)
-                         FROM invoice_products
-                         LEFT JOIN taxes ON FIND_IN_SET(taxes.id, invoice_products.tax) > 0
-                         WHERE invoice_products.invoice_id = invoices.id)
+                        IFNULL(invoices.sales_tax_amount, 0)
                     )
                     -
                     (SELECT IFNULL(SUM(amount), 0)

@@ -94,7 +94,7 @@
 }
 .qbo-btn-cancel {
     background: #fff;
-    border: 2px solid #2ca01c;
+    border: none !important;
     color: #2ca01c;
     font-weight: 600;
     padding: 10px 24px;
@@ -209,6 +209,28 @@
     color: #0077c5;
 }
 
+/* SSN Validation Error Styles */
+.qbo-ssn-error {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #d52b1e;
+    font-size: 13px;
+    margin-top: 8px;
+    margin-bottom: 16px;
+}
+.qbo-ssn-error i {
+    color: #d52b1e;
+}
+.qbo-form-input.error {
+    border-color: #d52b1e;
+    background-color: #fff5f5;
+}
+.qbo-form-input.error:focus {
+    border-color: #d52b1e;
+    box-shadow: 0 0 0 2px rgba(213,43,30,0.15);
+}
+
 @media (max-width: 768px) {
     .qbo-content-area { padding: 70px 20px 80px 20px; }
     .qbo-form-row { flex-direction: column; gap: 16px; }
@@ -314,7 +336,7 @@
                 </div>
             </div>
             
-            <div class="qbo-form-row">
+            <div class="qbo-form-row" style="width: 50vw;">
                 <div class="qbo-form-group">
                     <label class="qbo-form-label">{{ __('Address') }}</label>
                     <div style="position: relative;">
@@ -324,7 +346,7 @@
                 </div>
             </div>
             
-            <div class="qbo-form-row">
+            <div class="qbo-form-row" style="width: 50vw;">
                 <div class="qbo-form-group">
                     <label class="qbo-form-label">{{ __('City') }}</label>
                     <input type="text" name="city" class="qbo-form-input" value="{{ $employee->city }}">
@@ -345,6 +367,37 @@
             <div class="qbo-checkbox-row">
                 <input type="checkbox" name="mailing_address_same" id="mailing_address_same" value="1" {{ $employee->mailing_address_same ? 'checked' : '' }}>
                 <label for="mailing_address_same">{{ __('Mailing address is the same') }}</label>
+            </div>
+            
+            {{-- Mailing Address Section (hidden when checkbox is checked) --}}
+            <div id="mailing_address_section" style="{{ $employee->mailing_address_same ? 'display: none;' : '' }}">
+                <div class="qbo-form-row" style="width: 50vw;">
+                    <div class="qbo-form-group">
+                        <label class="qbo-form-label required">{{ __('Mailing address') }}</label>
+                        <div style="position: relative;">
+                            <i class="ti ti-search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #6b6c72;"></i>
+                            <input type="text" name="mailing_address" class="qbo-form-input" style="padding-left: 36px;" value="{{ $employee->mailing_address }}" placeholder="{{ __('Search by address') }}">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="qbo-form-row" style="width: 50vw;">
+                    <div class="qbo-form-group">
+                        <label class="qbo-form-label required">{{ __('City') }}</label>
+                        <input type="text" name="mailing_city" class="qbo-form-input" value="{{ $employee->mailing_city }}">
+                    </div>
+                    <div class="qbo-form-group">
+                        <label class="qbo-form-label required">{{ __('State') }}</label>
+                        <select name="mailing_state" class="qbo-form-select">
+                            <option value="">{{ __('Select') }}</option>
+                            <option value="{{ $employee->mailing_state }}" selected>{{ $employee->mailing_state }}</option>
+                        </select>
+                    </div>
+                    <div class="qbo-form-group">
+                        <label class="qbo-form-label required">{{ __('ZIP code') }}</label>
+                        <input type="text" name="mailing_zip" class="qbo-form-input" value="{{ $employee->mailing_zip }}">
+                    </div>
+                </div>
             </div>
             
             <div class="qbo-form-row">
@@ -369,12 +422,15 @@
             <div class="qbo-form-row">
                 <div class="qbo-form-group medium">
                     <label class="qbo-form-label">{{ __('Social Security number') }}</label>
-                    <input type="text" name="ssn" class="qbo-form-input" placeholder="XXX-XX-XXXX" value="{{ $employee->ssn }}">
+                    <input type="text" name="ssn" id="ssn" class="qbo-form-input" placeholder="XXX-XX-XXXX" value="{{ $employee->ssn }}">
                 </div>
                 <div class="qbo-form-group medium">
                     <label class="qbo-form-label">{{ __('Confirm Social Security number') }}</label>
-                    <input type="text" name="ssn_confirm" class="qbo-form-input" placeholder="XXX-XX-XXXX">
+                    <input type="text" name="ssn_confirm" id="ssn_confirm" class="qbo-form-input" placeholder="XXX-XX-XXXX">
                 </div>
+            </div>
+            <div id="ssn_error" class="qbo-ssn-error" style="display: none;">
+                <i class="ti ti-alert-triangle"></i> {{ __("Numbers don't match. Try again.") }}
             </div>
             <a href="#" class="qbo-link">{{ __('What if they only have an ITIN?') }}</a>
         </div>
@@ -391,3 +447,42 @@
     </form>
 </div>
 @endsection
+
+@push('script-page')
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Mailing Address Toggle
+    const mailingCheckbox = document.getElementById('mailing_address_same');
+    const mailingSection = document.getElementById('mailing_address_section');
+    
+    if (mailingCheckbox && mailingSection) {
+        mailingCheckbox.addEventListener('change', function() {
+            mailingSection.style.display = this.checked ? 'none' : 'block';
+        });
+    }
+    
+    // SSN Validation
+    const ssnInput = document.getElementById('ssn');
+    const ssnConfirm = document.getElementById('ssn_confirm');
+    const ssnError = document.getElementById('ssn_error');
+    
+    if (ssnInput && ssnConfirm && ssnError) {
+        function validateSSN() {
+            const ssn = ssnInput.value.trim();
+            const confirm = ssnConfirm.value.trim();
+            
+            if (confirm.length > 0 && ssn !== confirm) {
+                ssnConfirm.classList.add('error');
+                ssnError.style.display = 'flex';
+            } else {
+                ssnConfirm.classList.remove('error');
+                ssnError.style.display = 'none';
+            }
+        }
+        
+        ssnInput.addEventListener('input', validateSSN);
+        ssnConfirm.addEventListener('input', validateSSN);
+    }
+});
+</script>
+@endpush
