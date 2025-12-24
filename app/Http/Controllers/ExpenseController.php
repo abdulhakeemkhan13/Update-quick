@@ -105,26 +105,36 @@ class ExpenseController extends Controller
 
             $status = Bill::$statues;
 
-            $query = Bill::where('type', '=', 'Expense')
-                ->where('created_by', '=', \Auth::user()->creatorId());
-            if (!empty($request->vender)) {
-                $query->where('vender_id', '=', $request->vender);
-            }
-            if (count(explode('to', $request->bill_date)) > 1) {
-                $date_range = explode(' to ', $request->bill_date);
-                $query->whereBetween('bill_date', $date_range);
-            } elseif (!empty($request->bill_date)) {
-                $date_range = [$request->date, $request->bill_date];
-                $query->whereBetween('bill_date', $date_range);
-            }
+            // Get filter values from request
+            $type = $request->get('txn_type', 'all');
+            $vendorId = $request->get('vender', '');
+            $statusFilter = $request->get('status', 'all');
+            $startDate = $request->get('start_date', \Carbon\Carbon::now()->subMonths(12)->toDateString());
+            $endDate = $request->get('end_date', \Carbon\Carbon::now()->toDateString());
 
-            if (!empty($request->category)) {
-                $query->where('category_id', '=', $request->category);
-            }
+            // Get transactions using the helper class
+            $dataHelper = new \App\DataTables\ExpenseTransactionsDataTable();
+            $dataHelper->type = $type;
+            $dataHelper->vendorId = $vendorId;
+            $dataHelper->status = $statusFilter;
+            $dataHelper->startDate = $startDate;
+            $dataHelper->endDate = $endDate;
+            
+            $transactions = $dataHelper->getTransactions();
+            $totalAmount = $dataHelper->calculateTotal($transactions);
 
-            $expenses = $query->with(['category'])->get();
+            // Type options for filter dropdown
+            $typeOptions = [
+                'all' => __('All transactions'),
+                'expense' => __('Expense'),
+                'bill' => __('Bill'),
+                'bill_payment' => __('Bill payment'),
+                'check' => __('Check'),
+                'purchase_order' => __('Purchase order'),
+                'vendor_credit' => __('Vendor credit'),
+            ];
 
-            return view('expense.index', compact('expenses', 'vender', 'status', 'category'));
+            return view('expense.index', compact('vender', 'status', 'category', 'transactions', 'totalAmount', 'typeOptions', 'type'));
         } else {
             return redirect()->back()->with('error', __('Permission Denied.'));
         }

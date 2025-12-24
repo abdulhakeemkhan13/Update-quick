@@ -45,7 +45,7 @@
             'icon' => 'https://asset-service-cdn-prdasset-prd.a.intuit.com/navigationfusionga/sales-payments/1/0/0/sales-payments.svg',
             'items' => [
                 ['key' => 'overview', 'label' => 'Overview', 'route' => 'invoice.overview'],
-                ['key' => 'sales_transactions', 'label' => 'Sales transactions', 'route' => ''],
+                ['key' => 'sales_transactions', 'label' => 'Sales transactions', 'route' => 'sales.transactions.index'],
                 ['key' => 'invoices', 'label' => 'Invoices', 'route' => 'invoice.index'],
                 ['key' => 'recurring_payments', 'label' => 'Recurring payments', 'route' => ''],
                 ['key' => 'sales_receipts', 'label' => 'Sales receipts', 'route' => 'sales-receipt.index'],

@@ -4,175 +4,210 @@
     $company_logo = $setting['company_logo'] ?? 'logo-dark.png';
     $company_name = $setting['company_name'] ?? 'My Company';
 @endphp
-<header class="qbo-header" id="qboHeader">
-    {{-- Logo & Company Name Section --}}
-    <div class="qbo-header-brand">
-        {{-- Mobile Menu Toggle --}}
-        <button class="qbo-mobile-menu-btn d-md-none" id="qboMobileMenuBtn">
-            <i class="ti ti-menu-2"></i>
-        </button>
-        
-        {{-- Logo --}}
-        <a href="{{ route('dashboard') }}" class="qbo-header-logo">
-            <img src="{{ asset(Storage::url('uploads/logo/')) }}/{{ $company_logo }}" alt="{{ $company_name }}" class="qbo-logo-img">
-        </a>
-        
-        {{-- Company Name --}}
-        <a href="{{ route('dashboard') }}" class="qbo-header-company-name">
-            {{ $company_name }}
-        </a>
-    </div>
-
-    {{-- Search Bar --}}
-    <div class="qbo-header-search">
-        <div class="qbo-search-wrapper">
-            <i class="ti ti-search qbo-search-icon"></i>
-            <input type="text" class="qbo-search-input" placeholder="Navigate or search for transactions, contacts, reports, and more" id="qboGlobalSearch" autocomplete="off">
-            <kbd class="qbo-search-shortcut">/</kbd>
-            {{-- Results Dropdown --}}
-            <div id="qboSearchResults" class="qbo-search-results"></div>
-        </div>
-    </div>
-
-    {{-- Header Right Actions - Exact QBO Order --}}
-    <div class="qbo-header-actions">
-        {{-- User/Account Alert (Red badge like QBO) --}}
-        <div class="qbo-header-action">
-            <button class="qbo-action-btn qbo-user-alert-btn" title="Account alerts">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10ZM12 14c-5.33 0-8 2.67-8 8h16c0-5.33-2.67-8-8-8Z" fill="currentColor"/>
-                </svg>
-                <span class="qbo-alert-badge"></span>
+<header class="qbo-header" id="qboHeader" role="banner">
+    <nav class="qbo-header-nav" aria-label="Tools">
+        {{-- Left Container: Logo + Divider + Company Name --}}
+        <div class="qbo-header-container qbo-container-left">
+            {{-- Mobile Menu Toggle --}}
+            <button class="qbo-mobile-menu-btn d-md-none" id="qboMobileMenuBtn">
+                <i class="ti ti-menu-2"></i>
             </button>
-        </div>
-
-        {{-- QB Assistant / Message --}}
-        <div class="qbo-header-action">
-            <button class="qbo-action-btn" title="QB Assistant">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2Z" fill="currentColor"/>
-                </svg>
-            </button>
-        </div>
-
-        {{-- Notifications Bell --}}
-        <div class="qbo-header-action">
-            <button class="qbo-action-btn" id="qboNotificationsBtn" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2Zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2Z" fill="currentColor"/>
-                </svg>
-                @if(isset($unseenCounter) && $unseenCounter > 0)
-                    <span class="qbo-badge">{{ $unseenCounter }}</span>
-                @endif
-            </button>
-            <div class="dropdown-menu dropdown-menu-end qbo-dropdown-menu qbo-notifications-dropdown">
-                <div class="qbo-dropdown-header">
-                    <h6>Notifications</h6>
-                    <a href="#" class="qbo-mark-all-read">Mark all as read</a>
-                </div>
-                <div class="qbo-dropdown-body">
-                    @if(isset($notifications) && count($notifications) > 0)
-                        @foreach($notifications as $notification)
-                            <a href="#" class="qbo-notification-item">
-                                <div class="qbo-notification-icon">
-                                    <i class="ti ti-bell"></i>
-                                </div>
-                                <div class="qbo-notification-content">
-                                    <p>{{ $notification->data['title'] ?? 'Notification' }}</p>
-                                    <span class="qbo-notification-time">{{ $notification->created_at->diffForHumans() }}</span>
-                                </div>
-                            </a>
-                        @endforeach
-                    @else
-                        <div class="qbo-empty-state">
-                            <i class="ti ti-bell-off"></i>
-                            <p>No new notifications</p>
-                        </div>
-                    @endif
-                </div>
-                <div class="qbo-dropdown-footer">
-                    <a href="#">View all notifications</a>
-                </div>
-            </div>
-        </div>
-
-        {{-- Settings Gear --}}
-        <div class="qbo-header-action">
-            <button class="qbo-action-btn" id="qboSettingsBtn" data-bs-toggle="dropdown" aria-expanded="false" title="Settings">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58ZM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6Z" fill="currentColor"/>
-                </svg>
-            </button>
-            <div class="dropdown-menu dropdown-menu-end qbo-dropdown-menu">
-                <a class="dropdown-item" href="{{ route('settings') }}">
-                    <i class="ti ti-settings"></i> Company Settings
-                </a>
-                <a class="dropdown-item" href="{{ route('chart-of-account.index') }}">
-                    <i class="ti ti-list-tree"></i> Chart of Accounts
-                </a>
-                <a class="dropdown-item" href="{{ route('payment-terms.index') }}">
-                    <i class="ti ti-calendar"></i> Payment Terms
-                </a>
-                <div class="dropdown-divider"></div>
-                <a class="dropdown-item" href="{{ route('users.index') }}">
-                    <i class="ti ti-users"></i> Manage Users
-                </a>
-            </div>
-        </div>
-
-        {{-- Help --}}
-        <div class="qbo-header-action">
-            <button class="qbo-action-btn" id="qboHelpBtn" title="Help">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm1 17h-2v-2h2v2Zm2.07-7.75-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25Z" fill="currentColor"/>
-                </svg>
-            </button>
-        </div>
-
-        {{-- User Profile --}}
-        <div class="qbo-header-action qbo-user-menu">
-            <button class="qbo-user-btn" data-bs-toggle="dropdown" aria-expanded="false" title="Profile">
-                @if(Auth::user()->avatar)
-                    <img src="{{ asset(Storage::url('uploads/avatar/')) }}/{{ Auth::user()->avatar }}" alt="Avatar" class="qbo-user-avatar">
-                @else
-                    <div class="qbo-user-initial">
-                        {{ strtoupper(substr(Auth::user()->name, 0, 1)) }}
+            
+            {{-- Logo --}}
+            <div class="qbo-header-item">
+                <a href="{{ route('dashboard') }}" class="qbo-app-logo" aria-label="Dashboard">
+                    <div class="qbo-logo-wrapper">
+                        {{-- QBO Ball Logo SVG --}}
+                        <svg class="qbo-logo-icon" width="32" height="32" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect width="40" height="40" rx="4" fill="#2CA01C"/>
+                            <path d="M20 8C13.373 8 8 13.373 8 20C8 26.627 13.373 32 20 32C26.627 32 32 26.627 32 20C32 13.373 26.627 8 20 8ZM24.5 25C24.5 25.828 23.828 26.5 23 26.5H17C16.172 26.5 15.5 25.828 15.5 25V15C15.5 14.172 16.172 13.5 17 13.5H23C23.828 13.5 24.5 14.172 24.5 15V25Z" fill="white"/>
+                        </svg>
+                        {{-- Company Logo Image --}}
+                        <img src="{{ asset(Storage::url('uploads/logo/')) }}/{{ $company_logo }}" alt="{{ $company_name }}" class="qbo-logo-img">
                     </div>
-                @endif
-            </button>
-            <div class="dropdown-menu dropdown-menu-end qbo-dropdown-menu qbo-user-dropdown">
-                <div class="qbo-user-info">
-                    <div class="qbo-user-avatar-lg">
+                </a>
+            </div>
+            
+            {{-- Vertical Divider --}}
+            <div class="qbo-header-item">
+                <div class="qbo-header-divider" role="separator"></div>
+            </div>
+            
+            {{-- Company Name --}}
+            <div class="qbo-header-item">
+                <span class="qbo-company-name" role="heading" aria-level="2">
+                    {{ $company_name ?: 'Sample Company' }}
+                </span>
+            </div>
+        </div>
+
+        {{-- Center Container: Search Bar --}}
+        <div class="qbo-header-container qbo-container-center">
+            <div class="qbo-header-item">
+                <div class="qbo-global-search-container" role="search">
+                    <div class="qbo-search-input-wrapper">
+                        {{-- Search Icon SVG (exact QBO) --}}
+                        <svg class="qbo-search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                            <path d="m21.694 20.307-6.239-6.258A7.495 7.495 0 0 0 9.515 2H9.5a7.5 7.5 0 1 0 4.535 13.465l6.24 6.259a1.001 1.001 0 0 0 1.416-1.413l.003-.004ZM5.609 13.38A5.5 5.5 0 0 1 9.5 4h.009a5.5 5.5 0 1 1-3.9 9.384v-.004Z" fill="currentColor"></path>
+                        </svg>
+                        <input type="search" 
+                               id="qboGlobalSearch" 
+                               class="qbo-search-input" 
+                               placeholder="Navigate or search for transactions, contacts, reports, and more" 
+                               autocomplete="off"
+                               aria-label="search">
+                    </div>
+                    {{-- Search Results Dropdown --}}
+                    <div id="qboSearchResults" class="qbo-search-results"></div>
+                </div>
+            </div>
+        </div>
+
+        {{-- Right Container: Action Icons - EXACT QBO ORDER --}}
+        <div class="qbo-header-container qbo-container-right">
+            {{-- 1. User Account Avatar (with red badge) --}}
+            <div class="qbo-header-item">
+                <button type="button" class="qbo-header-item-button qbo-oia-btn" title="Intuit account">
+                    <span class="qbo-avatar qbo-avatar-alert">
                         @if(Auth::user()->avatar)
                             <img src="{{ asset(Storage::url('uploads/avatar/')) }}/{{ Auth::user()->avatar }}" alt="Avatar">
                         @else
-                            <div class="qbo-user-initial-lg">
-                                {{ strtoupper(substr(Auth::user()->name, 0, 1)) }}
+                            {{ strtoupper(substr(Auth::user()->name, 0, 1)) }}
+                        @endif
+                    </span>
+                </button>
+            </div>
+
+            {{-- 2. QB Assistant / Message - QBO Exact Icon --}}
+            <div class="qbo-header-item" title="QB Assistant">
+                <button class="qbo-header-item-button" aria-label="QB Assistant">
+                    {{-- QBO Chat/Monitor Icon --}}
+<svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="#6b6c72" focusable="false" aria-hidden="true" class="global-header-item-icon"><path fill-rule="evenodd" clip-rule="evenodd" d="M11 2a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H9v2a1 1 0 0 0 1 1h1a3 3 0 0 1 3-3h5a3 3 0 0 1 3 3v2a3 3 0 0 1-3 3h-5a3 3 0 0 1-3-3h-1a3 3 0 0 1-3-3v-2H5a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3h6Zm3 14a1 1 0 0 0-1 1v2a1 1 0 0 0 .898.995L14 20h5l.102-.005a1 1 0 0 0 .893-.893L20 19v-2a1 1 0 0 0-1-1h-5ZM5 4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H5Z" fill="currentColor"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M19 4a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3h-1a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1Zm-1 2a1 1 0 0 0-1 1v3l.005.102a1 1 0 0 0 .893.893L18 11h1l.102-.005A1 1 0 0 0 20 10V7a1 1 0 0 0-1-1h-1Z" fill="currentColor"></path></svg>
+                </button>
+            </div>
+
+            {{-- 3. Notifications Bell --}}
+            <div class="qbo-header-item" title="Notifications">
+                <button class="qbo-header-item-button qbo-notifications-btn" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Notifications">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="qbo-header-item-icon">
+                        <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" fill="currentColor"/>
+                    </svg>
+                    @if(isset($unseenCounter) && $unseenCounter > 0)
+                        <span class="qbo-notification-badge">{{ $unseenCounter }}</span>
+                    @endif
+                </button>
+                <div class="dropdown-menu dropdown-menu-end qbo-dropdown-menu qbo-notifications-dropdown">
+                    <div class="qbo-dropdown-header">
+                        <h6>Notifications</h6>
+                        <a href="#" class="qbo-mark-all-read">Mark all as read</a>
+                    </div>
+                    <div class="qbo-dropdown-body">
+                        @if(isset($notifications) && count($notifications) > 0)
+                            @foreach($notifications as $notification)
+                                <a href="#" class="qbo-notification-item">
+                                    <div class="qbo-notification-icon">
+                                        <i class="ti ti-bell"></i>
+                                    </div>
+                                    <div class="qbo-notification-content">
+                                        <p>{{ $notification->data['title'] ?? 'Notification' }}</p>
+                                        <span class="qbo-notification-time">{{ $notification->created_at->diffForHumans() }}</span>
+                                    </div>
+                                </a>
+                            @endforeach
+                        @else
+                            <div class="qbo-empty-state">
+                                <i class="ti ti-bell-off"></i>
+                                <p>No new notifications</p>
                             </div>
                         @endif
                     </div>
-                    <div class="qbo-user-details">
-                        <h6>{{ Auth::user()->name }}</h6>
-                        <p>{{ Auth::user()->email }}</p>
+                    <div class="qbo-dropdown-footer">
+                        <a href="#">View all notifications</a>
                     </div>
                 </div>
-                <div class="dropdown-divider"></div>
-                <a class="dropdown-item" href="{{ route('profile') }}">
-                    <i class="ti ti-user"></i> My Profile
-                </a>
-                <a class="dropdown-item" href="{{ route('settings') }}">
-                    <i class="ti ti-settings"></i> Settings
-                </a>
-                <div class="dropdown-divider"></div>
-                <a class="dropdown-item" href="#" onclick="event.preventDefault(); document.getElementById('logout-form').submit();">
-                    <i class="ti ti-logout"></i> Sign Out
-                </a>
-                <form id="logout-form" action="{{ route('logout') }}" method="POST" class="d-none">
-                    @csrf
-                </form>
+            </div>
+
+            {{-- 4. Settings Gear --}}
+            <div class="qbo-header-item" title="Settings">
+                <button class="qbo-header-item-button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Settings">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="qbo-header-item-icon">
+                        <path d="M12.024 7.982h-.007a4 4 0 1 0 0 8 4 4 0 1 0 .007-8Zm-.006 6a2 2 0 0 1 .002-4 2 2 0 1 1 0 4h-.002Z" fill="currentColor"></path>
+                        <path d="m20.444 13.4-.51-.295a7.557 7.557 0 0 0 0-2.214l.512-.293a2.005 2.005 0 0 0 .735-2.733l-1-1.733a2.005 2.005 0 0 0-2.731-.737l-.512.295a8.071 8.071 0 0 0-1.915-1.113v-.59a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v.6a8.016 8.016 0 0 0-1.911 1.1l-.52-.3a2 2 0 0 0-2.725.713l-1 1.73a2 2 0 0 0 .728 2.733l.509.295a7.75 7.75 0 0 0-.004 2.22l-.51.293a2 2 0 0 0-.738 2.73l1 1.732a2 2 0 0 0 2.73.737l.513-.295A8.07 8.07 0 0 0 9.01 19.39v.586a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V19.4a8.014 8.014 0 0 0 1.918-1.107l.51.3a2 2 0 0 0 2.734-.728l1-1.73a2 2 0 0 0-.728-2.735Zm-2.593-2.8a5.8 5.8 0 0 1 0 2.78 1 1 0 0 0 .472 1.1l1.122.651-1 1.73-1.123-.65a1 1 0 0 0-1.187.137 6.02 6.02 0 0 1-2.4 1.387 1 1 0 0 0-.716.957v1.294h-2v-1.293a1 1 0 0 0-.713-.96 5.991 5.991 0 0 1-2.4-1.395 1.006 1.006 0 0 0-1.188-.142l-1.125.648-1-1.733 1.125-.647a1 1 0 0 0 .475-1.1 5.945 5.945 0 0 1-.167-1.387c.003-.467.06-.933.17-1.388a1 1 0 0 0-.471-1.1l-1.123-.65 1-1.73 1.124.651c.019.011.04.01.06.02a.97.97 0 0 0 .186.063.9.9 0 0 0 .2.04c.02 0 .039.011.059.011a1.08 1.08 0 0 0 .136-.025.98.98 0 0 0 .17-.032c.057-.024.111-.053.163-.087a.986.986 0 0 0 .157-.1c.015-.013.034-.017.048-.03a6.011 6.011 0 0 1 2.4-1.39.453.453 0 0 0 .049-.026.938.938 0 0 0 .183-.1.87.87 0 0 0 .15-.1.953.953 0 0 0 .122-.147c.038-.049.071-.1.1-.156a1.01 1.01 0 0 0 .055-.173c.02-.065.034-.132.04-.2 0-.018.012-.034.012-.053V3.981h2v1.294a1 1 0 0 0 .713.96c.897.273 1.72.75 2.4 1.395a1 1 0 0 0 1.186.141l1.126-.647 1 1.733-1.125.647a1 1 0 0 0-.465 1.096Z" fill="currentColor"></path>
+                    </svg>
+                </button>
+                <div class="dropdown-menu dropdown-menu-end qbo-dropdown-menu">
+                    <a class="dropdown-item" href="{{ route('settings') }}">
+                        <i class="ti ti-settings"></i> Company Settings
+                    </a>
+                    <a class="dropdown-item" href="{{ route('chart-of-account.index') }}">
+                        <i class="ti ti-list-tree"></i> Chart of Accounts
+                    </a>
+                    <a class="dropdown-item" href="{{ route('payment-terms.index') }}">
+                        <i class="ti ti-calendar"></i> Payment Terms
+                    </a>
+                    <div class="dropdown-divider"></div>
+                    <a class="dropdown-item" href="{{ route('users.index') }}">
+                        <i class="ti ti-users"></i> Manage Users
+                    </a>
+                </div>
+            </div>
+
+            {{-- 5. Help - QBO Exact Icon --}}
+            <div class="qbo-header-item" title="Help">
+                <button type="button" class="qbo-header-item-button" aria-label="Help">
+                    {{-- QBO Help/Question Mark Circle Outline Icon --}}
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="qbo-header-item-icon">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor"/>
+                        <path d="M12.5 7.09c.18.04.34.1.48.19.14.09.27.19.38.32.11.13.19.27.25.43.06.15.09.32.09.49 0 .28-.07.53-.21.74-.14.21-.35.4-.63.57-.14.08-.25.18-.33.28-.08.1-.14.21-.17.33-.03.11-.04.23-.04.35v.41h-1.64v-.55c0-.26.04-.49.12-.7.08-.21.19-.38.33-.53.14-.15.3-.28.48-.39.16-.09.29-.2.38-.32.09-.12.14-.27.14-.45 0-.14-.03-.27-.1-.37-.07-.1-.15-.19-.24-.25-.1-.06-.2-.11-.32-.14-.12-.03-.23-.04-.34-.04-.27 0-.5.06-.7.19-.2.13-.38.3-.54.51l-1.17-.88c.26-.38.59-.68.99-.89.4-.21.88-.31 1.44-.31.28 0 .55.04.82.11zm-1.63 5.73h1.64v1.64h-1.64v-1.64z" fill="currentColor"/>
+                    </svg>
+                </button>
+            </div>
+
+            {{-- 6. User Profile Avatar (final) --}}
+            <div class="qbo-header-item">
+                <button type="button" class="qbo-header-item-button qbo-user-profile-btn" data-bs-toggle="dropdown" aria-expanded="false" aria-label="User profile">
+                    <span class="qbo-avatar qbo-avatar-profile">
+                        @if(Auth::user()->avatar)
+                            <img src="{{ asset(Storage::url('uploads/avatar/')) }}/{{ Auth::user()->avatar }}" alt="Avatar">
+                        @else
+                            {{ strtoupper(substr(Auth::user()->name, 0, 1)) }}
+                        @endif
+                    </span>
+                </button>
+                <div class="dropdown-menu dropdown-menu-end qbo-dropdown-menu qbo-user-dropdown">
+                    <div class="qbo-user-info">
+                        <div class="qbo-user-avatar-lg">
+                            @if(Auth::user()->avatar)
+                                <img src="{{ asset(Storage::url('uploads/avatar/')) }}/{{ Auth::user()->avatar }}" alt="Avatar">
+                            @else
+                                <div class="qbo-user-initial-lg">
+                                    {{ strtoupper(substr(Auth::user()->name, 0, 1)) }}
+                                </div>
+                            @endif
+                        </div>
+                        <div class="qbo-user-details">
+                            <h6>{{ Auth::user()->name }}</h6>
+                            <p>{{ Auth::user()->email }}</p>
+                        </div>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                    <a class="dropdown-item" href="{{ route('profile') }}">
+                        <i class="ti ti-user"></i> My Profile
+                    </a>
+                    <a class="dropdown-item" href="{{ route('settings') }}">
+                        <i class="ti ti-settings"></i> Settings
+                    </a>
+                    <div class="dropdown-divider"></div>
+                    <a class="dropdown-item" href="#" onclick="event.preventDefault(); document.getElementById('logout-form').submit();">
+                        <i class="ti ti-logout"></i> Sign Out
+                    </a>
+                    <form id="logout-form" action="{{ route('logout') }}" method="POST" class="d-none">
+                        @csrf
+                    </form>
+                </div>
             </div>
         </div>
-    </div>
+    </nav>
 </header>
 <style>
 /* Search Results Style */

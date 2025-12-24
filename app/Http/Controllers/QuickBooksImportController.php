@@ -3499,6 +3499,14 @@ class QuickBooksImportController extends Controller
             $maxResults = 50;
             $allTaxRates = collect();
 
+
+            // TODO: Implement tax import logic
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Tax import not yet implemented.',
+            ]);
+
+
             do {
                 $query = "SELECT * FROM TaxRate STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
                 $response = $this->qbController->runQuery($query);

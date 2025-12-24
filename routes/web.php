@@ -106,6 +106,7 @@ use App\Http\Controllers\PaytabController;
 use App\Http\Controllers\PaytmPaymentController;
 use App\Http\Controllers\PaytrController;
 use App\Http\Controllers\SalesReceipt;
+use App\Http\Controllers\RefundReceiptController;
 use App\Http\Controllers\ReceivePaymentController;
 use App\Http\Controllers\ReceiveBillPaymentController;
 use App\Http\Controllers\sync\TrialBalanceController;
@@ -709,6 +710,15 @@ Route::group(['middleware' => ['verified']], function () {
     Route::get('sales-receipt/pdf/{id}', [SalesReceipt::class, 'pdf'])->name('sales-receipt.pdf')->middleware(['auth', 'XSS']);
     Route::get('sales-receipt/link/copy/{id}', [SalesReceipt::class, 'linkCopy'])->name('sales-receipt.link.copy')->middleware(['auth', 'XSS']);
 
+    // Refund Receipt Routes
+    Route::resource('refund-receipt', RefundReceiptController::class)->middleware(['auth', 'XSS']);
+
+    // Delayed Credit Routes
+    Route::resource('delayed-credit', \App\Http\Controllers\DelayedCreditController::class)->middleware(['auth', 'XSS']);
+
+    // Delayed Charge Routes
+    Route::resource('delayed-charge', \App\Http\Controllers\DelayedChargeController::class)->middleware(['auth', 'XSS']);
+
     // Receive Payment routes
     Route::resource('receive-payment', ReceivePaymentController::class)->middleware(['auth', 'XSS']);
     Route::get('receive-payment/create/{customerId?}', [ReceivePaymentController::class, 'create'])->name('receive-payment.create')->middleware(['auth', 'XSS']);
@@ -914,6 +924,8 @@ Route::group(['middleware' => ['verified']], function () {
             ->name('transaction.reccuringtrans');
         Route::get('/transactions/all-sales', [TransactionController::class, 'allSales'])
             ->name('allSales');
+        Route::get('/sales/transactions', [\App\Http\Controllers\SalesTransactionsAllTypesController::class, 'index'])
+            ->name('sales.transactions.index');
 
         Route::prefix('report')->group(function () {
             Route::get('receipts/{invoice?}', [TransactionController::class, 'receipts'])
@@ -2282,6 +2294,53 @@ Route::group(['middleware' => ['verified']], function () {
 
             Route::resource('expense', ExpenseController::class);
             Route::get('expense/create/{cid}', [ExpenseController::class, 'create'])->name('expense.create');
+        }
+    );
+
+    // Pay Down Credit Card Module
+    Route::group(
+        [
+            'middleware' => [
+                'auth',
+                'XSS',
+                'revalidate',
+            ],
+        ],
+        function () {
+            Route::resource('paydowncreditcard', \App\Http\Controllers\PayDownCreditCardController::class);
+        }
+    );
+
+    // Vendor Credit Module
+    Route::group(
+        [
+            'middleware' => [
+                'auth',
+                'XSS',
+                'revalidate',
+            ],
+        ],
+        function () {
+            Route::resource('vendor-credit', VendorCreditController::class);
+        }
+    );
+
+    // Credit Credit Card Module
+    Route::group(
+        [
+            'middleware' => [
+                'auth',
+                'XSS',
+                'revalidate',
+            ],
+        ],
+        function () {
+            Route::get('creditcreditcard/index', [CreditCreditCardController::class, 'index'])->name('creditcreditcard.index');
+            Route::get('creditcreditcard/create/{cid}', [CreditCreditCardController::class, 'create'])->name('creditcreditcard.create');
+            Route::post('creditcreditcard/store', [CreditCreditCardController::class, 'store'])->name('creditcreditcard.store');
+            Route::get('creditcreditcard/{id}/edit', [CreditCreditCardController::class, 'edit'])->name('creditcreditcard.edit');
+            Route::put('creditcreditcard/{id}', [CreditCreditCardController::class, 'update'])->name('creditcreditcard.update');
+            Route::delete('creditcreditcard/{id}', [CreditCreditCardController::class, 'destroy'])->name('creditcreditcard.destroy');
         }
     );
 
