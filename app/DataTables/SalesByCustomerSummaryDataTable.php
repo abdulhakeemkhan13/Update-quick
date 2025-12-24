@@ -66,14 +66,16 @@ class SalesByCustomerSummaryDataTable extends DataTable
             ?? request()->get('endDate')
             ?? date('Y-m-d');
 
-        // Invoice Query
+        // Invoice Query - includes invoice-level total_discount apportioned across products
+        // First, get the count of products per invoice to apportion the discount
         $invoices = DB::table('invoice_products as ip')
             ->join('invoices as i', 'i.id', '=', 'ip.invoice_id')
             ->join('customers as c', 'c.id', '=', 'i.customer_id')
+            ->leftJoin(DB::raw('(SELECT invoice_id, COUNT(*) as product_count FROM invoice_products GROUP BY invoice_id) as ipc'), 'ipc.invoice_id', '=', 'i.id')
             ->select(
                 'c.id as customer_id',
                 'c.name as customer_name',
-                DB::raw('(ip.price * ip.quantity - COALESCE(ip.discount, 0)) as total')
+                DB::raw('(ip.price * ip.quantity - COALESCE(ip.discount, 0) - (COALESCE(i.total_discount, 0) / COALESCE(ipc.product_count, 1))) as total')
             )
             ->where('i.created_by', $ownerId)
             ->whereBetween('i.issue_date', [$start, $end])
@@ -91,8 +93,22 @@ class SalesByCustomerSummaryDataTable extends DataTable
             ->where('cn.created_by', $ownerId)
             ->whereBetween('cn.date', [$start, $end]);
 
+        // Sales Receipt Query
+        $salesReceipts = DB::table('sales_receipt_products as srp')
+            ->join('sales_receipts as sr', 'sr.id', '=', 'srp.sales_receipt_id')
+            ->join('customers as c', 'c.id', '=', 'sr.customer_id')
+            ->leftJoin(DB::raw('(SELECT sales_receipt_id, COUNT(*) as product_count FROM sales_receipt_products GROUP BY sales_receipt_id) as srpc'), 'srpc.sales_receipt_id', '=', 'sr.id')
+            ->select(
+                'c.id as customer_id',
+                'c.name as customer_name',
+                DB::raw('(srp.price * srp.quantity - COALESCE(srp.discount, 0) - (COALESCE(sr.total_discount, 0) / COALESCE(srpc.product_count, 1))) as total')
+            )
+            ->where('sr.created_by', $ownerId)
+            ->whereBetween('sr.issue_date', [$start, $end])
+            ->where('sr.status', '!=', 0);
+
         // Unite Scripts
-        $unionQuery = $invoices->unionAll($creditNotes);
+        $unionQuery = $invoices->unionAll($creditNotes)->unionAll($salesReceipts);
 
         // Final Query to aggregate by customer
         $query = DB::query()->fromSub($unionQuery, 'combined_sales')
