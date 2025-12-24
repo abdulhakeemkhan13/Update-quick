@@ -381,15 +381,30 @@ $(document).ready(function() {
             url: $(this).attr('action'),
             method: 'POST',
             data: $(this).serialize(),
+            dataType: 'json',
             success: function(response) {
-                // Reload page to show new employee
-                window.location.reload();
+                console.log('Employee add response:', response);
+                if (response.success) {
+                    // Reload page to show new employee
+                    window.location.reload();
+                } else {
+                    $btn.prop('disabled', false).text(originalText);
+                    alert(response.message || '{{ __("Error adding employee. Please try again.") }}');
+                }
             },
-            error: function(xhr) {
+            error: function(xhr, status, error) {
+                console.log('Employee add error:', xhr, status, error);
                 $btn.prop('disabled', false).text(originalText);
                 var errorMsg = '{{ __("Error adding employee. Please try again.") }}';
                 if (xhr.responseJSON && xhr.responseJSON.message) {
                     errorMsg = xhr.responseJSON.message;
+                } else if (xhr.responseText) {
+                    // Try to extract error from HTML response
+                    var match = xhr.responseText.match(/class="exception_message"[^>]*>([^<]+)/);
+                    if (match) {
+                        errorMsg = match[1];
+                    }
+                    console.log('Server error response:', xhr.responseText.substring(0, 500));
                 }
                 alert(errorMsg);
             }
