@@ -30,9 +30,10 @@ class QuickBooksFullImportJob implements ShouldQueue
         // 'bills' => 'Importing Bills',
         // 'unappliedPayments' => 'Importing Unapplied Payments',
         // 'expenses' => 'Importing Expenses',
-        // 'estimates' => 'Importing Estimates',
-        // 'deposits' => 'Importing Deposits',
+        // 'estimates' => 'Importing Estimates', not used raw
+        // 'deposits' => 'Importing Deposits', not used raw
         // 'journalReport' => 'Importing Journal Reports',
+        'importSalesReceipts' => 'Importing Sales Receipts',
     ];
 
     protected $userId;
