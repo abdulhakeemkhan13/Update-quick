@@ -176,11 +176,16 @@ class EstimatesByCustomerDataTable extends DataTable
 
     private function calculateProposalAmountRaw($proposal)
     {
-        $totalAmount = 0;
+        // Calculate subtotal from items (price * quantity - discount)
+        $subtotal = 0;
         foreach ($proposal->items as $item) {
-            $totalAmount += ($item->price * $item->quantity) + (($item->price * $item->quantity * $item->tax) / 100) - $item->discount;
+            $subtotal += ($item->price * $item->quantity) - $item->discount;
         }
-        return $totalAmount;
+        
+        // Add total_tax from the proposals table column
+        $totalTax = $proposal->total_tax ?? 0;
+        
+        return $subtotal + $totalTax;
     }
 
     public function query(Proposal $model)
@@ -198,6 +203,7 @@ class EstimatesByCustomerDataTable extends DataTable
                 'proposals.converted_invoice_id',
                 'proposals.is_convert',
                 'proposals.created_by',
+                'proposals.total_tax',
                 'customers.name as customer_name'
             ])
             // Join with customers

@@ -257,7 +257,7 @@ class TransactionListByVendor extends DataTable
             )
             ->join('venders', 'venders.id', '=', 'purchases.vender_id')
             ->where('purchases.created_by', $userId)
-            ->whereNotNull('purchases.txn_id') // Only POs that have been converted to bills
+            // ->whereNotNull('purchases.txn_id') // Only POs that have been converted to bills
             ->whereBetween('purchases.purchase_date', [$start, $end]);
 
         // 3️⃣ Bill Payments - credit card = positive, bank/cash = negative
@@ -303,57 +303,57 @@ class TransactionListByVendor extends DataTable
         //     'transaction_type',
         //     'bank_accounts.bank_name'
         // );
-$billPayments = DB::table('bill_payments')
-    ->select(
-        DB::raw('NULL as id'),
-        DB::raw('MIN(bill_payments.date) as transaction_date'),
-        'venders.name as vendor_name',
-        DB::raw('GROUP_CONCAT(bill_payments.id) as transaction_number'),
-        DB::raw('bill_payments.reference as memo'),
+        $billPayments = DB::table('bill_payments')
+            ->select(
+                DB::raw('NULL as id'),
+                DB::raw('MIN(bill_payments.date) as transaction_date'),
+                'venders.name as vendor_name',
+                DB::raw('GROUP_CONCAT(bill_payments.id) as transaction_number'),
+                DB::raw('bill_payments.reference as memo'),
 
-        DB::raw('CASE 
-            WHEN bank_accounts.account_subtype = "credit_card" 
-                THEN "Bill Payment (Credit Card)"
-            ELSE "Bill Payment"
-        END as transaction_type'),
+                DB::raw('CASE 
+                    WHEN bank_accounts.account_subtype = "credit_card" 
+                        THEN "Bill Payment (Credit Card)"
+                    ELSE "Bill Payment"
+                END as transaction_type'),
 
-        'bank_accounts.bank_name as account_name',
+                'bank_accounts.bank_name as account_name',
 
-        // ⭐ FINAL FIX: DO NOT subtract credit, add AND sign negative
-        DB::raw('
-            -(
-                COALESCE(SUM(ABS(bill_payments.amount)), 0)
-                +
-                COALESCE(SUM(
-                    CASE 
-                        WHEN trans.category LIKE "%vendor credit%" 
-                            THEN ABS(trans.amount)
-                        ELSE 0
-                    END
-                ), 0)
-            ) as amount
-        '),
+                // ⭐ FINAL FIX: DO NOT subtract credit, add AND sign negative
+                DB::raw('
+                    -(
+                        COALESCE(SUM(ABS(bill_payments.amount)), 0)
+                        +
+                        COALESCE(SUM(
+                            CASE 
+                                WHEN trans.category LIKE "%vendor credit%" 
+                                    THEN ABS(trans.amount)
+                                ELSE 0
+                            END
+                        ), 0)
+                    ) as amount
+                '),
 
-        DB::raw('0 as open_balance')
-    )
-    ->join('bills', 'bills.id', '=', 'bill_payments.bill_id')
-    ->join('venders', 'venders.id', '=', 'bills.vender_id')
-    ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'bill_payments.account_id')
-    ->leftJoin('transactions as trans', function ($join) {
-        $join->on('trans.payment_id', '=', 'bill_payments.id')
-             ->where('trans.category', 'like', '%vendor credit%');
-    })
-    ->where('bills.created_by', $userId)
-    ->where('bills.type', 'Bill')
+                DB::raw('0 as open_balance')
+            )
+            ->join('bills', 'bills.id', '=', 'bill_payments.bill_id')
+            ->join('venders', 'venders.id', '=', 'bills.vender_id')
+            ->leftJoin('bank_accounts', 'bank_accounts.id', '=', 'bill_payments.account_id')
+            ->leftJoin('transactions as trans', function ($join) {
+                $join->on('trans.payment_id', '=', 'bill_payments.id')
+                    ->where('trans.category', 'like', '%vendor credit%');
+            })
+            ->where('bills.created_by', $userId)
+            ->where('bills.type', 'Bill')
 
-    ->whereRaw('LOWER(bills.user_type) = ?', ['vendor'])
-    ->whereBetween('bill_payments.date', [$start, $end])
-    ->groupBy(
-        'venders.id',
-        'bill_payments.reference',
-        'transaction_type',
-        'bank_accounts.bank_name'
-    );
+            ->whereRaw('LOWER(bills.user_type) = ?', ['vendor'])
+            ->whereBetween('bill_payments.date', [$start, $end])
+            ->groupBy(
+                'venders.id',
+                'bill_payments.reference',
+                'transaction_type',
+                'bank_accounts.bank_name'
+            );
 
          // 4️⃣ Vendor Credits - NEGATIVE (decreases amount owed)
         $vendorCredits = DB::table('vendor_credits')

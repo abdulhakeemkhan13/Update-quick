@@ -31,7 +31,7 @@ class ExpensesByVendorSummary extends DataTable
             ->concat($billAccounts)
             ->concat($vendorCreditProducts)
             ->concat($vendorCreditAccounts);
-        
+                    
         $finalData = collect();
         $grandTotal = 0;
 
@@ -64,7 +64,7 @@ class ExpensesByVendorSummary extends DataTable
                 // Calculate line amount: (price * quantity) - discount + tax
                 // Note: Accounts usually have quantity 1 and 0 discount/tax calculated in query
                 $amount = ($row->price * $row->quantity) - ($row->discount ?? 0) + ($row->tax_amount ?? 0);
-                
+                $amount = abs($amount);
                 // Apply Sign logic:
                 // Vendor Credits = Negative (-1)
                 // Bills = Positive (1)
@@ -193,7 +193,7 @@ class ExpensesByVendorSummary extends DataTable
             ->whereRaw('LOWER(bills.user_type) = ?', ['vendor'])
             ->whereBetween('bills.bill_date', [$start, $end])
             ->where('bill_accounts.chart_account_id', '!=', $accountPayable->id)
-            ->whereIn('bill_accounts.chart_account_id', $accountCreditCard)
+            // ->whereIn('bill_accounts.chart_account_id', $accountCreditCard)
             // ->whereNotIn('bills.type', $excludedTypes)
             ->get();
      
