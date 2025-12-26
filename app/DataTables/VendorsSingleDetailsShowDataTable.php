@@ -418,48 +418,6 @@ class VendorsSingleDetailsShowDataTable extends DataTable
         }
 
 
-    // --------------------------------------------------------
-    // 6. GENERAL TRANSACTIONS (Checks/Others)
-    // --------------------------------------------------------
-    if (empty($transactionType) || $transactionType == 'expense' || $transactionType == 'check') {
-        $transQuery = Transaction::where('user_id', $vendorId)
-            ->where('user_type', 'Vender')
-            ->where('created_by', $creatorId);
-
-        if ($transactionType == 'expense') {
-            $transQuery->where('category', 'Bill');
-        } elseif ($transactionType == 'check') {
-            $transQuery->where('type', 'check');
-
-        }
-
-        // --------------------------------------------------------
-        // 7) RECENTLY PAID
-        // --------------------------------------------------------
-        if ($transactionType === 'recently_paid') {
-            $recentBills = Bill::with('category')
-                ->where('vender_id', $vendorId)
-                ->where('created_by', $creatorId)
-                ->where('status', 4) // Paid
-                ->where('updated_at', '>=', now()->subDays(30))
-                ->get();
-
-            foreach ($recentBills as $bill) {
-                $transactions->push([
-                    'id' => 'bill_' . $bill->id,
-                    'date' => $bill->bill_date,
-                    'type' => 'Bill',
-                    'number' => '#' . Auth::user()->billNumberFormat($bill->bill_id),
-                    'payee' => $vendorName,
-                    'category' => optional($bill->category)->name ?? '-',
-                    'total' => $bill->getTotal(),
-                    'url' => route('bill.show', Crypt::encrypt($bill->id)),
-                    'edit_url' => route('bill.edit', Crypt::encrypt($bill->id)),
-                ]);
-            }
-        }
-
-
         return $transactions->sortByDesc('date')->values();
     }
 
