@@ -279,7 +279,8 @@ Route::get('/quickbooks/import/progress', [QuickBooksImportController::class, 'g
 Route::post('/quickbooks/sync-payments', [QuickBooksImportController::class, 'syncPaymentsForExistingInvoices'])->name('quickbooks.sync.payments');
 Route::get('/quickbooks/missing-payments-report', [QuickBooksImportController::class, 'getMissingPaymentsReport'])->name('quickbooks.missing.payments.report');
 Route::get('/Journalledger', [VoucherController::class, 'Journalledger'])->name('Journalledger.index');
-
+Route::post('/quickbooks/import/inventory-adjustments', [QuickBooksImportController::class, 'importInventoryAdjustments'])->name('quickbooks.import.inventory-adjustments');
+Route::post('/quickbooks/import/deposits', [QuickBooksImportController::class, 'importDeposits'])->name('quickbooks.import.deposits');
 // All Reports Route
 Route::get('/reports', [ReportController::class, 'reports'])->name('allReports');
 

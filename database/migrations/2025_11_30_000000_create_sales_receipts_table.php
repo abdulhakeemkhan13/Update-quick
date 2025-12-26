@@ -28,6 +28,7 @@ class CreateSalesReceiptsTable extends Migration
             $table->string('deposit_to')->nullable();
             $table->string('location_of_sale')->nullable();
             $table->text('bill_to')->nullable();
+            $table->text('ship_to')->nullable();
             $table->integer('status')->default('0');
             $table->integer('shipping_display')->default('1');
             $table->integer('discount_apply')->default('0');

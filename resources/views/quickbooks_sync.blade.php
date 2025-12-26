@@ -66,6 +66,9 @@
         <button class="btn btn-primary qb-btn" data-route="{{ route('quickbooks.checkUnbalancedBills') }}">checkUnbalancedBills</button>
         <button class="btn btn-primary qb-btn" data-route="{{ route('quickbooks.taxes') }}">Taxes</button>
         <button class="btn btn-primary qb-btn" data-route="{{ route('quickbooks.PurchaseOrders') }}">Purchase Order</button>
+        <button class="btn btn-primary qb-btn" data-route="{{ route('quickbooks.import.employees') }}">Import Employee</button>
+        <button class="btn btn-primary qb-btn" data-route="{{ route('quickbooks.import.inventory-adjustments') }}">Import Inventory Adjustments</button>
+        <button class="btn btn-primary qb-btn" data-route="{{ route('quickbooks.import.deposits') }}">Import Deposits</button>
     </div>
 
     <hr>

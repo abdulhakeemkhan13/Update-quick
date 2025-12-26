@@ -20,6 +20,11 @@ class Deposit extends Model
         'entity_type',
         'chart_account_id',
         'other_account_id',
+        'created_by',
+        'owned_by',
+        'cashback_account_id',
+        'cashback_amount',
+        'cashback_memo',
     ];
     public function lines()
     {

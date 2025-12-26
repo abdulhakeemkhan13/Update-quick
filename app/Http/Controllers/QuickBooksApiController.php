@@ -44,19 +44,19 @@ class QuickBooksApiController extends Controller
     public $baseUrl;
     protected $userId;
 
-    public function __construct() // production
-    {
-        $this->clientId = 'AByYeIrpQQktbXur2EwxXINJWZzJTJrkuH8BRb7P5I2p9L4qrL';
-        $this->clientSecret = 'uBFqiKdEr9UvCps9SvmZh6ggRiu0CJxjPjMwhW4y';
-        $this->userId = auth()->id();
-        $this->authUrl = 'https://appcenter.intuit.com/connect/oauth2';
-        $this->tokenUrl = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
-        $this->scope = 'com.intuit.quickbooks.accounting openid profile email';
-        // $this->redirectUri = 'https://update.creativesuite.co/quickbooks/callback';
-        // $this->redirectUri = 'https://test.creativesuite.co/quickbooks/callback';
-        $this->redirectUri = 'https://demo.creativesuite.co/quickbooks/callback';
-        $this->baseUrl = 'https://quickbooks.api.intuit.com';
-    }
+    // public function __construct() // production
+    // {
+    //     $this->clientId = 'AByYeIrpQQktbXur2EwxXINJWZzJTJrkuH8BRb7P5I2p9L4qrL';
+    //     $this->clientSecret = 'uBFqiKdEr9UvCps9SvmZh6ggRiu0CJxjPjMwhW4y';
+    //     $this->userId = auth()->id();
+    //     $this->authUrl = 'https://appcenter.intuit.com/connect/oauth2';
+    //     $this->tokenUrl = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
+    //     $this->scope = 'com.intuit.quickbooks.accounting openid profile email';
+    //     // $this->redirectUri = 'https://update.creativesuite.co/quickbooks/callback';
+    //     // $this->redirectUri = 'https://test.creativesuite.co/quickbooks/callback';
+    //     $this->redirectUri = 'https://demo.creativesuite.co/quickbooks/callback';
+    //     $this->baseUrl = 'https://quickbooks.api.intuit.com';
+    // }
     // public function __construct()
     // {
     //     // Directly read from env to avoid config caching issues
@@ -69,18 +69,19 @@ class QuickBooksApiController extends Controller
     //     $this->redirectUri = env('QB_REDIRECT_URI', 'http://localhost:8012/csuitequickbook/quickbooks/callback');
     //     $this->baseUrl = env('QB_BASE_URL', 'https://sandbox-quickbooks.api.intuit.com');
     // }
-    // public function __construct() //my
-    // {
-    //     // Directly read from env to avoid config caching issues
-    //     // $this->clientId     = env('QB_CLIENT_ID');
-    //     $this->clientId = 'ABpCTnsvhjnEcBTWVIofKoQ482JGuH6yXpb4ARb4uFvefO145m';
-    //     $this->clientSecret = 'gUVkoksUL0busJJRj8WNEj7BEjnCveF4EoWGU2xp';
-    //     $this->authUrl = env('QB_AUTH_URL', 'https://appcenter.intuit.com/connect/oauth2');
-    //     $this->tokenUrl = env('QB_TOKEN_URL', 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer');
-    //     $this->scope = env('QB_SCOPE', 'com.intuit.quickbooks.accounting com.intuit.quickbooks.payment openid profile email');
-    //     $this->redirectUri = env('QB_REDIRECT_URI', 'http://localhost:8012/csuite/update/quickbooks/callback');
-    //     $this->baseUrl = env('QB_BASE_URL', 'https://sandbox-quickbooks.api.intuit.com');
-    // }
+    
+    public function __construct() //my
+    {
+        // Directly read from env to avoid config caching issues
+        // $this->clientId     = env('QB_CLIENT_ID');
+        $this->clientId = 'ABpCTnsvhjnEcBTWVIofKoQ482JGuH6yXpb4ARb4uFvefO145m';
+        $this->clientSecret = 'gUVkoksUL0busJJRj8WNEj7BEjnCveF4EoWGU2xp';
+        $this->authUrl = env('QB_AUTH_URL', 'https://appcenter.intuit.com/connect/oauth2');
+        $this->tokenUrl = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'; // Must be HTTPS
+        $this->scope = env('QB_SCOPE', 'com.intuit.quickbooks.accounting com.intuit.quickbooks.payment openid profile email');
+        $this->redirectUri = env('QB_REDIRECT_URI', 'http://localhost/csuitequickbook_update/quickbooks/callback');
+        $this->baseUrl = env('QB_BASE_URL', 'https://sandbox-quickbooks.api.intuit.com');
+    }
 
     public function license()
     {
@@ -245,7 +246,11 @@ class QuickBooksApiController extends Controller
         if ($response->failed()) {
             return response()->json([
                 'error' => 'Token exchange failed',
+                'status_code' => $response->status(),
                 'details' => $response->json(),
+                'raw_body' => $response->body(),
+                'redirect_uri_used' => $this->redirectUri,
+                'token_url' => $this->tokenUrl,
             ], 400);
         }
 
