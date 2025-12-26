@@ -82,7 +82,7 @@
             <div class="qbo-header-item" title="QB Assistant">
                 <button class="qbo-header-item-button" aria-label="QB Assistant">
                     {{-- QBO Chat/Monitor Icon --}}
-<svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="#6b6c72" focusable="false" aria-hidden="true" class="global-header-item-icon"><path fill-rule="evenodd" clip-rule="evenodd" d="M11 2a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H9v2a1 1 0 0 0 1 1h1a3 3 0 0 1 3-3h5a3 3 0 0 1 3 3v2a3 3 0 0 1-3 3h-5a3 3 0 0 1-3-3h-1a3 3 0 0 1-3-3v-2H5a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3h6Zm3 14a1 1 0 0 0-1 1v2a1 1 0 0 0 .898.995L14 20h5l.102-.005a1 1 0 0 0 .893-.893L20 19v-2a1 1 0 0 0-1-1h-5ZM5 4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H5Z" fill="currentColor"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M19 4a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3h-1a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1Zm-1 2a1 1 0 0 0-1 1v3l.005.102a1 1 0 0 0 .893.893L18 11h1l.102-.005A1 1 0 0 0 20 10V7a1 1 0 0 0-1-1h-1Z" fill="currentColor"></path></svg>
+                    <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="#6b6c72" focusable="false" aria-hidden="true" class="global-header-item-icon"><path fill-rule="evenodd" clip-rule="evenodd" d="M11 2a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H9v2a1 1 0 0 0 1 1h1a3 3 0 0 1 3-3h5a3 3 0 0 1 3 3v2a3 3 0 0 1-3 3h-5a3 3 0 0 1-3-3h-1a3 3 0 0 1-3-3v-2H5a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3h6Zm3 14a1 1 0 0 0-1 1v2a1 1 0 0 0 .898.995L14 20h5l.102-.005a1 1 0 0 0 .893-.893L20 19v-2a1 1 0 0 0-1-1h-5ZM5 4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H5Z" fill="currentColor"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M19 4a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3h-1a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1Zm-1 2a1 1 0 0 0-1 1v3l.005.102a1 1 0 0 0 .893.893L18 11h1l.102-.005A1 1 0 0 0 20 10V7a1 1 0 0 0-1-1h-1Z" fill="currentColor"></path></svg>
                 </button>
             </div>
 
@@ -390,9 +390,27 @@ document.addEventListener('DOMContentLoaded', function() {
     // Global search
     const searchInput = document.getElementById('qboGlobalSearch');
     const resultsContainer = document.getElementById('qboSearchResults');
+    const searchContainer = document.querySelector('.qbo-global-search-container');
     let searchTimeout = null;
     let recentFetched = false;
     let recentData = null;
+
+    // Expand search on focus (like QBO)
+    if (searchInput && searchContainer) {
+        searchInput.addEventListener('focus', function() {
+            searchContainer.classList.add('is-focused');
+        });
+        
+        searchInput.addEventListener('blur', function(e) {
+            // Delay to allow click on results
+            setTimeout(() => {
+                if (!searchContainer.contains(document.activeElement) && 
+                    !resultsContainer.contains(document.activeElement)) {
+                    searchContainer.classList.remove('is-focused');
+                }
+            }, 150);
+        });
+    }
 
     // Keyboard shortcut
     document.addEventListener('keydown', function(e) {
@@ -403,16 +421,19 @@ document.addEventListener('DOMContentLoaded', function() {
         // Escape to close
         if (e.key === 'Escape') {
             resultsContainer.classList.remove('show');
+            searchContainer.classList.remove('is-focused');
             searchInput.blur();
         }
     });
 
     // Close on click outside
     document.addEventListener('click', function(e) {
-        if (!searchInput.contains(e.target) && !resultsContainer.contains(e.target)) {
+        if (!searchInput.contains(e.target) && !resultsContainer.contains(e.target) && !searchContainer.contains(e.target)) {
             resultsContainer.classList.remove('show');
+            searchContainer.classList.remove('is-focused');
         }
     });
+
 
     // Render recent transactions
     function renderRecent(data) {
