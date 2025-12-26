@@ -220,8 +220,8 @@ class ExpenseTransactionsDataTable
                     'balance' => 0,
                     'total' => $po->getTotal(),
                     'attachments' => '',
-                    'view_url' => route('purchaseorder.show', Crypt::encrypt($po->id)),
-                    'edit_url' => route('purchaseorder.edit', Crypt::encrypt($po->id)),
+                    'view_url' => route('purchase.show', Crypt::encrypt($po->id)),
+                    'edit_url' => route('purchase.edit', Crypt::encrypt($po->id)),
                 ]);
             }
         }

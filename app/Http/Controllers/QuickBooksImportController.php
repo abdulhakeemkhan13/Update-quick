@@ -47,6 +47,15 @@ use App\Models\BillPayment;
 use App\Models\BillAccount;
 use App\Models\Employee;
 use App\Models\JournalEntry;
+use App\Models\SalesReceipt;
+use App\Models\SalesReceiptAccount;
+use App\Models\SalesReceiptProduct;
+use App\Models\RefundReceipt;
+use App\Models\RefundReceiptAccount;
+use App\Models\RefundReceiptProduct;
+use App\Models\PurchaseProduct;
+use App\Models\InventoryAdjustment;
+use App\Models\InventoryAdjustmentLine;
 use App\Models\JournalItem;
 use App\Models\TransactionLines;
 use Illuminate\Support\Facades\Auth;
@@ -2612,7 +2621,26 @@ class QuickBooksImportController extends Controller
 
                     // Lines / products
                     $productLines = [];
+                    $totalDiscount = 0;
+                    $discountType = null;
+                    $discountValue = 0;
+                    
                     foreach ($qbRawInvoice['Line'] ?? [] as $line) {
+                        // Extract discount from DiscountLineDetail
+                        if (($line['DetailType'] ?? '') === 'DiscountLineDetail') {
+                            $discountDetail = $line['DiscountLineDetail'] ?? [];
+                            $totalDiscount += (float)($line['Amount'] ?? 0);
+                            
+                            // Check if it's percentage or fixed discount
+                            if (isset($discountDetail['PercentBased']) && $discountDetail['PercentBased']) {
+                                $discountType = 'percent';
+                                $discountValue = (float)($discountDetail['DiscountPercent'] ?? 0);
+                            } else {
+                                $discountType = 'fixed';
+                                $discountValue = (float)($line['Amount'] ?? 0);
+                            }
+                        }
+                        
                         $productLines = array_merge($productLines, $parseInvoiceLine($line));
                     }
 
@@ -2689,7 +2717,10 @@ class QuickBooksImportController extends Controller
                         'subtotal'          => $subtotal,
                         'taxable_subtotal'  => $taxableSubtotal,
                         'total_tax'         => $invoiceSalesTaxAmount,
-                        'total_amount'      => $subtotal + $invoiceSalesTaxAmount,
+                        'total_discount'    => $totalDiscount,
+                        'discount_type'     => $discountType,
+                        'discount_value'    => $discountValue,
+                        'total_amount'      => $subtotal + $invoiceSalesTaxAmount - $totalDiscount,
                     ]);
 
                     // =================================================================
@@ -2902,12 +2933,37 @@ class QuickBooksImportController extends Controller
                         $bankAcctId = $this->getOrCreateBankAccountFromChartAccount($acctCode, (string)$acctName);
                     }
 
+                    // Get CashBack info (Cash back goes to section in QuickBooks)
+                    $cashbackAccountId = null;
+                    $cashbackAmount = null;
+                    $cashbackMemo = null;
+                    if (!empty($qbDeposit['CashBack'])) {
+                        $cashback = $qbDeposit['CashBack'];
+                        $cashbackAmount = $cashback['Amount'] ?? null;
+                        $cashbackMemo = $cashback['Memo'] ?? null;
+                        
+                        // Map cash back account
+                        if (!empty($cashback['AccountRef']['value'])) {
+                            $cbAccountCode = $cashback['AccountRef']['value'];
+                            $chartAcc = ChartOfAccount::where('code', $cbAccountCode)
+                                ->where('created_by', $creatorId)
+                                ->first();
+                            $cashbackAccountId = $chartAcc ? $chartAcc->id : null;
+                        }
+                        
+                        \Log::info("[QB Import] Deposit {$depId} has CashBack: Amount={$cashbackAmount}, Memo={$cashbackMemo}");
+                    }
+
                     $deposit = \App\Models\Deposit::create([
                         'deposit_id' => $depId,
                         'doc_number' => $qbDeposit['DocNumber'] ?? null,
                         'txn_date'   => $qbDeposit['TxnDate'],
                         'total_amt'  => $qbDeposit['TotalAmt'] ?? 0,
                         'bank_id'    => $bankAcctId,
+                        'cashback_account_id' => $cashbackAccountId,
+                        'cashback_amount'     => $cashbackAmount,
+                        'cashback_memo'       => $cashbackMemo,
+                        'owned_by' => \Auth::user()->ownedBy(),
                         'created_by' => \Auth::user()->creatorId(),
                     ]);
 
@@ -5072,14 +5128,26 @@ class QuickBooksImportController extends Controller
                                 $localEntityId = $customer->id;
                                 $userType      = 'Customer';
                             } else {
-                                $metrics['skipped']++;
-                                $skippedDetails[] = [
-                                    'qb_id'  => $qbId, 
-                                    'reason' => "Vendor/Customer ID [$entityId] not found"
-                                ];
-                                continue;
+                                // 3) Try Employee  *** NEW & IMPORTANT ***
+                                $employee = \App\Models\Employee::where('employee_id', $entityId)
+                                    ->where('created_by', $creatorId)
+                                    ->first();
+
+                                if ($employee) {
+                                    $localEntityId = $employee->id;
+                                    $userType      = 'Employee';
+
+                                } else {
+                                    // Nothing found
+                                    $metrics['skipped']++;
+                                    $skippedDetails[] = [
+                                        'qb_id'  => $qbId, 
+                                        'reason' => "Vendor/Customer/Employee ID [$entityId] not found"
+                                    ];
+                                    continue;
+                                }
                             }
-                        }
+                        }   
 
                         // Type Mapping (same as before)
                         $qbPaymentType = $qbExpense['PaymentType'] ?? 'Cash';
@@ -5164,15 +5232,20 @@ class QuickBooksImportController extends Controller
                                 ]
                             );
 
+                            $qty = (float)($detail['Qty'] ?? 1);
+                            $unitRate = $qty > 0 ? ($lineAmount / $qty) : $lineAmount;
+                            
                             \App\Models\BillProduct::create([
                                 'bill_id'     => $bill->id, 
                                 'product_id'  => $product->id, 
-                                'quantity'    => $detail['Qty'] ?? 1, 
-                                'price'       => $lineAmount, 
+                                'quantity'    => $qty, 
+                                'price'       => $unitRate, 
                                 'description' => $description, 
                                 'tax'         => 0, 
                                 'billable'    => $isBillable, 
-                                'customer_id' => $localCustomerId
+                                'customer_id' => $localCustomerId,
+                                'line_total'  => $lineAmount,
+                                'rate'        => $unitRate,
                             ]);
                             $calculatedBillTotal += $lineAmount;
                         } 
@@ -6291,79 +6364,81 @@ class QuickBooksImportController extends Controller
             $allPOs = collect();
             $startPosition = 1;
             $maxResults = 50;
-            // do {
-            //     $query = "SELECT * FROM PurchaseOrder STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
-            //     $poResponse = $this->qbController->runQuery($query);
-            //     $poData = $poResponse['QueryResponse']['PurchaseOrder'] ?? [];
-            //     if (array_key_exists('Id', $poData)) $poData = [$poData];
-            //     $fetchedCount = count($poData);
-            //     $allPOs = $allPOs->merge($poData);
-            //     $startPosition += $fetchedCount;
-            // } while ($fetchedCount === $maxResults);
+            do {
+                $query = "SELECT * FROM PurchaseOrder STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
+                $poResponse = $this->qbController->runQuery($query);
+                $poData = $poResponse['QueryResponse']['PurchaseOrder'] ?? [];
+                if (array_key_exists('Id', $poData)) $poData = [$poData];
+                $fetchedCount = count($poData);
+                $allPOs = $allPOs->merge($poData);
+                $startPosition += $fetchedCount;
+            } while ($fetchedCount === $maxResults);
 
-            // foreach ($allPOs as $qbPO) {
-            //     $qbId = $qbPO['Id'];
-            //     if (!empty($qbPO['LinkedTxn'])) {
-            //         $linkedTxns = $qbPO['LinkedTxn'];
-            //         if (array_key_exists('TxnId', $linkedTxns)) $linkedTxns = [$linkedTxns];
-            //         foreach ($linkedTxns as $txn) {
-            //             $poLinks[] = [
-            //                 'po_qb_id' => $qbId,
-            //                 'target_qb_id' => $txn['TxnId'],
-            //                 'target_type' => $txn['TxnType']
-            //             ];
-            //         }
-            //     }
+            foreach ($allPOs as $qbPO) {
+                $qbId = $qbPO['Id'];
+                if (!empty($qbPO['LinkedTxn'])) {
+                    $linkedTxns = $qbPO['LinkedTxn'];
+                    if (array_key_exists('TxnId', $linkedTxns)) $linkedTxns = [$linkedTxns];
+                    foreach ($linkedTxns as $txn) {
+                        $poLinks[] = [
+                            'po_qb_id' => $qbId,
+                            'target_qb_id' => $txn['TxnId'],
+                            'target_type' => $txn['TxnType']
+                        ];
+                    }
+                }
 
-            //     try {
-            //         if (Purchase::where('purchase_id', $qbId)->exists()) {
-            //             $metrics['PO']['skipped']++;
-            //             continue;
-            //         }
+                try {
+                    if (Purchase::where('purchase_id', $qbId)->exists()) {
+                        $metrics['PO']['skipped']++;
+                        continue;
+                    }
 
-            //         $vendorId = $qbPO['VendorRef']['value'] ?? null;
-            //         $vendor = Vender::where('vender_id', $vendorId)->where('created_by', $creatorId)->first();
-            //         if (!$vendor) { $metrics['PO']['skipped']++; continue; }
+                    $vendorId = $qbPO['VendorRef']['value'] ?? null;
+                    $vendor = Vender::where('vender_id', $vendorId)->where('created_by', $creatorId)->first();
+                    if (!$vendor) { $metrics['PO']['skipped']++; continue; }
 
-            //         $status = ($qbPO['POStatus'] ?? '') == 'Closed' ? 2 : 1;
+                    $status = ($qbPO['POStatus'] ?? '') == 'Closed' ? 2 : 1;
 
-            //         Purchase::create([
-            //             'purchase_id'     => $qbId,
-            //             'vender_id'       => $vendor->id,
-            //             'purchase_date'   => $qbPO['TxnDate'],
-            //             'purchase_number' => $qbPO['DocNumber'] ?? 0,
-            //             'status'          => $status,
-            //             'type'            => 'PurchaseOrder',
-            //             'subtotal'        => $qbPO['TotalAmt'] ?? 0,
-            //             'total'           => $qbPO['TotalAmt'] ?? 0,
-            //             'ship_to_address' => $qbPO['ShipAddr']['Line1'] ?? null,
-            //             'created_by'      => $creatorId,
-            //             'owned_by'        => $ownedId,
-            //             'created_at'      => now(),
-            //             'updated_at'      => now(),
-            //         ]);
+                    Purchase::create([
+                        'purchase_id'     => $qbId,
+                        'vender_id'       => $vendor->id,
+                        'purchase_date'   => $qbPO['TxnDate'],
+                        'purchase_number' => $qbPO['DocNumber'] ?? 0,
+                        'status'          => $status,
+                        'type'            => 'PurchaseOrder',
+                        'subtotal'        => $qbPO['TotalAmt'] ?? 0,
+                        'total'           => $qbPO['TotalAmt'] ?? 0,
+                        'ship_to_address' => $qbPO['ShipAddr']['Line1'] ?? null,
+                        'created_by'      => $creatorId,
+                        'owned_by'        => $ownedId,
+                        'created_at'      => now(),
+                        'updated_at'      => now(),
+                    ]);
 
-            //         $metrics['PO']['imported']++;
-            //     } catch (\Exception $e) {
-            //         $metrics['PO']['failed']++;
-            //         \Log::error("[QB Import] PO Failed $qbId: " . $e->getMessage());
-            //     }
-            // }
+                    
+
+                    $metrics['PO']['imported']++;
+                } catch (\Exception $e) {
+                    $metrics['PO']['failed']++;
+                    \Log::error("[QB Import] PO Failed $qbId: " . $e->getMessage());
+                }
+            }
 
             // -------------------------
             // PHASE 2: IMPORT BILLS & PAYMENTS
             // -------------------------
-            // \Log::info('[QB Import] Phase 2: Fetching Bills...');
-            // $allBills = collect();
-            // $startPosition = 1;
-            // do {
-            //     $query = "SELECT * FROM Bill STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
-            //     $resp = $this->qbController->runQuery($query);
-            //     $data = $resp['QueryResponse']['Bill'] ?? [];
-            //     if (array_key_exists('Id', $data)) $data = [$data];
-            //     $allBills = $allBills->merge($data);
-            //     $startPosition += count($data);
-            // } while (count($data) === $maxResults);
+            \Log::info('[QB Import] Phase 2: Fetching Bills...');
+            $allBills = collect();
+            $startPosition = 1;
+            do {
+                $query = "SELECT * FROM Bill STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
+                $resp = $this->qbController->runQuery($query);
+                $data = $resp['QueryResponse']['Bill'] ?? [];
+                if (array_key_exists('Id', $data)) $data = [$data];
+                $allBills = $allBills->merge($data);
+                $startPosition += count($data);
+            } while (count($data) === $maxResults);
 
             \Log::info('[QB Import] Fetching Bill Payments...');
             $allBillPayments = collect();
@@ -6397,289 +6472,289 @@ class QuickBooksImportController extends Controller
                 }
             }
 
-            // // We'll also need quick lookup of created BillPayment records by payment ref if we want to link later
-            // $createdBillPaymentByRef = [];
+            // We'll also need quick lookup of created BillPayment records by payment ref if we want to link later
+            $createdBillPaymentByRef = [];
 
-            // // Process each bill
-            // foreach ($allBills as $qbBill) {
-            //     $qbId = $qbBill['Id'];
-            //     $docNumber = $qbBill['DocNumber'] ?? 'N/A';
+            // Process each bill
+            foreach ($allBills as $qbBill) {
+                $qbId = $qbBill['Id'];
+                $docNumber = $qbBill['DocNumber'] ?? 'N/A';
 
-            //     try {
-            //         if (Bill::where('bill_id', $qbId)->exists()) {
-            //             $metrics['Bill']['skipped']++;
-            //             continue;
-            //         }
+                try {
+                    if (Bill::where('bill_id', $qbId)->exists()) {
+                        $metrics['Bill']['skipped']++;
+                        continue;
+                    }
 
-            //         $vendorId = $qbBill['VendorRef']['value'] ?? null;
-            //         $vendor = Vender::where('vender_id', $vendorId)->where('created_by', $creatorId)->first();
-            //         if (!$vendor) { $metrics['Bill']['skipped']++; continue; }
+                    $vendorId = $qbBill['VendorRef']['value'] ?? null;
+                    $vendor = Vender::where('vender_id', $vendorId)->where('created_by', $creatorId)->first();
+                    if (!$vendor) { $metrics['Bill']['skipped']++; continue; }
 
-            //         $billTotal = floatval($qbBill['TotalAmt'] ?? 0);
+                    $billTotal = floatval($qbBill['TotalAmt'] ?? 0);
 
-            //         $bill = Bill::create([
-            //             'bill_id' => $qbId,
-            //             'vender_id' => $vendor->id,
-            //             'bill_date' => $qbBill['TxnDate'],
-            //             'due_date' => $qbBill['DueDate'] ?? $qbBill['TxnDate'],
-            //             'order_number' => $docNumber,
-            //             'subtotal' => $billTotal,
-            //             'total' => $billTotal,
-            //             'status' => ($qbBill['Balance'] ?? 0) == 0 ? 4 : 2,
-            //             'type' => 'Bill',
-            //             'user_type' => 'Vendor',
-            //             'created_by' => $creatorId,
-            //             'owned_by' => $ownedId,
-            //             'created_at' => now(),
-            //             'updated_at' => now(),
-            //         ]);
+                    $bill = Bill::create([
+                        'bill_id' => $qbId,
+                        'vender_id' => $vendor->id,
+                        'bill_date' => $qbBill['TxnDate'],
+                        'due_date' => $qbBill['DueDate'] ?? $qbBill['TxnDate'],
+                        'order_number' => $docNumber,
+                        'subtotal' => $billTotal,
+                        'total' => $billTotal,
+                        'status' => ($qbBill['Balance'] ?? 0) == 0 ? 4 : 2,
+                        'type' => 'Bill',
+                        'user_type' => 'Vendor',
+                        'created_by' => $creatorId,
+                        'owned_by' => $ownedId,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
 
-            //         // Process bill lines and compute combined line total
-            //         $rawLines = $qbBill['Line'] ?? [];
-            //         if (array_key_exists('DetailType', $rawLines) || array_key_exists('Amount', $rawLines)) $rawLines = [$rawLines];
-            //         $lineTotal = 0.0;
-            //         foreach ($rawLines as $line) {
-            //             $amount = floatval($line['Amount'] ?? 0);
-            //             $lineTotal += $amount;
-            //             $desc = $line['Description'] ?? null;
-            //             if (!empty($line['ItemBasedExpenseLineDetail'])) {
-            //                 $d = $line['ItemBasedExpenseLineDetail'];
-            //                 $itemName = $d['ItemRef']['name'] ?? 'Unknown';
-            //                 $prod = ProductService::firstOrCreate(
-            //                     ['name' => $itemName, 'created_by' => $creatorId],
-            //                     ['sku' => $itemName, 'type'=>'product', 'unit_id'=>1, 'category_id'=>1]
-            //                 );
-            //                 BillProduct::create([
-            //                     'bill_id' => $bill->id, 'product_id' => $prod->id, 'quantity' => $d['Qty'] ?? 1, 'price' => $amount, 'tax' => 0, 'description' => $desc
-            //                 ]);
-            //             } elseif (!empty($line['AccountBasedExpenseLineDetail'])) {
-            //                 $d = $line['AccountBasedExpenseLineDetail'];
-            //                 $qbAccId = $d['AccountRef']['value'] ?? null;
-            //                 $lAccId = 0;
-            //                 if ($qbAccId) {
-            //                     $la = ChartOfAccount::where('code', $qbAccId)->first();
-            //                     if ($la) $lAccId = $la->id;
-            //                 }
-            //                 BillAccount::create([
-            //                     'ref_id' => $bill->id, 'type' => 'Bill', 'chart_account_id' => $lAccId, 'price' => $amount, 'description' => $desc, 'tax' => 0, 'quantity_ordered' => 1
-            //                 ]);
-            //             }
-            //         }
+                    // Process bill lines and compute combined line total
+                    $rawLines = $qbBill['Line'] ?? [];
+                    if (array_key_exists('DetailType', $rawLines) || array_key_exists('Amount', $rawLines)) $rawLines = [$rawLines];
+                    $lineTotal = 0.0;
+                    foreach ($rawLines as $line) {
+                        $amount = floatval($line['Amount'] ?? 0);
+                        $lineTotal += $amount;
+                        $desc = $line['Description'] ?? null;
+                        if (!empty($line['ItemBasedExpenseLineDetail'])) {
+                            $d = $line['ItemBasedExpenseLineDetail'];
+                            $itemName = $d['ItemRef']['name'] ?? 'Unknown';
+                            $prod = ProductService::firstOrCreate(
+                                ['name' => $itemName, 'created_by' => $creatorId],
+                                ['sku' => $itemName, 'type'=>'product', 'unit_id'=>1, 'category_id'=>1]
+                            );
+                            BillProduct::create([
+                                'bill_id' => $bill->id, 'product_id' => $prod->id, 'quantity' => $d['Qty'] ?? 1, 'price' => $amount, 'tax' => 0, 'description' => $desc
+                            ]);
+                        } elseif (!empty($line['AccountBasedExpenseLineDetail'])) {
+                            $d = $line['AccountBasedExpenseLineDetail'];
+                            $qbAccId = $d['AccountRef']['value'] ?? null;
+                            $lAccId = 0;
+                            if ($qbAccId) {
+                                $la = ChartOfAccount::where('code', $qbAccId)->first();
+                                if ($la) $lAccId = $la->id;
+                            }
+                            BillAccount::create([
+                                'ref_id' => $bill->id, 'type' => 'Bill', 'chart_account_id' => $lAccId, 'price' => $amount, 'description' => $desc, 'tax' => 0, 'quantity_ordered' => 1
+                            ]);
+                        }
+                    }
 
-            //         // -------------------------
-            //         // PROCESS PAYMENTS FOR THIS BILL
-            //         // -------------------------
-            //         if (isset($billPaymentsMap[$qbId])) {
-            //             foreach ($billPaymentsMap[$qbId] as $paymentData) {
-            //                 // Grab values and normalize
-            //                 $payAmountTotal = floatval($paymentData['TotalAmt'] ?? 0.0);
-            //                 $payDate = $paymentData['TxnDate'] ?? now();
-            //                 $payRef = $paymentData['PaymentRefNum'] ?? 'QB-' . ($paymentData['Id'] ?? uniqid('qb_'));
-            //                 $qbPaymentId = $paymentData['Id'] ?? null;
+                    // -------------------------
+                    // PROCESS PAYMENTS FOR THIS BILL
+                    // -------------------------
+                    if (isset($billPaymentsMap[$qbId])) {
+                        foreach ($billPaymentsMap[$qbId] as $paymentData) {
+                            // Grab values and normalize
+                            $payAmountTotal = floatval($paymentData['TotalAmt'] ?? 0.0);
+                            $payDate = $paymentData['TxnDate'] ?? now();
+                            $payRef = $paymentData['PaymentRefNum'] ?? 'QB-' . ($paymentData['Id'] ?? uniqid('qb_'));
+                            $qbPaymentId = $paymentData['Id'] ?? null;
 
-            //                 // Get bank/chart account (same helper you already use)
-            //                 $sourceAccount = $paymentData['CheckPayment']['BankAccountRef'] ?? $paymentData['CreditCardPayment']['CCAccountRef'] ?? null;
-            //                 $bankAccountId = 0; $chartAccountId = 0;
-            //                 if ($sourceAccount) {
-            //                     $bankAccountId = $this->getOrCreateBankAccountFromChartAccount(
-            //                         $sourceAccount['value'] ?? null,
-            //                         $sourceAccount['name'] ?? null
-            //                     );
-            //                     if ($bankAccountId) {
-            //                         $bankAccountModel = \App\Models\BankAccount::find($bankAccountId);
-            //                         if ($bankAccountModel) $chartAccountId = $bankAccountModel->chart_account_id;
-            //                     }
-            //                 }
+                            // Get bank/chart account (same helper you already use)
+                            $sourceAccount = $paymentData['CheckPayment']['BankAccountRef'] ?? $paymentData['CreditCardPayment']['CCAccountRef'] ?? null;
+                            $bankAccountId = 0; $chartAccountId = 0;
+                            if ($sourceAccount) {
+                                $bankAccountId = $this->getOrCreateBankAccountFromChartAccount(
+                                    $sourceAccount['value'] ?? null,
+                                    $sourceAccount['name'] ?? null
+                                );
+                                if ($bankAccountId) {
+                                    $bankAccountModel = \App\Models\BankAccount::find($bankAccountId);
+                                    if ($bankAccountModel) $chartAccountId = $bankAccountModel->chart_account_id;
+                                }
+                            }
 
-            //                 // Determine the amount from payment lines that was applied to THIS bill (if QuickBooks shows it)
-            //                 $appliedAmountFromLine = null; // null means no explicit line amount; we'll fallback to billTotal
-            //                 $paymentLines = $paymentData['Line'] ?? [];
-            //                 if (array_key_exists('Amount', $paymentLines)) $paymentLines = [$paymentLines];
-            //                 if (!is_array($paymentLines)) $paymentLines = [];
+                            // Determine the amount from payment lines that was applied to THIS bill (if QuickBooks shows it)
+                            $appliedAmountFromLine = null; // null means no explicit line amount; we'll fallback to billTotal
+                            $paymentLines = $paymentData['Line'] ?? [];
+                            if (array_key_exists('Amount', $paymentLines)) $paymentLines = [$paymentLines];
+                            if (!is_array($paymentLines)) $paymentLines = [];
 
-            //                 foreach ($paymentLines as $pl) {
-            //                     $linked = $pl['LinkedTxn'] ?? [];
-            //                     if (array_key_exists('TxnId', $linked)) $linked = [$linked];
-            //                     foreach ($linked as $l) {
-            //                         if (($l['TxnType'] ?? '') === 'Bill' && ($l['TxnId'] == $qbId)) {
-            //                             // if QB provides Amount on this line, use it
-            //                             if (isset($pl['Amount'])) {
-            //                                 $appliedAmountFromLine = floatval($pl['Amount']);
-            //                             } else {
-            //                                 // no explicit amount on line; use bill total
-            //                                 $appliedAmountFromLine = $billTotal;
-            //                             }
-            //                             break 2;
-            //                         }
-            //                     }
-            //                 }
+                            foreach ($paymentLines as $pl) {
+                                $linked = $pl['LinkedTxn'] ?? [];
+                                if (array_key_exists('TxnId', $linked)) $linked = [$linked];
+                                foreach ($linked as $l) {
+                                    if (($l['TxnType'] ?? '') === 'Bill' && ($l['TxnId'] == $qbId)) {
+                                        // if QB provides Amount on this line, use it
+                                        if (isset($pl['Amount'])) {
+                                            $appliedAmountFromLine = floatval($pl['Amount']);
+                                        } else {
+                                            // no explicit amount on line; use bill total
+                                            $appliedAmountFromLine = $billTotal;
+                                        }
+                                        break 2;
+                                    }
+                                }
+                            }
 
-            //                 // Final applied amount recorded for this bill: use appliedAmountFromLine if present, else assume full bill amount
-            //                 $appliedAmountToRecord = $appliedAmountFromLine !== null ? $appliedAmountFromLine : $billTotal;
-            //                 // Ensure we never record more than the bill total here (main payments)
-            //                 if ($appliedAmountToRecord > $billTotal) $appliedAmountToRecord = $billTotal;
+                            // Final applied amount recorded for this bill: use appliedAmountFromLine if present, else assume full bill amount
+                            $appliedAmountToRecord = $appliedAmountFromLine !== null ? $appliedAmountFromLine : $billTotal;
+                            // Ensure we never record more than the bill total here (main payments)
+                            if ($appliedAmountToRecord > $billTotal) $appliedAmountToRecord = $billTotal;
 
-            //                 // Round to cents to avoid floating errors
-            //                 $appliedAmountToRecord = round($appliedAmountToRecord, 2);
-            //                 $payAmountTotal = round($payAmountTotal, 2);
+                            // Round to cents to avoid floating errors
+                            $appliedAmountToRecord = round($appliedAmountToRecord, 2);
+                            $payAmountTotal = round($payAmountTotal, 2);
 
-            //                 // Detailed logging per bill+payment
-            //                 \Log::info("[QB Import] Processing Bill {$qbId} ({$docNumber}) Vendor: {$vendor->name}");
-            //                 \Log::info("  Bill Total: " . number_format($billTotal, 2));
-            //                 \Log::info("  Combined Line Total: " . number_format($lineTotal, 2));
-            //                 \Log::info("  Payment Total from QB (payment id {$qbPaymentId}): " . number_format($payAmountTotal, 2));
-            //                 \Log::info("  Applied Amount to THIS bill (to record): " . number_format($appliedAmountToRecord, 2));
+                            // Detailed logging per bill+payment
+                            \Log::info("[QB Import] Processing Bill {$qbId} ({$docNumber}) Vendor: {$vendor->name}");
+                            \Log::info("  Bill Total: " . number_format($billTotal, 2));
+                            \Log::info("  Combined Line Total: " . number_format($lineTotal, 2));
+                            \Log::info("  Payment Total from QB (payment id {$qbPaymentId}): " . number_format($payAmountTotal, 2));
+                            \Log::info("  Applied Amount to THIS bill (to record): " . number_format($appliedAmountToRecord, 2));
 
-            //                 // Create BillPayment (local) for the applied amount
-            //                 $paymentRecord = BillPayment::create([
-            //                     'bill_id' => $bill->id,
-            //                     'date' => $payDate,
-            //                     'amount' => $appliedAmountToRecord,
-            //                     'account_id' => $bankAccountId,
-            //                     'chart_account_id' => $chartAccountId,
-            //                     'payment_method' => 'QB Import',
-            //                     'reference' => $payRef,
-            //                     'description' => 'Imported from QuickBooks',
-            //                 ]);
+                            // Create BillPayment (local) for the applied amount
+                            $paymentRecord = BillPayment::create([
+                                'bill_id' => $bill->id,
+                                'date' => $payDate,
+                                'amount' => $appliedAmountToRecord,
+                                'account_id' => $bankAccountId,
+                                'chart_account_id' => $chartAccountId,
+                                'payment_method' => 'QB Import',
+                                'reference' => $payRef,
+                                'description' => 'Imported from QuickBooks',
+                            ]);
 
-            //                 if ($paymentRecord && isset($paymentRecord->id)) {
-            //                     // store mapping so we can link unapplied later if needed
-            //                     $createdBillPaymentByRef[$payRef][] = $paymentRecord->id;
+                            if ($paymentRecord && isset($paymentRecord->id)) {
+                                // store mapping so we can link unapplied later if needed
+                                $createdBillPaymentByRef[$payRef][] = $paymentRecord->id;
 
-            //                     // Create main Transaction for the applied amount (category Bill)
-            //                     \App\Models\Transaction::create([
-            //                         'user_id' => $vendor->id,
-            //                         'user_type' => 'Vendor',
-            //                         'type' => 'Payment',
-            //                         'payment_id' => $paymentRecord->id,
-            //                         'amount' => $appliedAmountToRecord,
-            //                         'date' => $payDate,
-            //                         'payment_no' => $payRef,
-            //                         'description' => 'Bill Payment Imported from QuickBooks',
-            //                         'account' => $bankAccountId,
-            //                         'category' => 'Bill',
-            //                         'created_by' => $creatorId,
-            //                         'owned_by' => $ownedId,
-            //                         'created_at' => now(),
-            //                         'updated_at' => now(),
-            //                     ]);
-            //                 } else {
-            //                     \Log::warning("[QB Import] Could not create local BillPayment for QB Payment {$qbPaymentId} / Bill {$qbId}");
-            //                 }
+                                // Create main Transaction for the applied amount (category Bill)
+                                \App\Models\Transaction::create([
+                                    'user_id' => $vendor->id,
+                                    'user_type' => 'Vendor',
+                                    'type' => 'Payment',
+                                    'payment_id' => $paymentRecord->id,
+                                    'amount' => $appliedAmountToRecord,
+                                    'date' => $payDate,
+                                    'payment_no' => $payRef,
+                                    'description' => 'Bill Payment Imported from QuickBooks',
+                                    'account' => $bankAccountId,
+                                    'category' => 'Bill',
+                                    'created_by' => $creatorId,
+                                    'owned_by' => $ownedId,
+                                    'created_at' => now(),
+                                    'updated_at' => now(),
+                                ]);
+                            } else {
+                                \Log::warning("[QB Import] Could not create local BillPayment for QB Payment {$qbPaymentId} / Bill {$qbId}");
+                            }
 
-            //                 // Update vendor balance for the bill's total (same as before)
-            //                 Utility::updateUserBalance('vendor', $vendor->id, $billTotal, 'debit');
-            //             } // end foreach payments for this bill
-            //         } // end if payments for bill exist
+                            // Update vendor balance for the bill's total (same as before)
+                            Utility::updateUserBalance('vendor', $vendor->id, $billTotal, 'debit');
+                        } // end foreach payments for this bill
+                    } // end if payments for bill exist
 
-            //         $metrics['Bill']['imported']++;
-            //     } catch (\Exception $e) {
-            //         $metrics['Bill']['failed']++;
-            //         \Log::error("[QB Import] Bill Failed $qbId: " . $e->getMessage());
-            //     }
-            // } // end foreach allBills
+                    $metrics['Bill']['imported']++;
+                } catch (\Exception $e) {
+                    $metrics['Bill']['failed']++;
+                    \Log::error("[QB Import] Bill Failed $qbId: " . $e->getMessage());
+                }
+            } // end foreach allBills
 
             // =======================================================================
             // POST-PROCESS: For each QuickBooks BillPayment, compute unapplied amount:
             // unapplied = payment.TotalAmt - sum(amounts on linked bill lines)
             // Create a single Vendor Credit transaction per QB payment if unapplied > threshold.
             // =======================================================================
-            // \Log::info('[QB Import] Phase 2: Post-processing BillPayments for unapplied overpayments (one record per QB payment)...');
+            \Log::info('[QB Import] Phase 2: Post-processing BillPayments for unapplied overpayments (one record per QB payment)...');
 
-            // foreach ($allBillPayments as $paymentData) {
-            //     try {
-            //         $qbPaymentId = $paymentData['Id'] ?? null;
-            //         $payRef = $paymentData['PaymentRefNum'] ?? 'QB-' . ($qbPaymentId ?? uniqid('qb_'));
-            //         $paymentTotal = round(floatval($paymentData['TotalAmt'] ?? 0.0), 2);
+            foreach ($allBillPayments as $paymentData) {
+                try {
+                    $qbPaymentId = $paymentData['Id'] ?? null;
+                    $payRef = $paymentData['PaymentRefNum'] ?? 'QB-' . ($qbPaymentId ?? uniqid('qb_'));
+                    $paymentTotal = round(floatval($paymentData['TotalAmt'] ?? 0.0), 2);
 
-            //         // Sum amounts from lines that were linked to Bills (these are the QB-applied amounts)
-            //         $sumApplied = 0.0;
-            //         $paymentLines = $paymentData['Line'] ?? [];
-            //         if (array_key_exists('Amount', $paymentLines)) $paymentLines = [$paymentLines];
-            //         if (!is_array($paymentLines)) $paymentLines = [];
+                    // Sum amounts from lines that were linked to Bills (these are the QB-applied amounts)
+                    $sumApplied = 0.0;
+                    $paymentLines = $paymentData['Line'] ?? [];
+                    if (array_key_exists('Amount', $paymentLines)) $paymentLines = [$paymentLines];
+                    if (!is_array($paymentLines)) $paymentLines = [];
 
-            //         foreach ($paymentLines as $pl) {
-            //             $linked = $pl['LinkedTxn'] ?? [];
-            //             if (array_key_exists('TxnId', $linked)) $linked = [$linked];
-            //             foreach ($linked as $l) {
-            //                 if (($l['TxnType'] ?? '') === 'Bill') {
-            //                     // Some QB lines may not include Amount; guard it
-            //                     if (isset($pl['Amount'])) $sumApplied += floatval($pl['Amount']);
-            //                 }
-            //             }
-            //         }
+                    foreach ($paymentLines as $pl) {
+                        $linked = $pl['LinkedTxn'] ?? [];
+                        if (array_key_exists('TxnId', $linked)) $linked = [$linked];
+                        foreach ($linked as $l) {
+                            if (($l['TxnType'] ?? '') === 'Bill') {
+                                // Some QB lines may not include Amount; guard it
+                                if (isset($pl['Amount'])) $sumApplied += floatval($pl['Amount']);
+                            }
+                        }
+                    }
 
-            //         $sumApplied = round($sumApplied, 2);
-            //         $unapplied = round($paymentTotal - $sumApplied, 2);
+                    $sumApplied = round($sumApplied, 2);
+                    $unapplied = round($paymentTotal - $sumApplied, 2);
 
-            //         \Log::info("[QB Import] QB PaymentID: {$qbPaymentId} Ref: {$payRef}");
-            //         \Log::info("  Payment Total: " . number_format($paymentTotal, 2));
-            //         \Log::info("  Sum Applied to Bills (from payment lines): " . number_format($sumApplied, 2));
-            //         \Log::info("  Calculated Unapplied (payment - applied): " . number_format($unapplied, 2));
+                    \Log::info("[QB Import] QB PaymentID: {$qbPaymentId} Ref: {$payRef}");
+                    \Log::info("  Payment Total: " . number_format($paymentTotal, 2));
+                    \Log::info("  Sum Applied to Bills (from payment lines): " . number_format($sumApplied, 2));
+                    \Log::info("  Calculated Unapplied (payment - applied): " . number_format($unapplied, 2));
 
-            //         // small epsilon to avoid floating rounding noise
-            //         if ($unapplied >= 0.01) {
-            //             // Find vendor for this payment
-            //             $vendorQbId = $paymentData['VendorRef']['value'] ?? null;
-            //             $vendor = null;
-            //             if ($vendorQbId) {
-            //                 $vendor = Vender::where('vender_id', $vendorQbId)->where('created_by', $creatorId)->first();
-            //             }
-            //             if (!$vendor) {
-            //                 \Log::warning("[QB Import] Unapplied overpayment skipped: vendor not found for payment {$qbPaymentId}");
-            //                 continue;
-            //             }
+                    // small epsilon to avoid floating rounding noise
+                    if ($unapplied >= 0.01) {
+                        // Find vendor for this payment
+                        $vendorQbId = $paymentData['VendorRef']['value'] ?? null;
+                        $vendor = null;
+                        if ($vendorQbId) {
+                            $vendor = Vender::where('vender_id', $vendorQbId)->where('created_by', $creatorId)->first();
+                        }
+                        if (!$vendor) {
+                            \Log::warning("[QB Import] Unapplied overpayment skipped: vendor not found for payment {$qbPaymentId}");
+                            continue;
+                        }
 
-            //             // Resolve bank/chart account similarly
-            //             $sourceAccount = $paymentData['CheckPayment']['BankAccountRef'] ?? $paymentData['CreditCardPayment']['CCAccountRef'] ?? null;
-            //             $bankAccountId = 0; $chartAccountId = 0;
-            //             if ($sourceAccount) {
-            //                 $bankAccountId = $this->getOrCreateBankAccountFromChartAccount(
-            //                     $sourceAccount['value'] ?? null,
-            //                     $sourceAccount['name'] ?? null
-            //                 );
-            //                 if ($bankAccountId) {
-            //                     $bankAccountModel = \App\Models\BankAccount::find($bankAccountId);
-            //                     if ($bankAccountModel) $chartAccountId = $bankAccountModel->chart_account_id;
-            //                 }
-            //             }
+                        // Resolve bank/chart account similarly
+                        $sourceAccount = $paymentData['CheckPayment']['BankAccountRef'] ?? $paymentData['CreditCardPayment']['CCAccountRef'] ?? null;
+                        $bankAccountId = 0; $chartAccountId = 0;
+                        if ($sourceAccount) {
+                            $bankAccountId = $this->getOrCreateBankAccountFromChartAccount(
+                                $sourceAccount['value'] ?? null,
+                                $sourceAccount['name'] ?? null
+                            );
+                            if ($bankAccountId) {
+                                $bankAccountModel = \App\Models\BankAccount::find($bankAccountId);
+                                if ($bankAccountModel) $chartAccountId = $bankAccountModel->chart_account_id;
+                            }
+                        }
 
-            //             // Try to link to a created BillPayment local record (if any) using payRef
-            //             $linkPaymentId = null;
-            //             if (isset($createdBillPaymentByRef[$payRef]) && count($createdBillPaymentByRef[$payRef]) > 0) {
-            //                 // pick the first created BillPayment id for this payment as a reference
-            //                 $linkPaymentId = $createdBillPaymentByRef[$payRef][0];
-            //             }
+                        // Try to link to a created BillPayment local record (if any) using payRef
+                        $linkPaymentId = null;
+                        if (isset($createdBillPaymentByRef[$payRef]) && count($createdBillPaymentByRef[$payRef]) > 0) {
+                            // pick the first created BillPayment id for this payment as a reference
+                            $linkPaymentId = $createdBillPaymentByRef[$payRef][0];
+                        }
 
-            //             // Create single Vendor Credit transaction for unapplied amount
-            //             $txn = \App\Models\Transaction::create([
-            //                 'user_id' => $vendor->id,
-            //                 'user_type' => 'Vendor',
-            //                 'type' => 'Payment',
-            //                 'payment_id' => $linkPaymentId, // may be null
-            //                 'amount' => $unapplied,
-            //                 'date' => $paymentData['TxnDate'] ?? now(),
-            //                 'payment_no' => $payRef,
-            //                 'description' => 'Unapplied overpayment from QuickBooks (imported)',
-            //                 'account' => $bankAccountId,
-            //                 'chart_account_id' => $chartAccountId,
-            //                 'category' => 'Vendor Credit',
-            //                 'created_by' => $creatorId,
-            //                 'owned_by' => $ownedId,
-            //                 'created_at' => now(),
-            //                 'updated_at' => now(),
-            //             ]);
+                        // Create single Vendor Credit transaction for unapplied amount
+                        $txn = \App\Models\Transaction::create([
+                            'user_id' => $vendor->id,
+                            'user_type' => 'Vendor',
+                            'type' => 'Payment',
+                            'payment_id' => $linkPaymentId, // may be null
+                            'amount' => $unapplied,
+                            'date' => $paymentData['TxnDate'] ?? now(),
+                            'payment_no' => $payRef,
+                            'description' => 'Unapplied overpayment from QuickBooks (imported)',
+                            'account' => $bankAccountId,
+                            'chart_account_id' => $chartAccountId,
+                            'category' => 'Vendor Credit',
+                            'created_by' => $creatorId,
+                            'owned_by' => $ownedId,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
 
-            //             Utility::updateUserBalance('vendor', $vendor->id, $unapplied, 'credit');
+                        Utility::updateUserBalance('vendor', $vendor->id, $unapplied, 'credit');
 
-            //             \Log::info("[QB Import] Created Vendor Credit transaction (unapplied) for payment {$qbPaymentId}: amount " . number_format($unapplied, 2) . " txn_id={$txn->id}");
-            //         } else {
-            //             \Log::info("[QB Import] No unapplied amount for payment {$qbPaymentId} (unapplied={$unapplied})");
-            //         }
-            //     } catch (\Exception $e) {
-            //         \Log::error("[QB Import] Error while processing unapplied overpayment for QB Payment {$paymentData['Id']}: " . $e->getMessage());
-            //     }
-            // }
+                        \Log::info("[QB Import] Created Vendor Credit transaction (unapplied) for payment {$qbPaymentId}: amount " . number_format($unapplied, 2) . " txn_id={$txn->id}");
+                    } else {
+                        \Log::info("[QB Import] No unapplied amount for payment {$qbPaymentId} (unapplied={$unapplied})");
+                    }
+                } catch (\Exception $e) {
+                    \Log::error("[QB Import] Error while processing unapplied overpayment for QB Payment {$paymentData['Id']}: " . $e->getMessage());
+                }
+            }
 
             // -------------------------
             // PHASE 3: IMPORT VENDOR CREDITS (existing QB VendorCredit objects)
@@ -6916,24 +6991,24 @@ class QuickBooksImportController extends Controller
             // -------------------------
             // PHASE 4: RECONCILIATION (PO links)
             // -------------------------
-            // foreach ($poLinks as $link) {
-            //     try {
-            //         $localPo = Purchase::where('purchase_id', $link['po_qb_id'])->where('created_by', $creatorId)->first();
-            //         if (!$localPo) continue;
+            foreach ($poLinks as $link) {
+                try {
+                    $localPo = Purchase::where('purchase_id', $link['po_qb_id'])->where('created_by', $creatorId)->first();
+                    if (!$localPo) continue;
 
-            //         if ($link['target_type'] === 'Bill' || $link['target_type'] === 'Purchase') {
-            //             $localBill = Bill::where('bill_id', $link['target_qb_id'])->where('created_by', $creatorId)->first();
-            //             if ($localBill) {
-            //                 $localPo->txn_id = $localBill->id;
-            //                 $localPo->txn_type = $link['target_type'];
-            //                 $localPo->status = 2; // Closed
-            //                 $localPo->save();
-            //             }
-            //         }
-            //     } catch (\Exception $e) {
-            //         \Log::warning("[QB Import] PO Link reconcile failed: " . $e->getMessage());
-            //     }
-            // }
+                    if ($link['target_type'] === 'Bill' || $link['target_type'] === 'Purchase') {
+                        $localBill = Bill::where('bill_id', $link['target_qb_id'])->where('created_by', $creatorId)->first();
+                        if ($localBill) {
+                            $localPo->txn_id = $localBill->id;
+                            $localPo->txn_type = $link['target_type'];
+                            $localPo->status = 2; // Closed
+                            $localPo->save();
+                        }
+                    }
+                } catch (\Exception $e) {
+                    \Log::warning("[QB Import] PO Link reconcile failed: " . $e->getMessage());
+                }
+            }
 
             DB::commit();
             \Log::info('[QB Import] Import completed.', $metrics);
@@ -8726,365 +8801,365 @@ class QuickBooksImportController extends Controller
         }
     }
 
-    public function importDeposits(Request $request)
-    {
-        try {
-            $imported = 0;
-            $skipped = 0;
-            $failed = 0;
-            $errors = [];
-            $batchSize = 1000;
-            $startPosition = 1;
+    // public function importDeposits(Request $request)
+    // {
+    //     try {
+    //         $imported = 0;
+    //         $skipped = 0;
+    //         $failed = 0;
+    //         $errors = [];
+    //         $batchSize = 1000;
+    //         $startPosition = 1;
 
-            // configuration: set to false if you don't want new customers auto-created
-            $autoCreateCustomer = true;
+    //         // configuration: set to false if you don't want new customers auto-created
+    //         $autoCreateCustomer = true;
 
-            DB::beginTransaction();
-            $creatorId = \Auth::user()->creatorId();
-            $ownerId = \Auth::user()->ownedId();
+    //         DB::beginTransaction();
+    //         $creatorId = \Auth::user()->creatorId();
+    //         $ownerId = \Auth::user()->ownedId();
 
-            do {
-                // 1️⃣ Fetch deposits from QuickBooks
-                $query = "SELECT * FROM Deposit STARTPOSITION {$startPosition} MAXRESULTS {$batchSize}";
-                $depositResponse = $this->qbController->runQuery($query);
+    //         do {
+    //             // 1️⃣ Fetch deposits from QuickBooks
+    //             $query = "SELECT * FROM Deposit STARTPOSITION {$startPosition} MAXRESULTS {$batchSize}";
+    //             $depositResponse = $this->qbController->runQuery($query);
 
-                if ($depositResponse instanceof \Illuminate\Http\JsonResponse) {
-                     // If error, rollback and return
-                     DB::rollBack();
-                     return $depositResponse;
-                }
+    //             if ($depositResponse instanceof \Illuminate\Http\JsonResponse) {
+    //                  // If error, rollback and return
+    //                  DB::rollBack();
+    //                  return $depositResponse;
+    //             }
 
-                $depositsData = $depositResponse['QueryResponse']['Deposit'] ?? [];
+    //             $depositsData = $depositResponse['QueryResponse']['Deposit'] ?? [];
 
-                if (empty($depositsData)) {
-                    break; 
-                }
+    //             if (empty($depositsData)) {
+    //                 break; 
+    //             }
 
 
 
-            foreach ($depositsData as $deposit) {
-                $qbDepositId = $deposit['Id'] ?? null;
-                $docNumber = $deposit['DocNumber'] ?? null;
-                $txnDate = $deposit['TxnDate'] ?? null;
-                $totalAmt = $deposit['TotalAmt'] ?? 0;
-                $privateNote = $deposit['PrivateNote'] ?? null;
-                $currency = $deposit['CurrencyRef']['name'] ?? null;
+    //         foreach ($depositsData as $deposit) {
+    //             $qbDepositId = $deposit['Id'] ?? null;
+    //             $docNumber = $deposit['DocNumber'] ?? null;
+    //             $txnDate = $deposit['TxnDate'] ?? null;
+    //             $totalAmt = $deposit['TotalAmt'] ?? 0;
+    //             $privateNote = $deposit['PrivateNote'] ?? null;
+    //             $currency = $deposit['CurrencyRef']['name'] ?? null;
 
-                // ---------- Bank/DepositToAccountRef (inline as you requested) ----------
-                $depositToAccountRef = $deposit['DepositToAccountRef'] ?? null;
-                $bankAccountId = null;
+    //             // ---------- Bank/DepositToAccountRef (inline as you requested) ----------
+    //             $depositToAccountRef = $deposit['DepositToAccountRef'] ?? null;
+    //             $bankAccountId = null;
 
-                if (!empty($depositToAccountRef) && !empty($depositToAccountRef['value'])) {
-                    $qbAccountCode = $depositToAccountRef['value'];
-                    $qbAccountName = $depositToAccountRef['name'] ?? 'Bank Account';
+    //             if (!empty($depositToAccountRef) && !empty($depositToAccountRef['value'])) {
+    //                 $qbAccountCode = $depositToAccountRef['value'];
+    //                 $qbAccountName = $depositToAccountRef['name'] ?? 'Bank Account';
 
-                    $chartAccount = ChartOfAccount::where('code', $qbAccountCode)
-                        ->where('created_by', $creatorId)
-                        ->first();
+    //                 $chartAccount = ChartOfAccount::where('code', $qbAccountCode)
+    //                     ->where('created_by', $creatorId)
+    //                     ->first();
 
-                    if ($chartAccount) {
-                        $bankAccount = BankAccount::where('chart_account_id', $chartAccount->id)
-                            ->where('created_by', $creatorId)
-                            ->first();
+    //                 if ($chartAccount) {
+    //                     $bankAccount = BankAccount::where('chart_account_id', $chartAccount->id)
+    //                         ->where('created_by', $creatorId)
+    //                         ->first();
 
-                        if (!$bankAccount) {
-                            try {
-                                $bankAccount = BankAccount::create([
-                                    'bank_name' => $qbAccountName,
-                                    'chart_account_id' => $chartAccount->id,
-                                    'created_by' => $creatorId,
-                                    'owned_by' => $ownerId,
-                                ]);
-                            } catch (\Exception $e) {
-                                \Log::error("Failed to create bank account for deposit {$qbDepositId}: " . $e->getMessage());
-                            }
-                        }
+    //                     if (!$bankAccount) {
+    //                         try {
+    //                             $bankAccount = BankAccount::create([
+    //                                 'bank_name' => $qbAccountName,
+    //                                 'chart_account_id' => $chartAccount->id,
+    //                                 'created_by' => $creatorId,
+    //                                 'owned_by' => $ownerId,
+    //                             ]);
+    //                         } catch (\Exception $e) {
+    //                             \Log::error("Failed to create bank account for deposit {$qbDepositId}: " . $e->getMessage());
+    //                         }
+    //                     }
 
-                        $bankAccountId = $bankAccount->id ?? null;
-                    } else {
-                        \Log::info("ChartOfAccount not found for DepositToAccountRef in deposit {$qbDepositId}", [
-                            'DepositToAccountRef' => $depositToAccountRef
-                        ]);
-                    }
-                }
+    //                     $bankAccountId = $bankAccount->id ?? null;
+    //                 } else {
+    //                     \Log::info("ChartOfAccount not found for DepositToAccountRef in deposit {$qbDepositId}", [
+    //                         'DepositToAccountRef' => $depositToAccountRef
+    //                     ]);
+    //                 }
+    //             }
 
-                // ---------- Create or update Deposit ----------
-                $depositModel = Deposit::where('deposit_id', $qbDepositId)->first();
-                if (!$depositModel) {
-                    $depositModel = Deposit::create([
-                        'deposit_id' => $qbDepositId,
-                        'doc_number' => $docNumber,
-                        'txn_date' => $txnDate,
-                        'total_amt' => $totalAmt,
-                        'private_note' => $privateNote,
-                        'currency' => $currency,
-                        'bank_id' => $bankAccountId,
-                    ]);
-                } else {
-                    $depositModel->update([
-                        'doc_number' => $docNumber,
-                        'txn_date' => $txnDate,
-                        'total_amt' => $totalAmt,
-                        'private_note' => $privateNote,
-                        'currency' => $currency,
-                        'bank_id' => $bankAccountId,
-                    ]);
-                    // clear existing lines for re-import
-                    $depositModel->lines()->delete();
-                }
+    //             // ---------- Create or update Deposit ----------
+    //             $depositModel = Deposit::where('deposit_id', $qbDepositId)->first();
+    //             if (!$depositModel) {
+    //                 $depositModel = Deposit::create([
+    //                     'deposit_id' => $qbDepositId,
+    //                     'doc_number' => $docNumber,
+    //                     'txn_date' => $txnDate,
+    //                     'total_amt' => $totalAmt,
+    //                     'private_note' => $privateNote,
+    //                     'currency' => $currency,
+    //                     'bank_id' => $bankAccountId,
+    //                 ]);
+    //             } else {
+    //                 $depositModel->update([
+    //                     'doc_number' => $docNumber,
+    //                     'txn_date' => $txnDate,
+    //                     'total_amt' => $totalAmt,
+    //                     'private_note' => $privateNote,
+    //                     'currency' => $currency,
+    //                     'bank_id' => $bankAccountId,
+    //                 ]);
+    //                 // clear existing lines for re-import
+    //                 $depositModel->lines()->delete();
+    //             }
 
-                // ---------- Process deposit lines ----------
-                $lines = $deposit['Line'] ?? [];
-                $firstCustomerId = null;
-                $firstEntityType = null;
-                $primaryChartAccountId = null;
-                $otherAccountId = null;
+    //             // ---------- Process deposit lines ----------
+    //             $lines = $deposit['Line'] ?? [];
+    //             $firstCustomerId = null;
+    //             $firstEntityType = null;
+    //             $primaryChartAccountId = null;
+    //             $otherAccountId = null;
 
-                foreach ($lines as $lineIndex => $line) {
-                    $detail = $line['DepositLineDetail'] ?? [];
-                    // Robust entity extraction - handle multiple possible QuickBooks shapes
-                    $entityRef = null;
+    //             foreach ($lines as $lineIndex => $line) {
+    //                 $detail = $line['DepositLineDetail'] ?? [];
+    //                 // Robust entity extraction - handle multiple possible QuickBooks shapes
+    //                 $entityRef = null;
 
-                    // common possible locations:
-                    if (!empty($detail['Entity']['EntityRef'])) {
-                        $entityRef = $detail['Entity']['EntityRef'];
-                    } elseif (!empty($detail['EntityRef'])) {
-                        $entityRef = $detail['EntityRef'];
-                    } elseif (!empty($detail['Entity']) && is_array($detail['Entity'])) {
-                        // sometimes Entity itself may be the ref array with 'value'/'name'
-                        $ent = $detail['Entity'];
-                        if (isset($ent['value']) || isset($ent['name'])) {
-                            $entityRef = $ent;
-                        } else {
-                            // fallback: maybe indexed; log for inspection
-                            \Log::debug("Deposit {$qbDepositId} line {$lineIndex} - unexpected Entity shape", [
-                                'Entity' => $ent
-                            ]);
-                        }
-                    } elseif (!empty($line['CustomerRef'])) {
-                        $entityRef = $line['CustomerRef'];
-                    }
+    //                 // common possible locations:
+    //                 if (!empty($detail['Entity']['EntityRef'])) {
+    //                     $entityRef = $detail['Entity']['EntityRef'];
+    //                 } elseif (!empty($detail['EntityRef'])) {
+    //                     $entityRef = $detail['EntityRef'];
+    //                 } elseif (!empty($detail['Entity']) && is_array($detail['Entity'])) {
+    //                     // sometimes Entity itself may be the ref array with 'value'/'name'
+    //                     $ent = $detail['Entity'];
+    //                     if (isset($ent['value']) || isset($ent['name'])) {
+    //                         $entityRef = $ent;
+    //                     } else {
+    //                         // fallback: maybe indexed; log for inspection
+    //                         \Log::debug("Deposit {$qbDepositId} line {$lineIndex} - unexpected Entity shape", [
+    //                             'Entity' => $ent
+    //                         ]);
+    //                     }
+    //                 } elseif (!empty($line['CustomerRef'])) {
+    //                     $entityRef = $line['CustomerRef'];
+    //                 }
 
-                    $customer = null;
-                    $customerQbId = $entityRef['value'] ?? null;
-                    $customerName = $entityRef['name'] ?? null;
+    //                 $customer = null;
+    //                 $customerQbId = $entityRef['value'] ?? null;
+    //                 $customerName = $entityRef['name'] ?? null;
 
-                    // If no entityRef found, log the whole line for debugging and continue
-                    if (empty($entityRef) || (empty($customerQbId) && empty($customerName))) {
-                        \Log::warning("Deposit {$qbDepositId} line {$lineIndex}: missing EntityRef / customer info", [
-                            'line' => $line,
-                            'detail' => $detail,
-                        ]);
+    //                 // If no entityRef found, log the whole line for debugging and continue
+    //                 if (empty($entityRef) || (empty($customerQbId) && empty($customerName))) {
+    //                     \Log::warning("Deposit {$qbDepositId} line {$lineIndex}: missing EntityRef / customer info", [
+    //                         'line' => $line,
+    //                         'detail' => $detail,
+    //                     ]);
 
-                        // We don't skip anymore, we just proceed with no entity info
-                        // $skipped++;
-                        // continue;
-                    }
+    //                     // We don't skip anymore, we just proceed with no entity info
+    //                     // $skipped++;
+    //                     // continue;
+    //                 }
 
-                    $entityTypeRaw = $detail['Entity']['Type'] ?? $detail['Entity']['type'] ?? null;
-                    $entityType = ucfirst(strtolower($entityTypeRaw));
-                    $entityId = null;
-                    $entityModel = null;
+    //                 $entityTypeRaw = $detail['Entity']['Type'] ?? $detail['Entity']['type'] ?? null;
+    //                 $entityType = ucfirst(strtolower($entityTypeRaw));
+    //                 $entityId = null;
+    //                 $entityModel = null;
 
-                    if ($entityType === 'Vendor') {
-                        // Vendor lookup
-                        if (!empty($customerQbId)) {
-                             $entityModel = Vender::where('vender_id', $customerQbId)
-                                ->where('created_by', $creatorId)
-                                ->first();
-                        }
-                        // Fallback by name
-                        if (!$entityModel && !empty($customerName)) {
-                             $entityModel = Vender::whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($customerName))])
-                                ->where('created_by', $creatorId)
-                                ->first();
-                        }
+    //                 if ($entityType === 'Vendor') {
+    //                     // Vendor lookup
+    //                     if (!empty($customerQbId)) {
+    //                          $entityModel = Vender::where('vender_id', $customerQbId)
+    //                             ->where('created_by', $creatorId)
+    //                             ->first();
+    //                     }
+    //                     // Fallback by name
+    //                     if (!$entityModel && !empty($customerName)) {
+    //                          $entityModel = Vender::whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($customerName))])
+    //                             ->where('created_by', $creatorId)
+    //                             ->first();
+    //                     }
                         
-                        // Auto-create Vendor
-                        if (!$entityModel && $autoCreateCustomer && !empty($customerName)) {
-                            try {
-                                $entityModel = Vender::create([
-                                    'name' => $customerName,
-                                    'vender_id' => $customerQbId ?? null, // Note: Vender model uses vender_id
-                                    'created_by' => $creatorId,
-                                    'billing_name' => $customerName, // minimal required fields often needed
-                                    'email' => '', // placeholder
-                                ]);
-                                \Log::info("Auto-created vendor for deposit {$qbDepositId}", [
-                                    'vendor' => $entityModel->toArray()
-                                ]);
-                            } catch (\Exception $e) {
-                                \Log::error("Failed to auto-create vendor for deposit {$qbDepositId}: " . $e->getMessage());
-                                // don't fail hard, just skip linking
-                            }
-                        }
+    //                     // Auto-create Vendor
+    //                     if (!$entityModel && $autoCreateCustomer && !empty($customerName)) {
+    //                         try {
+    //                             $entityModel = Vender::create([
+    //                                 'name' => $customerName,
+    //                                 'vender_id' => $customerQbId ?? null, // Note: Vender model uses vender_id
+    //                                 'created_by' => $creatorId,
+    //                                 'billing_name' => $customerName, // minimal required fields often needed
+    //                                 'email' => '', // placeholder
+    //                             ]);
+    //                             \Log::info("Auto-created vendor for deposit {$qbDepositId}", [
+    //                                 'vendor' => $entityModel->toArray()
+    //                             ]);
+    //                         } catch (\Exception $e) {
+    //                             \Log::error("Failed to auto-create vendor for deposit {$qbDepositId}: " . $e->getMessage());
+    //                             // don't fail hard, just skip linking
+    //                         }
+    //                     }
 
-                        if ($entityModel) {
-                            $entityId = $entityModel->id;
-                            \Log::info("Matched vendor for deposit {$qbDepositId} line {$lineIndex}", [
-                                'vendor_id' => $entityModel->id,
-                                'name' => $entityModel->name,
-                            ]);
-                        }
+    //                     if ($entityModel) {
+    //                         $entityId = $entityModel->id;
+    //                         \Log::info("Matched vendor for deposit {$qbDepositId} line {$lineIndex}", [
+    //                             'vendor_id' => $entityModel->id,
+    //                             'name' => $entityModel->name,
+    //                         ]);
+    //                     }
 
-                    } elseif ($entityType === 'Customer') {
-                        // Customer lookup
-                        // Rename variable for clarity, though we kept $customerQbId above
-                        if (!empty($customerQbId)) {
-                            $entityModel = Customer::where(function ($q) use ($customerQbId) {
-                                $q->where('customer_id', $customerQbId);
-                            })->where('created_by', $creatorId)->first();
-                        }
+    //                 } elseif ($entityType === 'Customer') {
+    //                     // Customer lookup
+    //                     // Rename variable for clarity, though we kept $customerQbId above
+    //                     if (!empty($customerQbId)) {
+    //                         $entityModel = Customer::where(function ($q) use ($customerQbId) {
+    //                             $q->where('customer_id', $customerQbId);
+    //                         })->where('created_by', $creatorId)->first();
+    //                     }
     
-                        if (!$entityModel && !empty($customerName)) {
-                            $entityModel = Customer::whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($customerName))])
-                                ->where('created_by', $creatorId)
-                                ->first();
-                        }
+    //                     if (!$entityModel && !empty($customerName)) {
+    //                         $entityModel = Customer::whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($customerName))])
+    //                             ->where('created_by', $creatorId)
+    //                             ->first();
+    //                     }
     
-                        if (!$entityModel && $autoCreateCustomer && !empty($customerName)) {
-                            try {
-                                $entityModel = Customer::create([
-                                    'name' => $customerName,
-                                    'customer_id' => $customerQbId ?? null,
-                                    'created_by' => $creatorId,
-                                ]);
-                                \Log::info("Auto-created customer for deposit {$qbDepositId}", [
-                                    'customer' => $entityModel->toArray()
-                                ]);
-                            } catch (\Exception $e) {
-                                \Log::error("Failed to auto-create customer for deposit {$qbDepositId}: " . $e->getMessage());
-                            }
-                        }
+    //                     if (!$entityModel && $autoCreateCustomer && !empty($customerName)) {
+    //                         try {
+    //                             $entityModel = Customer::create([
+    //                                 'name' => $customerName,
+    //                                 'customer_id' => $customerQbId ?? null,
+    //                                 'created_by' => $creatorId,
+    //                             ]);
+    //                             \Log::info("Auto-created customer for deposit {$qbDepositId}", [
+    //                                 'customer' => $entityModel->toArray()
+    //                             ]);
+    //                         } catch (\Exception $e) {
+    //                             \Log::error("Failed to auto-create customer for deposit {$qbDepositId}: " . $e->getMessage());
+    //                         }
+    //                     }
 
-                        if ($entityModel) {
-                            $entityId = $entityModel->id;
-                            \Log::info("Matched customer for deposit {$qbDepositId} line {$lineIndex}", [
-                                'customer_id' => $entityModel->id,
-                                'name' => $entityModel->name,
-                            ]);
-                        }
-                    }
+    //                     if ($entityModel) {
+    //                         $entityId = $entityModel->id;
+    //                         \Log::info("Matched customer for deposit {$qbDepositId} line {$lineIndex}", [
+    //                             'customer_id' => $entityModel->id,
+    //                             'name' => $entityModel->name,
+    //                         ]);
+    //                     }
+    //                 }
 
-                    if (!$entityModel) {
-                        \Log::warning("⚠️ Entity ({$entityType}) not found for Deposit {$qbDepositId} line {$lineIndex}", [
-                            'qbId' => $customerQbId,
-                            'name' => $customerName,
-                        ]);
-                        // We continue without ID 
-                    }
+    //                 if (!$entityModel) {
+    //                     \Log::warning("⚠️ Entity ({$entityType}) not found for Deposit {$qbDepositId} line {$lineIndex}", [
+    //                         'qbId' => $customerQbId,
+    //                         'name' => $customerName,
+    //                     ]);
+    //                     // We continue without ID 
+    //                 }
 
-                    // ---------- Chart of account resolution ----------
-                    $accountRef = $detail['AccountRef'] ?? [];
-                    $chartAccount = null;
-                    if (!empty($accountRef)) {
-                        $accountValue = $accountRef['value'] ?? null;
-                        $accountName = $accountRef['name'] ?? null;
+    //                 // ---------- Chart of account resolution ----------
+    //                 $accountRef = $detail['AccountRef'] ?? [];
+    //                 $chartAccount = null;
+    //                 if (!empty($accountRef)) {
+    //                     $accountValue = $accountRef['value'] ?? null;
+    //                     $accountName = $accountRef['name'] ?? null;
 
-                        if ($accountValue) {
-                            $chartAccount = ChartOfAccount::where('code', $accountValue)
-                                ->where('created_by', $creatorId)
-                                ->first();
-                        }
+    //                     if ($accountValue) {
+    //                         $chartAccount = ChartOfAccount::where('code', $accountValue)
+    //                             ->where('created_by', $creatorId)
+    //                             ->first();
+    //                     }
 
-                        if (!$chartAccount && $accountName) {
-                            $chartAccount = ChartOfAccount::whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($accountName))])
-                                ->where('created_by', $creatorId)
-                                ->first();
-                        }
+    //                     if (!$chartAccount && $accountName) {
+    //                         $chartAccount = ChartOfAccount::whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($accountName))])
+    //                             ->where('created_by', $creatorId)
+    //                             ->first();
+    //                     }
 
-                        // If nothing found create a placeholder (optional)
-                        if (!$chartAccount && !empty($accountName)) {
-                            try {
-                                $chartAccount = ChartOfAccount::create([
-                                    'name' => $accountName,
-                                    'code' => $accountValue ?? null,
-                                    'created_by' => $creatorId,
-                                ]);
-                                \Log::info("Created placeholder ChartOfAccount for deposit {$qbDepositId} line {$lineIndex}", [
-                                    'chartAccount' => $chartAccount->toArray(),
-                                ]);
-                            } catch (\Exception $e) {
-                                \Log::error("Failed to create ChartOfAccount for deposit {$qbDepositId} line {$lineIndex}: " . $e->getMessage());
-                            }
-                        }
-                    }
+    //                     // If nothing found create a placeholder (optional)
+    //                     if (!$chartAccount && !empty($accountName)) {
+    //                         try {
+    //                             $chartAccount = ChartOfAccount::create([
+    //                                 'name' => $accountName,
+    //                                 'code' => $accountValue ?? null,
+    //                                 'created_by' => $creatorId,
+    //                             ]);
+    //                             \Log::info("Created placeholder ChartOfAccount for deposit {$qbDepositId} line {$lineIndex}", [
+    //                                 'chartAccount' => $chartAccount->toArray(),
+    //                             ]);
+    //                         } catch (\Exception $e) {
+    //                             \Log::error("Failed to create ChartOfAccount for deposit {$qbDepositId} line {$lineIndex}: " . $e->getMessage());
+    //                         }
+    //                     }
+    //                 }
 
-                    // ---------- Linked Txns ----------
-                    $linkedTxnRaw = $detail['LinkedTxn'] ?? [];
-                    $linkedTxns = collect($linkedTxnRaw)->map(function ($lt) {
-                        return [
-                            'TxnId' => $lt['TxnId'] ?? null,
-                            'TxnType' => $lt['TxnType'] ?? null,
-                            'TxnLineId' => $lt['TxnLineId'] ?? null,
-                        ];
-                    })->values()->toArray();
+    //                 // ---------- Linked Txns ----------
+    //                 $linkedTxnRaw = $detail['LinkedTxn'] ?? [];
+    //                 $linkedTxns = collect($linkedTxnRaw)->map(function ($lt) {
+    //                     return [
+    //                         'TxnId' => $lt['TxnId'] ?? null,
+    //                         'TxnType' => $lt['TxnType'] ?? null,
+    //                         'TxnLineId' => $lt['TxnLineId'] ?? null,
+    //                     ];
+    //                 })->values()->toArray();
 
-                    DepositLines::create([
-                        'deposit_id' => $depositModel->id,
-                        'amount' => $line['Amount'] ?? 0,
-                        'detail_type' => $line['DetailType'] ?? null,
-                        'customer_id' => $entityId, // Store ID here regardless of type (Vendor/Customer)
-                        'entity_type' => $entityType,
-                        'chart_account_id' => $chartAccount->id ?? null,
-                        'payment_method' => $detail['PaymentMethodRef']['name'] ?? null,
-                        'check_num' => $detail['CheckNum'] ?? null,
-                        'linked_txns' => !empty($linkedTxns) ? json_encode($linkedTxns) : null,
-                    ]);
+    //                 DepositLines::create([
+    //                     'deposit_id' => $depositModel->id,
+    //                     'amount' => $line['Amount'] ?? 0,
+    //                     'detail_type' => $line['DetailType'] ?? null,
+    //                     'customer_id' => $entityId, // Store ID here regardless of type (Vendor/Customer)
+    //                     'entity_type' => $entityType,
+    //                     'chart_account_id' => $chartAccount->id ?? null,
+    //                     'payment_method' => $detail['PaymentMethodRef']['name'] ?? null,
+    //                     'check_num' => $detail['CheckNum'] ?? null,
+    //                     'linked_txns' => !empty($linkedTxns) ? json_encode($linkedTxns) : null,
+    //                 ]);
 
-                    // maintain top-level pointers
-                    if (!$firstCustomerId && $entityId) {
-                        $firstCustomerId = $entityId;
-                        $firstEntityType = $entityType;
-                    }
-                    if (!$primaryChartAccountId && $chartAccount)
-                        $primaryChartAccountId = $chartAccount->id;
-                    $otherAccountId = $chartAccount->id ?? $otherAccountId;
-                    $imported++;
-                } // end foreach lines
+    //                 // maintain top-level pointers
+    //                 if (!$firstCustomerId && $entityId) {
+    //                     $firstCustomerId = $entityId;
+    //                     $firstEntityType = $entityType;
+    //                 }
+    //                 if (!$primaryChartAccountId && $chartAccount)
+    //                     $primaryChartAccountId = $chartAccount->id;
+    //                 $otherAccountId = $chartAccount->id ?? $otherAccountId;
+    //                 $imported++;
+    //             } // end foreach lines
 
-                // Update deposit top-level links
-                $depositModel->update([
-                    'customer_id' => $firstCustomerId,
-                    'entity_type' => $firstEntityType,
-                    'chart_account_id' => $primaryChartAccountId,
-                    'other_account_id' => $otherAccountId,
-                ]);
-            } // end foreach deposits
+    //             // Update deposit top-level links
+    //             $depositModel->update([
+    //                 'customer_id' => $firstCustomerId,
+    //                 'entity_type' => $firstEntityType,
+    //                 'chart_account_id' => $primaryChartAccountId,
+    //                 'other_account_id' => $otherAccountId,
+    //             ]);
+    //         } // end foreach deposits
 
-            $startPosition += $batchSize;
+    //         $startPosition += $batchSize;
 
-        } while (count($depositsData) >= $batchSize);
+    //     } while (count($depositsData) >= $batchSize);
 
-        DB::commit();
+    //     DB::commit();
 
-        if ($imported == 0 && $skipped == 0 && $failed == 0) {
-             return response()->json([
-                'status' => 'success',
-                'count' => 0,
-                'message' => 'No deposits found in QuickBooks response.',
-            ]);
-        }
+    //     if ($imported == 0 && $skipped == 0 && $failed == 0) {
+    //          return response()->json([
+    //             'status' => 'success',
+    //             'count' => 0,
+    //             'message' => 'No deposits found in QuickBooks response.',
+    //         ]);
+    //     }
         
-        return response()->json([
-            'status' => 'success',
-            'count' => $imported,
-            'skipped' => $skipped,
-            'failed' => $failed,
-            'errors' => $errors,
-            'message' => "Imported {$imported} deposit lines (skipped {$skipped}, failed {$failed}).",
-        ]);
+    //     return response()->json([
+    //         'status' => 'success',
+    //         'count' => $imported,
+    //         'skipped' => $skipped,
+    //         'failed' => $failed,
+    //         'errors' => $errors,
+    //         'message' => "Imported {$imported} deposit lines (skipped {$skipped}, failed {$failed}).",
+    //     ]);
 
 
-        } catch (\Exception $e) {
-            DB::rollBack();
-            \Log::error('Deposit import error: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Deposit import failed: ' . $e->getMessage(),
-            ], 500);
-        }
-    }
+    //     } catch (\Exception $e) {
+    //         DB::rollBack();
+    //         \Log::error('Deposit import error: ' . $e->getMessage(), ['exception' => $e]);
+    //         return response()->json([
+    //             'status' => 'error',
+    //             'message' => 'Deposit import failed: ' . $e->getMessage(),
+    //         ], 500);
+    //     }
+    // }
 
         /**
      * Import Employees from QuickBooks
@@ -9092,6 +9167,7 @@ class QuickBooksImportController extends Controller
      */
     public function importEmployees(Request $request)
     {
+
         try {
             $creatorId = Auth::user()->creatorId();
             $ownedId = Auth::user()->ownedId();
@@ -9099,42 +9175,61 @@ class QuickBooksImportController extends Controller
             // Ensure Employee role exists
             $employeeRole = \Spatie\Permission\Models\Role::where('name', 'Employee')->first();
             if (!$employeeRole) {
-                $employeeRole = \Spatie\Permission\Models\Role::create(['name' => 'Employee']);
-                \Log::info('[QB Import] Created Employee role');
+               $employeeRole = Role::firstOrCreate(
+                    ['name' => 'Employee', 'guard_name' => 'web']
+                );
+
+                \Log::info('[QB Import] Employee role ensured', ['role_id' => $employeeRole->id]);
             }
             
             // Get or create a default Branch (required for Employee)
             $defaultBranch = \App\Models\Branch::where('created_by', $creatorId)->first();
             if (!$defaultBranch) {
-                $defaultBranch = \App\Models\Branch::create([
-                    'name' => 'Main Branch',
-                    'created_by' => $creatorId,
-                    'owned_by' => $ownedId,
-                ]);
+                $defaultBranch = \App\Models\Branch::firstOrCreate(
+            [
+                'created_by' => $creatorId,
+                'owned_by'   => $ownedId,
+            ],
+            [
+                'name' => 'Main Branch',
+            ]
+        );
+
+        \Log::info('[QB Import] Default branch ensured', [
+            'branch_id' => $defaultBranch->id
+        ]);
                 \Log::info('[QB Import] Created default branch: ' . $defaultBranch->id);
             }
             
             // Get or create a default Department (required for Employee)
             $defaultDepartment = \App\Models\Department::where('created_by', $creatorId)->first();
             if (!$defaultDepartment) {
-                $defaultDepartment = \App\Models\Department::create([
-                    'name' => 'General',
-                    'branch_id' => $defaultBranch->id,
-                    'created_by' => $creatorId,
-                    'owned_by' => $ownedId,
-                ]);
+                $defaultDepartment = \App\Models\Department::firstOrCreate(
+            [
+                'created_by' => $creatorId,
+                'owned_by'   => $ownedId,
+            ],
+            [
+                'name' => 'General',
+                'branch_id' => $defaultBranch->id,
+            ]
+        );
                 \Log::info('[QB Import] Created default department: ' . $defaultDepartment->id);
             }
             
             // Get or create a default Designation (required for Employee)
             $defaultDesignation = \App\Models\Designation::where('created_by', $creatorId)->first();
             if (!$defaultDesignation) {
-                $defaultDesignation = \App\Models\Designation::create([
+                    $defaultDesignation = \App\Models\Designation::firstOrCreate(
+                [
+                    'created_by' => $creatorId,
+                    'owned_by'   => $ownedId,
+                ],
+                [
                     'name' => 'Staff',
                     'department_id' => $defaultDepartment->id,
-                    'created_by' => $creatorId,
-                    'owned_by' => $ownedId,
-                ]);
+                ]
+            );
                 \Log::info('[QB Import] Created default designation: ' . $defaultDesignation->id);
             }
             
@@ -9168,12 +9263,12 @@ class QuickBooksImportController extends Controller
             $skipped = 0;
             $failed = 0;
             $errors = [];
-            
+            // dd($allEmployees);
             DB::beginTransaction();
             
             foreach ($allEmployees as $qbEmployee) {
                 $qbId = $qbEmployee['Id'];
-                
+                dd($qbEmployee,$qbId);
                 try {
                     // Check if employee already exists by email or QB ID
                     $displayName = $qbEmployee['DisplayName'] ?? ($qbEmployee['GivenName'] ?? '') . ' ' . ($qbEmployee['FamilyName'] ?? '');
@@ -9201,7 +9296,7 @@ class QuickBooksImportController extends Controller
                     // }
                     
                     // Also check by biometric_emp_id (using QB ID)
-                    $existingByQbId = Employee::where('biometric_emp_id', 'QB-' . $qbId)
+                    $existingByQbId = Employee::where('employee_id', $qbId)
                         ->where('created_by', $creatorId)
                         ->first();
                     
@@ -9262,7 +9357,7 @@ class QuickBooksImportController extends Controller
                         'address' => $address ?: 'Not Provided',
                         'email' => $email,
                         'password' => \Hash::make('password'),
-                        'employee_id' => $employeeNumber,
+                        'employee_id' => $qbId,
                         'biometric_emp_id' => 'QB-' . $qbId, // Store QB ID for reference
                         'branch_id' => $defaultBranch->id,
                         'department_id' => $defaultDepartment->id,
@@ -9593,6 +9688,883 @@ class QuickBooksImportController extends Controller
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Sales Receipts import failed: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    
+     /**
+     * Import Refund Receipts from QuickBooks
+     */
+    public function importRefundReceipts(Request $request)
+    {
+        ini_set('memory_limit', '512M');
+        set_time_limit(600);
+        try {
+            \Log::info("==========================================");
+            \Log::info("STARTING QBO REFUND RECEIPTS IMPORT");
+            \Log::info("==========================================");
+            DB::beginTransaction();
+            // Fetch all Refund Receipts with pagination
+            $allRefundReceipts = collect();
+            $startPosition = 1;
+            $maxResults = 50;
+            do {
+                $query = "SELECT * FROM RefundReceipt STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
+                $response = $this->qbController->runQuery($query);
+                if ($response instanceof \Illuminate\Http\JsonResponse) {
+                    return $response;
+                }
+                $refundReceiptsData = $response['QueryResponse']['RefundReceipt'] ?? [];
+                $allRefundReceipts = $allRefundReceipts->merge($refundReceiptsData);
+                $startPosition += count($refundReceiptsData);
+            } while (count($refundReceiptsData) === $maxResults);
+            \Log::info("[QB Import] Total Refund Receipts fetched: " . $allRefundReceipts->count());
+            // Fetch metadata for tax rates
+            $taxRatesRaw = $this->qbController->runQuery("SELECT * FROM TaxRate STARTPOSITION 1 MAXRESULTS 100");
+            $taxRatesList = collect($taxRatesRaw['QueryResponse']['TaxRate'] ?? []);
+            $taxRatesMap = $taxRatesList->keyBy('Id')->toArray();
+            $imported = 0;
+            $skipped = 0;
+            $failed = 0;
+            $errors = [];
+            $creatorId = \Auth::user()->creatorId();
+            $ownedId = \Auth::user()->ownedId();
+            // Helper: Get or create tax rate
+            $getOrCreateTaxRate = function ($qbTaxRateRef) use ($taxRatesMap, $creatorId) {
+                if (empty($qbTaxRateRef)) {
+                    return ['id' => 0, 'rate' => 0];
+                }
+                $rateData = $taxRatesMap[$qbTaxRateRef] ?? null;
+                if (!$rateData) {
+                    return ['id' => 0, 'rate' => 0];
+                }
+                $rateName = $rateData['Name'] ?? 'Tax';
+                $localTax = Tax::where('name', $rateName)->first();
+                if (!$localTax) {
+                    $localTax = Tax::create([
+                        'name'       => $rateName,
+                        'rate'       => $rateData['RateValue'],
+                        'created_by' => $creatorId,
+                    ]);
+                }
+                return ['id' => $localTax->id, 'rate' => $localTax->rate];
+            };
+            foreach ($allRefundReceipts as $qbRefundReceipt) {
+                try {
+                    $qbId = $qbRefundReceipt['Id'];
+                    // Skip if already exists
+                    if (RefundReceipt::where('refund_receipt_id', $qbId)->exists()) {
+                        $skipped++;
+                        continue;
+                    }
+                    // Get customer reference
+                    $qbCustRef = $qbRefundReceipt['CustomerRef']['value'] ?? null;
+                    $customer = $qbCustRef
+                        ? Customer::where('customer_id', $qbCustRef)
+                            ->where('created_by', $creatorId)
+                            ->first()
+                        : null;
+                    if (!$customer) {
+                        $errors[] = "Refund Receipt {$qbId}: Customer not found";
+                        $failed++;
+                        continue;
+                    }
+                    // Get payment method
+                    $paymentMethod = $qbRefundReceipt['PaymentMethodRef']['name'] ?? null;
+                    $paymentType = 'Cash'; // Default
+                    if ($paymentMethod) {
+                        $lowerMethod = strtolower($paymentMethod);
+                        if (strpos($lowerMethod, 'credit') !== false || strpos($lowerMethod, 'card') !== false) {
+                            $paymentType = 'Credit Card';
+                        } elseif (strpos($lowerMethod, 'check') !== false) {
+                            $paymentType = 'Check';
+                        } elseif (strpos($lowerMethod, 'bank') !== false || strpos($lowerMethod, 'transfer') !== false) {
+                            $paymentType = 'Bank Transfer';
+                        }
+                    }
+                    // Get deposit account
+                    $depositTo = null;
+                    if (!empty($qbRefundReceipt['DepositToAccountRef']['value'])) {
+                        $depositAccountCode = $qbRefundReceipt['DepositToAccountRef']['value'];
+                        $depositAccount = ChartOfAccount::where('code', $depositAccountCode)
+                            ->where('created_by', $creatorId)
+                            ->first();
+                        $depositTo = $depositAccount ? $depositAccount->id : null;
+                    }
+                    // Calculate tax info
+                    $salesTaxAmount = 0;
+                    $salesTaxRate = 0;
+                    if (isset($qbRefundReceipt['TxnTaxDetail'])) {
+                        $salesTaxAmount = (float)($qbRefundReceipt['TxnTaxDetail']['TotalTax'] ?? 0);
+                        if (!empty($qbRefundReceipt['TxnTaxDetail']['TaxLine'])) {
+                            foreach ($qbRefundReceipt['TxnTaxDetail']['TaxLine'] as $taxLine) {
+                                if (($taxLine['DetailType'] ?? '') == 'TaxLineDetail'
+                                    && isset($taxLine['TaxLineDetail']['TaxRateRef']['value'])) {
+                                    $tData = $getOrCreateTaxRate($taxLine['TaxLineDetail']['TaxRateRef']['value']);
+                                    $salesTaxRate = $tData['rate'];
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    // Get billing and shipping addresses
+                    $billTo = null;
+                    $shipTo = null;
+                    if (!empty($qbRefundReceipt['BillAddr'])) {
+                        $billTo = implode(', ', array_filter([
+                            $qbRefundReceipt['BillAddr']['Line1'] ?? null,
+                            $qbRefundReceipt['BillAddr']['City'] ?? null,
+                            $qbRefundReceipt['BillAddr']['CountrySubDivisionCode'] ?? null,
+                            $qbRefundReceipt['BillAddr']['PostalCode'] ?? null,
+                        ]));
+                    }
+                    if (!empty($qbRefundReceipt['ShipAddr'])) {
+                        $shipTo = implode(', ', array_filter([
+                            $qbRefundReceipt['ShipAddr']['Line1'] ?? null,
+                            $qbRefundReceipt['ShipAddr']['City'] ?? null,
+                            $qbRefundReceipt['ShipAddr']['CountrySubDivisionCode'] ?? null,
+                            $qbRefundReceipt['ShipAddr']['PostalCode'] ?? null,
+                        ]));
+                    }
+                    // Get totals from QBO
+                    $totalAmount = (float)($qbRefundReceipt['TotalAmt'] ?? 0);
+                    $subtotal = $totalAmount - $salesTaxAmount;
+                    $balance = (float)($qbRefundReceipt['Balance'] ?? 0);
+                    // Create Refund Receipt
+                    $refundReceipt = RefundReceipt::create([
+                        'refund_receipt_id' => $qbId,
+                        'customer_id'       => $customer->id,
+                        'customer_email'    => $qbRefundReceipt['BillEmail']['Address'] ?? null,
+                        'issue_date'        => $qbRefundReceipt['TxnDate'] ?? null,
+                        'ref_number'        => $qbRefundReceipt['DocNumber'] ?? null,
+                        'payment_type'      => $paymentType,
+                        'payment_method'    => $paymentMethod,
+                        'deposit_to'        => $depositTo,
+                        'bill_to'           => $billTo,
+                        'ship_to'           => $shipTo,
+                        'status'            => 2, // Approved
+                        'created_by'        => $creatorId,
+                        'owned_by'          => $ownedId,
+                        'subtotal'          => $subtotal,
+                        'taxable_subtotal'  => $subtotal,
+                        'sales_tax_rate'    => $salesTaxRate,
+                        'total_tax'         => $salesTaxAmount,
+                        'sales_tax_amount'  => $salesTaxAmount,
+                        'total_amount'      => $totalAmount,
+                        'balance'           => $balance,
+                        'memo'              => $qbRefundReceipt['CustomerMemo']['value'] ?? null,
+                        'private_note'      => $qbRefundReceipt['PrivateNote'] ?? null,
+                    ]);
+                    // Process line items
+                    $lines = $qbRefundReceipt['Line'] ?? [];
+                    foreach ($lines as $line) {
+                        // Skip SubTotalLine or DiscountLine etc.
+                        if (empty($line['SalesItemLineDetail'])) {
+                            continue;
+                        }
+                        $lineDetail = $line['SalesItemLineDetail'];
+                        $itemName = $lineDetail['ItemRef']['name'] ?? 'Unknown Item';
+                        $quantity = (float)($lineDetail['Qty'] ?? 1);
+                        $unitPrice = (float)($lineDetail['UnitPrice'] ?? 0);
+                        $lineAmount = (float)($line['Amount'] ?? 0);
+                        // Find or create product
+                        $product = ProductService::where('name', $itemName)->first();
+                        if (!$product) {
+                            $unit = ProductServiceUnit::firstOrCreate(
+                                ['name' => 'pcs'],
+                                ['created_by' => $creatorId]
+                            );
+                            $category = ProductServiceCategory::firstOrCreate(
+                                ['name' => 'Product', 'created_by' => $creatorId],
+                                [
+                                    'color' => '#4CAF50',
+                                    'type' => 'Product',
+                                    'chart_account_id' => 0,
+                                    'created_by' => $creatorId,
+                                    'owned_by' => $ownedId,
+                                ]
+                            );
+                            $product = ProductService::create([
+                                'name'           => $itemName,
+                                'sku'            => $itemName,
+                                'sale_price'     => $unitPrice,
+                                'purchase_price' => 0,
+                                'quantity'       => 0,
+                                'unit_id'        => $unit->id,
+                                'type'           => 'product',
+                                'category_id'    => $category->id,
+                                'created_by'     => $creatorId,
+                            ]);
+                        }
+                        // Calculate tax for line
+                        $taxable = 0;
+                        $lineTaxAmount = 0;
+                        $lineTaxRate = 0;
+                        if (!empty($lineDetail['TaxCodeRef']['value']) && $lineDetail['TaxCodeRef']['value'] !== 'NON') {
+                            $taxable = 1;
+                            // Approximate line tax based on overall tax rate
+                            if ($subtotal > 0 && $salesTaxAmount > 0) {
+                                $lineTaxRate = $salesTaxRate;
+                                $lineTaxAmount = $lineAmount * ($salesTaxRate / 100);
+                            }
+                        }
+                        RefundReceiptProduct::create([
+                            'refund_receipt_id' => $refundReceipt->id,
+                            'product_id'        => $product->id,
+                            'quantity'          => $quantity,
+                            'price'             => $unitPrice,
+                            'amount'            => $lineAmount,
+                            'description'       => $line['Description'] ?? null,
+                            'taxable'           => $taxable,
+                            'item_tax_price'    => $lineTaxAmount,
+                            'item_tax_rate'     => $lineTaxRate,
+                            'discount'          => 0,
+                            'tax'               => $lineTaxAmount,
+                        ]);
+                    }
+                    \Log::info("[QB Import] Imported Refund Receipt: {$qbId} (Doc# {$refundReceipt->ref_number})");
+                    $imported++;
+                } catch (\Exception $e) {
+                    $qbId = $qbRefundReceipt['Id'] ?? 'Unknown';
+                    $errors[] = "Refund Receipt {$qbId}: " . $e->getMessage();
+                    \Log::error("[QB Import] Refund Receipt import failed for {$qbId}: " . $e->getMessage());
+                    $failed++;
+                }
+            }
+            DB::commit();
+            return response()->json([
+                'status'  => 'success',
+                'count'   => $imported,
+                'skipped' => $skipped,
+                'failed'  => $failed,
+                'errors'  => $errors,
+                'message' => "Imported {$imported} refund receipts (skipped {$skipped}, failed {$failed}).",
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Refund Receipts import error: ' . $e->getMessage(), ['exception' => $e]);
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Refund Receipts import failed: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
+    // /**
+    //  * Import Purchase Orders from QuickBooks
+    //  */
+    // public function importPurchaseOrders(Request $request)
+    // {
+    //     ini_set('memory_limit', '512M');
+    //     set_time_limit(600);
+
+    //     try {
+    //         \Log::info("==========================================");
+    //         \Log::info("STARTING QBO PURCHASE ORDERS IMPORT");
+    //         \Log::info("==========================================");
+
+    //         DB::beginTransaction();
+
+    //         // Fetch all Purchase Orders with pagination
+    //         $allPurchaseOrders = collect();
+    //         $startPosition = 1;
+    //         $maxResults = 50;
+
+    //         do {
+    //             $query = "SELECT * FROM PurchaseOrder STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
+    //             $response = $this->qbController->runQuery($query);
+
+    //             if ($response instanceof \Illuminate\Http\JsonResponse) {
+    //                 return $response;
+    //             }
+
+    //             $purchaseOrdersData = $response['QueryResponse']['PurchaseOrder'] ?? [];
+    //             $allPurchaseOrders = $allPurchaseOrders->merge($purchaseOrdersData);
+    //             $startPosition += count($purchaseOrdersData);
+    //         } while (count($purchaseOrdersData) === $maxResults);
+
+    //         \Log::info("[QB Import] Total Purchase Orders fetched: " . $allPurchaseOrders->count());
+
+    //         $imported = 0;
+    //         $skipped = 0;
+    //         $failed = 0;
+    //         $errors = [];
+
+    //         $creatorId = \Auth::user()->creatorId();
+    //         $ownedId = \Auth::user()->ownedId();
+
+    //         foreach ($allPurchaseOrders as $qbPurchaseOrder) {
+    //             try {
+    //                 $qbId = $qbPurchaseOrder['Id'];
+
+    //                 // Skip if already exists
+    //                 if (Purchase::where('purchase_id', $qbId)->where('type', 'purchase_order')->exists()) {
+    //                     $skipped++;
+    //                     continue;
+    //                 }
+
+    //                 // Get vendor reference
+    //                 $qbVendorRef = $qbPurchaseOrder['VendorRef']['value'] ?? null;
+    //                 $vendor = $qbVendorRef
+    //                     ? Vender::where('vender_id', $qbVendorRef)
+    //                         ->where('created_by', $creatorId)
+    //                         ->first()
+    //                     : null;
+
+    //                 if (!$vendor) {
+    //                     $errors[] = "Purchase Order {$qbId}: Vendor not found";
+    //                     $failed++;
+    //                     continue;
+    //                 }
+
+    //                 // Get shipping address
+    //                 $shipTo = null;
+    //                 if (!empty($qbPurchaseOrder['ShipAddr'])) {
+    //                     $shipTo = implode(', ', array_filter([
+    //                         $qbPurchaseOrder['ShipAddr']['Line1'] ?? null,
+    //                         $qbPurchaseOrder['ShipAddr']['City'] ?? null,
+    //                         $qbPurchaseOrder['ShipAddr']['CountrySubDivisionCode'] ?? null,
+    //                         $qbPurchaseOrder['ShipAddr']['PostalCode'] ?? null,
+    //                     ]));
+    //                 }
+
+    //                 // Get mailing address
+    //                 $mailingAddress = null;
+    //                 if (!empty($qbPurchaseOrder['VendorAddr'])) {
+    //                     $mailingAddress = implode(', ', array_filter([
+    //                         $qbPurchaseOrder['VendorAddr']['Line1'] ?? null,
+    //                         $qbPurchaseOrder['VendorAddr']['City'] ?? null,
+    //                         $qbPurchaseOrder['VendorAddr']['CountrySubDivisionCode'] ?? null,
+    //                         $qbPurchaseOrder['VendorAddr']['PostalCode'] ?? null,
+    //                     ]));
+    //                 }
+
+    //                 // Map status
+    //                 $qbStatus = strtolower($qbPurchaseOrder['POStatus'] ?? 'Open');
+    //                 $status = 0; // Draft
+    //                 if ($qbStatus === 'open') {
+    //                     $status = 1; // Sent
+    //                 } elseif ($qbStatus === 'closed') {
+    //                     $status = 2; // Print/Closed
+    //                 }
+
+    //                 // Create Purchase Order
+    //                 $purchase = Purchase::create([
+    //                     'purchase_id'     => $qbId,
+    //                     'vender_id'       => $vendor->id,
+    //                     'purchase_date'   => $qbPurchaseOrder['TxnDate'] ?? null,
+    //                     'purchase_number' => $qbPurchaseOrder['DocNumber'] ?? null,
+    //                     'po_date'         => $qbPurchaseOrder['TxnDate'] ?? null,
+    //                     'expected_date'   => $qbPurchaseOrder['DueDate'] ?? $qbPurchaseOrder['ShipDate'] ?? null,
+    //                     'ship_via'        => $qbPurchaseOrder['ShipMethodRef']['name'] ?? null,
+    //                     'ref_no'          => $qbPurchaseOrder['DocNumber'] ?? null,
+    //                     'ship_to'         => $shipTo,
+    //                     'ship_to_address' => $shipTo,
+    //                     'mailing_address' => $mailingAddress,
+    //                     'terms'           => $qbPurchaseOrder['SalesTermRef']['name'] ?? null,
+    //                     'notes'           => $qbPurchaseOrder['PrivateNote'] ?? null,
+    //                     'vendor_message'  => $qbPurchaseOrder['Memo'] ?? null,
+    //                     'type'            => 'purchase_order',
+    //                     'status'          => $status,
+    //                     'created_by'      => $creatorId,
+    //                     'owned_by'        => $ownedId,
+    //                 ]);
+
+    //                 // Process line items
+    //                 $lines = $qbPurchaseOrder['Line'] ?? [];
+    //                 foreach ($lines as $line) {
+    //                     // Skip SubTotalLine
+    //                     if (empty($line['ItemBasedExpenseLineDetail'])) {
+    //                         continue;
+    //                     }
+
+    //                     $lineDetail = $line['ItemBasedExpenseLineDetail'];
+    //                     $itemName = $lineDetail['ItemRef']['name'] ?? 'Unknown Item';
+    //                     $qty = (float)($lineDetail['Qty'] ?? 1);
+    //                     $unitPrice = (float)($lineDetail['UnitPrice'] ?? 0);
+    //                     $lineAmount = (float)($line['Amount'] ?? 0);
+
+    //                     // Find or create product
+    //                     $product = ProductService::where('name', $itemName)->first();
+    //                     if (!$product) {
+    //                         $unit = ProductServiceUnit::firstOrCreate(
+    //                             ['name' => 'pcs'],
+    //                             ['created_by' => $creatorId]
+    //                         );
+    //                         $category = ProductServiceCategory::firstOrCreate(
+    //                             ['name' => 'Product', 'created_by' => $creatorId],
+    //                             [
+    //                                 'color' => '#4CAF50',
+    //                                 'type' => 'Product',
+    //                                 'chart_account_id' => 0,
+    //                                 'created_by' => $creatorId,
+    //                                 'owned_by' => $ownedId,
+    //                             ]
+    //                         );
+
+    //                         $product = ProductService::create([
+    //                             'name'           => $itemName,
+    //                             'sku'            => $itemName,
+    //                             'sale_price'     => 0,
+    //                             'purchase_price' => $unitPrice,
+    //                             'quantity'       => 0,
+    //                             'unit_id'        => $unit->id,
+    //                             'type'           => 'product',
+    //                             'category_id'    => $category->id,
+    //                             'created_by'     => $creatorId,
+    //                         ]);
+    //                     }
+
+    //                     PurchaseProduct::create([
+    //                         'purchase_id'  => $purchase->id,
+    //                         'product_id'   => $product->id,
+    //                         'quantity'     => $qty,
+    //                         'price'        => $unitPrice,
+    //                         'rate'         => $unitPrice,
+    //                         'line_total'   => $lineAmount,
+    //                         'total'        => $lineAmount,
+    //                         'description'  => $line['Description'] ?? null,
+    //                         'tax'          => 0,
+    //                         'discount'     => 0,
+    //                     ]);
+    //                 }
+
+    //                 \Log::info("[QB Import] Imported Purchase Order: {$qbId} (Doc# {$purchase->purchase_number})");
+    //                 $imported++;
+
+    //             } catch (\Exception $e) {
+    //                 $qbId = $qbPurchaseOrder['Id'] ?? 'Unknown';
+    //                 $errors[] = "Purchase Order {$qbId}: " . $e->getMessage();
+    //                 \Log::error("[QB Import] Purchase Order import failed for {$qbId}: " . $e->getMessage());
+    //                 $failed++;
+    //             }
+    //         }
+
+    //         DB::commit();
+
+    //         return response()->json([
+    //             'status'  => 'success',
+    //             'count'   => $imported,
+    //             'skipped' => $skipped,
+    //             'failed'  => $failed,
+    //             'errors'  => $errors,
+    //             'message' => "Imported {$imported} purchase orders (skipped {$skipped}, failed {$failed}).",
+    //         ]);
+
+    //     } catch (\Exception $e) {
+    //         DB::rollBack();
+    //         \Log::error('Purchase Orders import error: ' . $e->getMessage(), ['exception' => $e]);
+    //         return response()->json([
+    //             'status'  => 'error',
+    //             'message' => 'Purchase Orders import failed: ' . $e->getMessage(),
+    //         ], 500);
+    //     }
+    // }
+
+
+    /**
+     * Import Inventory Adjustments from QuickBooks
+     */
+    public function importInventoryAdjustments(Request $request)
+    {
+        ini_set('memory_limit', '512M');
+        set_time_limit(600);
+
+        try {
+            \Log::info("==========================================");
+            \Log::info("STARTING QBO INVENTORY ADJUSTMENTS IMPORT");
+            \Log::info("==========================================");
+
+            DB::beginTransaction();
+
+            // Fetch all Inventory Adjustments with pagination
+            $allAdjustments = collect();
+            $startPosition = 1;
+            $maxResults = 50;
+
+            do {
+                $query = "SELECT * FROM InventoryAdjustment STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
+                $response = $this->qbController->runQuery($query);
+
+                if ($response instanceof \Illuminate\Http\JsonResponse) {
+                    return $response;
+                }
+
+                $adjustmentData = $response['QueryResponse']['InventoryAdjustment'] ?? [];
+                $allAdjustments = $allAdjustments->merge($adjustmentData);
+                $startPosition += count($adjustmentData);
+            } while (count($adjustmentData) === $maxResults);
+
+            \Log::info("[QB Import] Total Inventory Adjustments fetched: " . $allAdjustments->count());
+
+            $imported = 0;
+            $skipped = 0;
+            $failed = 0;
+            $errors = [];
+
+            $creatorId = \Auth::user()->creatorId();
+            $ownedId = \Auth::user()->ownedId();
+            foreach ($allAdjustments as $qbAdjustment) {
+                try {
+                    $qbId = $qbAdjustment['Id'];
+
+                    // Skip if already exists
+                    if (InventoryAdjustment::where('adjustment_id', $qbId)->exists()) {
+                        $skipped++;
+                        continue;
+                    }
+
+                    // Get adjustment account (field is AdjustAccountRef, not AdjustmentAccountRef)
+                    $adjustmentAccountId = null;
+                    if (!empty($qbAdjustment['AdjustAccountRef']['value'])) {
+                        $qbAccountCode = $qbAdjustment['AdjustAccountRef']['value'];
+                        $chartAccount = ChartOfAccount::where('code', $qbAccountCode)
+                            ->where('created_by', $creatorId)
+                            ->first();
+                        $adjustmentAccountId = $chartAccount ? $chartAccount->id : null;
+                    }
+
+                    // Calculate total amount from lines (note: QB may not have Amount field)
+                    $totalAmount = 0;
+                    $lines = $qbAdjustment['Line'] ?? [];
+
+                    // Create Inventory Adjustment
+                    $adjustment = InventoryAdjustment::create([
+                        'adjustment_id'        => $qbId,
+                        'txn_date'             => $qbAdjustment['TxnDate'] ?? null,
+                        'ref_number'           => $qbAdjustment['DocNumber'] ?? null,
+                        'adjustment_account_id'=> $adjustmentAccountId,
+                        'private_note'         => $qbAdjustment['PrivateNote'] ?? null,
+                        'total_amount'         => $totalAmount,
+                        'created_by'           => $creatorId,
+                        'owned_by'             => $ownedId,
+                    ]);
+
+                    // Process line items
+                    foreach ($lines as $line) {
+                        // Get ItemAdjustmentLineDetail
+                        $lineDetail = $line['ItemAdjustmentLineDetail'] ?? [];
+                        $itemRef = $lineDetail['ItemRef'] ?? null;
+                        $itemName = $itemRef['name'] ?? 'Unknown Item';
+                        $qtyChange = (int)($lineDetail['QtyDiff'] ?? 0);
+
+                        // Find or create product
+                        $product = ProductService::where('name', $itemName)->first();
+                        $productId = $product ? $product->id : null;
+
+                        if (!$product && $itemRef) {
+                            $unit = ProductServiceUnit::firstOrCreate(
+                                ['name' => 'pcs'],
+                                ['created_by' => $creatorId]
+                            );
+                            $category = ProductServiceCategory::firstOrCreate(
+                                ['name' => 'Product', 'created_by' => $creatorId],
+                                [
+                                    'color' => '#4CAF50',
+                                    'type' => 'Product',
+                                    'chart_account_id' => 0,
+                                    'created_by' => $creatorId,
+                                    'owned_by' => $ownedId,
+                                ]
+                            );
+
+                            $product = ProductService::create([
+                                'name'           => $itemName,
+                                'sku'            => $itemName,
+                                'sale_price'     => 0,
+                                'purchase_price' => 0,
+                                'quantity'       => 0,
+                                'unit_id'        => $unit->id,
+                                'type'           => 'product',
+                                'category_id'    => $category->id,
+                                'created_by'     => $creatorId,
+                            ]);
+                            $productId = $product->id;
+                        }
+
+                        // Calculate unit_value and total_value
+                        $unitValue = 0;
+                        $totalValue = 0;
+                        
+                        if ($product) {
+                            // Use product's purchase_price as unit value
+                            $unitValue = (float)($product->purchase_price ?? 0);
+                            $totalValue = abs($qtyChange) * $unitValue;
+                        }
+                        
+                        // If QB provides Amount, use it for total_value
+                        if (!empty($line['Amount'])) {
+                            $totalValue = (float)$line['Amount'];
+                            // Calculate unit value from total if qty is available
+                            if ($qtyChange != 0) {
+                                $unitValue = $totalValue / abs($qtyChange);
+                            }
+                        }
+
+                        // Create adjustment line
+                        InventoryAdjustmentLine::create([
+                            'inventory_adjustment_id' => $adjustment->id,
+                            'product_id'              => $productId,
+                            'item_name'               => $itemName,
+                            'qty_change'              => $qtyChange,
+                            'unit_value'              => $unitValue,
+                            'total_value'             => $totalValue,
+                            'description'             => $line['Description'] ?? null,
+                        ]);
+
+                        // Update product quantity if product exists
+                        if ($product && $qtyChange != 0) {
+                            $product->increment('quantity', $qtyChange);
+                        }
+                    }
+
+                    \Log::info("[QB Import] Imported Inventory Adjustment: {$qbId} (Ref# {$adjustment->ref_number})");
+                    $imported++;
+
+                } catch (\Exception $e) {
+                    $qbId = $qbAdjustment['Id'] ?? 'Unknown';
+                    $errors[] = "Inventory Adjustment {$qbId}: " . $e->getMessage();
+                    \Log::error("[QB Import] Inventory Adjustment import failed for {$qbId}: " . $e->getMessage());
+                    $failed++;
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status'  => 'success',
+                'count'   => $imported,
+                'skipped' => $skipped,
+                'failed'  => $failed,
+                'errors'  => $errors,
+                'message' => "Imported {$imported} inventory adjustments (skipped {$skipped}, failed {$failed}).",
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Inventory Adjustments import error: ' . $e->getMessage(), ['exception' => $e]);
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Inventory Adjustments import failed: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
+    /**
+     * Import Deposits from QuickBooks (Separate dedicated function)
+     * This stores more detailed deposit data than the embedded deposit import in importInvoices
+     */
+    public function importDeposits(Request $request)
+    {
+        ini_set('memory_limit', '512M');
+        set_time_limit(600);
+
+        try {
+            \Log::info("==========================================");
+            \Log::info("STARTING QBO DEPOSITS IMPORT");
+            \Log::info("==========================================");
+
+            DB::beginTransaction();
+
+            $creatorId = \Auth::user()->creatorId();
+            $ownedId = \Auth::user()->ownedId();
+
+            // Fetch all Deposits with pagination
+            $allDeposits = collect();
+            $startPosition = 1;
+            $maxResults = 50;
+
+            do {
+                $query = "SELECT * FROM Deposit STARTPOSITION {$startPosition} MAXRESULTS {$maxResults}";
+                $response = $this->qbController->runQuery($query);
+
+                if ($response instanceof \Illuminate\Http\JsonResponse) {
+                    return $response;
+                }
+
+                $depositData = $response['QueryResponse']['Deposit'] ?? [];
+                $allDeposits = $allDeposits->merge($depositData);
+                $startPosition += count($depositData);
+            } while (count($depositData) === $maxResults);
+
+            \Log::info("[QB Import] Total Deposits fetched: " . $allDeposits->count());
+
+            $imported = 0;
+            $skipped = 0;
+            $failed = 0;
+            $errors = [];
+
+            foreach ($allDeposits as $qbDeposit) {
+                try {
+                    $depId = $qbDeposit['Id'];
+
+                    // Skip if already exists
+                    if (\App\Models\Deposit::where('deposit_id', $depId)->exists()) {
+                        $skipped++;
+                        continue;
+                    }
+
+                    \Log::info("[QB Import] Processing Deposit ID: {$depId}");
+
+                    // Get bank account
+                    $bankAcctId = null;
+                    if (!empty($qbDeposit['DepositToAccountRef'])) {
+                        $acctCode = $qbDeposit['DepositToAccountRef']['value'] ?? null;
+                        $acctName = $qbDeposit['DepositToAccountRef']['name'] ?? 'Bank';
+                        $bankAcctId = $this->getOrCreateBankAccountFromChartAccount($acctCode, (string)$acctName);
+                    }
+
+                    // Get CashBack info (Cash back goes to section in QuickBooks)
+                    $cashbackAccountId = null;
+                    $cashbackAmount = null;
+                    $cashbackMemo = null;
+                    if (!empty($qbDeposit['CashBack'])) {
+                        $cashback = $qbDeposit['CashBack'];
+                        $cashbackAmount = $cashback['Amount'] ?? null;
+                        $cashbackMemo = $cashback['Memo'] ?? null;
+                        
+                        // Map cash back account
+                        if (!empty($cashback['AccountRef']['value'])) {
+                            $cbAccountCode = $cashback['AccountRef']['value'];
+                            $chartAcc = ChartOfAccount::where('code', $cbAccountCode)
+                                ->where('created_by', $creatorId)
+                                ->first();
+                            $cashbackAccountId = $chartAcc ? $chartAcc->id : null;
+                        }
+                        
+                        \Log::info("[QB Import] Deposit {$depId} has CashBack: Amount={$cashbackAmount}, Memo={$cashbackMemo}");
+                    }
+
+                    // Create Deposit
+                    $deposit = \App\Models\Deposit::create([
+                        'deposit_id'          => $depId,
+                        'doc_number'          => $qbDeposit['DocNumber'] ?? null,
+                        'txn_date'            => $qbDeposit['TxnDate'] ?? null,
+                        'total_amt'           => $qbDeposit['TotalAmt'] ?? 0,
+                        'private_note'        => $qbDeposit['PrivateNote'] ?? null,
+                        'currency'            => $qbDeposit['CurrencyRef']['value'] ?? 'USD',
+                        'bank_id'             => $bankAcctId,
+                        'created_by'          => $creatorId,
+                        'cashback_account_id' => $cashbackAccountId,
+                        'cashback_amount'     => $cashbackAmount,
+                        'cashback_memo'       => $cashbackMemo,
+                    ]);
+
+                    // Process line items
+                    $lines = $qbDeposit['Line'] ?? [];
+                    if (isset($lines['Amount']) || isset($lines['Id'])) {
+                        $lines = [$lines]; // Single line case
+                    }
+
+                    foreach ($lines as $dLine) {
+                        $lineDetail = $dLine['DepositLineDetail'] ?? [];
+                        $lineCustId = null;
+                        $entityType = null;
+                        $chartAccountId = null;
+                        $paymentMethod = null;
+                        $checkNum = null;
+                        $linkedTxns = null;
+
+                        // Get Entity (Customer or Vendor)
+                        if (!empty($lineDetail['Entity'])) {
+                            $entityValue = $lineDetail['Entity']['value'] ?? null;
+                            $entityType = $lineDetail['Entity']['type'] ?? null;
+                            
+                            if ($entityType === 'Customer' || !$entityType) {
+                                $customer = Customer::where('customer_id', $entityValue)->first();
+                                if ($customer) {
+                                    $lineCustId = $customer->id;
+                                    $entityType = 'Customer';
+                                }
+                            } elseif ($entityType === 'Vendor') {
+                                $vendor = Vender::where('vender_id', $entityValue)->first();
+                                if ($vendor) {
+                                    $lineCustId = $vendor->id;
+                                    $entityType = 'Vendor';
+                                }
+                            }
+                        }
+
+                        // Get Account for account-based deposits (Add funds section)
+                        if (!empty($lineDetail['AccountRef'])) {
+                            $accCode = $lineDetail['AccountRef']['value'] ?? null;
+                            if ($accCode) {
+                                $chartAcc = ChartOfAccount::where('code', $accCode)
+                                    ->where('created_by', $creatorId)
+                                    ->first();
+                                $chartAccountId = $chartAcc ? $chartAcc->id : null;
+                            }
+                        }
+
+                        // Get Payment Method
+                        if (!empty($lineDetail['PaymentMethodRef'])) {
+                            $paymentMethod = $lineDetail['PaymentMethodRef']['name'] ?? null;
+                        }
+
+                        // Get Check Number
+                        if (!empty($lineDetail['CheckNum'])) {
+                            $checkNum = $lineDetail['CheckNum'];
+                        }
+
+                        // Get Linked Transactions (Payment, Invoice, etc.)
+                        if (!empty($dLine['LinkedTxn'])) {
+                            $linkedTxns = json_encode($dLine['LinkedTxn']);
+                        }
+
+                        // Create Deposit Line
+                        \App\Models\DepositLines::create([
+                            'deposit_id'       => $deposit->id,
+                            'amount'           => $dLine['Amount'] ?? 0,
+                            'detail_type'      => $dLine['DetailType'] ?? null,
+                            'customer_id'      => $lineCustId,
+                            'entity_type'      => $entityType,
+                            'chart_account_id' => $chartAccountId,
+                            'payment_method'   => $paymentMethod,
+                            'check_num'        => $checkNum,
+                            'linked_txns'      => $linkedTxns,
+                        ]);
+
+                        // Log the line for debugging
+                        \Log::info("[QB Import] Deposit {$depId} Line: Amount=" . ($dLine['Amount'] ?? 0) 
+                            . ", Entity={$entityType}, PayMethod={$paymentMethod}, AcctId={$chartAccountId}");
+                    }
+
+                    // Update bank balance for the deposit
+                    if ($bankAcctId) {
+                        Utility::bankAccountBalance($bankAcctId, $deposit->total_amt, 'credit');
+                    }
+
+                    \Log::info("[QB Import] Imported Deposit: {$depId} (Doc# {$deposit->doc_number}) Total: {$deposit->total_amt}");
+                    $imported++;
+
+                } catch (\Exception $e) {
+                    $depId = $qbDeposit['Id'] ?? 'Unknown';
+                    $errors[] = "Deposit {$depId}: " . $e->getMessage();
+                    \Log::error("[QB Import] Deposit import failed for {$depId}: " . $e->getMessage());
+                    $failed++;
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status'  => 'success',
+                'count'   => $imported,
+                'skipped' => $skipped,
+                'failed'  => $failed,
+                'errors'  => $errors,
+                'message' => "Imported {$imported} deposits (skipped {$skipped}, failed {$failed}).",
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Deposits import error: ' . $e->getMessage(), ['exception' => $e]);
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Deposits import failed: ' . $e->getMessage(),
             ], 500);
         }
     }

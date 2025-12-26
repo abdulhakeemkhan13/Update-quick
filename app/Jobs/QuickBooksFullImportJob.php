@@ -21,19 +21,21 @@ class QuickBooksFullImportJob implements ShouldQueue
     public $tries = 3;
 
     protected $importOrder = [
-        'customers' => 'Importing Customers',
+        // 'customers' => 'Importing Customers',
         // 'vendors' => 'Importing Vendors',
         // 'chartOfAccounts' => 'Importing Chart of Accounts',
         // 'items' => 'Importing Items/Products',
         // 'taxes' => 'Importing Taxes',
-        // 'invoices' => 'Importing Invoices',
-        // 'bills' => 'Importing Bills',
-        // 'unappliedPayments' => 'Importing Unapplied Payments',
-        // 'expenses' => 'Importing Expenses',
+        // 'employees' => 'Importing Employees',
+        'invoices' => 'Importing Invoices',
+        'bills' => 'Importing Bills',
+        'unappliedPayments' => 'Importing Unapplied Payments',
+        'expenses' => 'Importing Expenses',
+        'salesReceipts' => 'Importing Sales Receipts',
+        'refundReceipts' => 'Importing Refund Receipts',
         // 'estimates' => 'Importing Estimates', not used raw
         // 'deposits' => 'Importing Deposits', not used raw
-        // 'journalReport' => 'Importing Journal Reports',
-        'importSalesReceipts' => 'Importing Sales Receipts',
+        'journalReport' => 'Importing Journal Reports',
     ];
 
     protected $userId;
@@ -121,9 +123,13 @@ class QuickBooksFullImportJob implements ShouldQueue
     protected function chartOfAccounts($controller) { return $controller->chartOfAccounts(); }
     protected function items($controller) { return $controller->items(); }
     protected function invoices($controller) { return $controller->importInvoices(new Request()); }
+    protected function employees($controller) { return $controller->importEmployees(new Request()); }
     protected function bills($controller) { return $controller->importBills(new Request()); }
     protected function expenses($controller) { return $controller->importExpenses(new Request()); }
     protected function estimates($controller) { return $controller->importEstimates(new Request()); }
+    protected function salesReceipts($controller) { return $controller->importSalesReceipts(new Request()); }
+    protected function refundReceipts($controller) { return $controller->importRefundReceipts(new Request()); }
+
 
     protected function journalReport($controller)
     {
