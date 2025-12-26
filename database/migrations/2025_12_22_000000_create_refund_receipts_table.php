@@ -26,6 +26,8 @@ class CreateRefundReceiptsTable extends Migration
             $table->string('location_of_sale')->nullable();
             $table->text('billing_address')->nullable();
             $table->integer('status')->default('0');
+            $table->string('bill_to')->nullable();
+            $table->string('ship_to')->nullable();
             $table->integer('created_by')->default('0');
             $table->integer('owned_by')->nullable();
             $table->decimal('subtotal', 15, 2)->nullable();
