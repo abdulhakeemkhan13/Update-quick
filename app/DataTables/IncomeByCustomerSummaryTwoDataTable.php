@@ -38,9 +38,9 @@ class IncomeByCustomerSummaryTwoDataTable extends DataTable
         return datatables()
             ->collection($rows)
             ->addColumn('customer', fn($r) => $r->isGrandTotal ?? false ? $r->customer : ($r->name ?? '-'))
-            ->addColumn('income', fn($r) => number_format($r->income ?? 0))
-            ->addColumn('expenses', fn($r) => number_format($r->expenses ?? 0))
-            ->addColumn('net_income', fn($r) => number_format($r->net_income ?? 0))
+            ->addColumn('income', fn($r) => number_format($r->income ?? 0, 2))
+            ->addColumn('expenses', fn($r) => number_format($r->expenses ?? 0, 2))
+            ->addColumn('net_income', fn($r) => number_format($r->net_income ?? 0, 2))
             ->rawColumns(['customer', 'income', 'expenses', 'net_income']);
     }
 
@@ -188,26 +188,56 @@ class IncomeByCustomerSummaryTwoDataTable extends DataTable
         }
 
         /**
-         * ===== INCOME SUBQUERY =====
+         * ===== INCOME SUBQUERY (Invoices + Sales Receipts) =====
          */
-        $incomeSubquery = DB::table('invoices as i')
-            ->join('invoice_products as ip', 'ip.invoice_id', '=', 'i.id')
+        // Invoice income subquery
+        $invoiceIncomeQuery = DB::table('invoices as i')
+            ->leftJoin('invoice_products as ip', 'ip.invoice_id', '=', 'i.id')
             ->select(
                 'i.customer_id',
-                DB::raw('SUM(ip.price * ip.quantity - COALESCE(ip.discount, 0)) as income')
+                DB::raw('COALESCE(SUM(ip.price * ip.quantity - COALESCE(ip.discount, 0)), COALESCE(i.subtotal, 0)) as income')
             )
             ->where('i.created_by', $ownerId)
-            ->where('i.status', '!=', 0)
-            ;
+            ->where('i.status', '!=', 0);
 
         if ($startDate) {
-            $incomeSubquery->whereDate('i.issue_date', '>=', $startDate);
+            $invoiceIncomeQuery->whereDate('i.issue_date', '>=', $startDate);
         }
         if ($endDate) {
-            $incomeSubquery->whereDate('i.issue_date', '<=', $endDate);
+            $invoiceIncomeQuery->whereDate('i.issue_date', '<=', $endDate);
         }
 
-        $incomeSubquery->groupBy('i.customer_id');
+        $invoiceIncomeQuery->groupBy('i.customer_id');
+
+        // Sales Receipt income subquery
+        $salesReceiptIncomeQuery = DB::table('sales_receipts as sr')
+            ->leftJoin('sales_receipt_products as srp', 'srp.sales_receipt_id', '=', 'sr.id')
+            ->select(
+                'sr.customer_id',
+                DB::raw('COALESCE(SUM(srp.price * srp.quantity - COALESCE(srp.discount, 0)), COALESCE(sr.total_amount, 0)) as income')
+            )
+            ->where('sr.created_by', $ownerId)
+            ->where('sr.status', '!=', 0);
+
+        if ($startDate) {
+            $salesReceiptIncomeQuery->whereDate('sr.issue_date', '>=', $startDate);
+        }
+        if ($endDate) {
+            $salesReceiptIncomeQuery->whereDate('sr.issue_date', '<=', $endDate);
+        }
+
+        $salesReceiptIncomeQuery->groupBy('sr.customer_id');
+
+        // Combine invoices and sales receipts
+        $incomeSubquery = DB::table(DB::raw("(
+            SELECT customer_id, income FROM ({$invoiceIncomeQuery->toSql()}) as inv_income
+            UNION ALL
+            SELECT customer_id, income FROM ({$salesReceiptIncomeQuery->toSql()}) as sr_income
+        ) as combined_income"))
+            ->mergeBindings($invoiceIncomeQuery)
+            ->mergeBindings($salesReceiptIncomeQuery)
+            ->select('customer_id', DB::raw('SUM(income) as income'))
+            ->groupBy('customer_id');
 
         /**
          * ===== EXPENSES SUBQUERY =====
@@ -218,11 +248,18 @@ class IncomeByCustomerSummaryTwoDataTable extends DataTable
             ->leftJoin('bill_accounts as ba', 'ba.ref_id', '=', 'b.id')
             ->select(
                 'b.vender_id as customer_id',
-                DB::raw('SUM(COALESCE(bp.price * bp.quantity - COALESCE(bp.discount, 0), 0) + COALESCE(ba.price, 0)) as expenses')
+                // Use bill total as fallback if no products/accounts
+                DB::raw('SUM(
+                    CASE 
+                        WHEN (bp.id IS NOT NULL OR ba.id IS NOT NULL) 
+                        THEN COALESCE(bp.price * bp.quantity - COALESCE(bp.discount, 0), 0) + COALESCE(ba.price, 0)
+                        ELSE COALESCE(b.total, 0)
+                    END
+                ) as expenses')
             )
             ->where('b.created_by', $ownerId)
-            // → Remove or broaden user_type restriction so all bills are included
-            // ->where('b.user_type', 'customer')
+            // Case-insensitive check for 'customer' user_type
+            ->whereRaw('LOWER(b.user_type) = ?', ['customer'])
             ->where('b.status', '!=', 0);
 
         if ($startDate) {

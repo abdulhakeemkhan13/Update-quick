@@ -12,13 +12,21 @@ class CollectionDetailsDataTable extends DataTable
 {
     public function dataTable($query)
     {
+        // QuickBooks uses only "as of" date for Collection Report
+        $asOfDate = request()->get('end_date')
+            ?? request()->get('endDate')
+            ?? request()->get('as_of_date')
+            ?? Carbon::today()->format('Y-m-d');
+        
+        $end = Carbon::parse($asOfDate)->endOfDay();
+        
         $data = collect($query->get());
 
         $grandTotalAmount = 0;
         $grandBalanceDue = 0;
         $grandOpenBalance = 0;
 
-        // ✅ Group by Customer Name
+        // Group by Customer Name
         $groupedData = $data->groupBy('name');
 
         $finalData = collect();
@@ -49,8 +57,8 @@ class CollectionDetailsDataTable extends DataTable
                 $subtotalDue += $row->balance_due;
                 $subtotalOpen += $row->open_balance;
                 $row->customer = $customer;
-                $row->past_due = $row->age > 0 ? $row->age . ' Days' : '-'; // 👈 Past Due column
-                $row->customer = $customer;
+                // Calculate past due days from as-of date
+                $row->past_due = $row->age > 0 ? $row->age : 0;
                 $finalData->push($row);
             }
 
@@ -116,7 +124,7 @@ class CollectionDetailsDataTable extends DataTable
             })
 
             ->addColumn('due_date', fn($row) => $row->due_date ?? '')
-            ->addColumn('past_due', fn($row) => $row->past_due ?? '')
+            ->addColumn('past_due', fn($row) => isset($row->isSubtotal) || isset($row->isGrandTotal) || isset($row->isPlaceholder) ? '' : ($row->past_due > 0 ? $row->past_due : '-'))
             ->addColumn(
                 'type',
                 fn($row) =>
@@ -144,22 +152,22 @@ class CollectionDetailsDataTable extends DataTable
                     return '';
                 }
                 if (isset($row->isSubtotal) || isset($row->isGrandTotal)) {
-                    return number_format($row->total_amount ?? 0);
+                    return number_format($row->total_amount ?? 0, 2);
                 }
                 $total = ($row->subtotal ?? 0) + ($row->total_tax ?? 0);
-                return number_format($total);
+                return number_format($total, 2);
             })
             ->editColumn(
                 'balance_due',
                 fn($row) =>
-                isset($row->isPlaceholder) ? '' : number_format($row->balance_due ?? 0)
+                isset($row->isPlaceholder) ? '' : number_format($row->balance_due ?? 0, 2)
             )
             ->editColumn(
                 'open_balance',
                 fn($row) =>
                 isset($row->isHeader) || isset($row->isPlaceholder)
                 ? ''
-                : number_format($row->open_balance ?? 0)
+                : number_format($row->open_balance ?? 0, 2)
             )
             ->setRowClass(function ($row) {
                 if (property_exists($row, 'isParent') && $row->isParent) {
@@ -190,89 +198,12 @@ class CollectionDetailsDataTable extends DataTable
 
     public function query(Invoice $model)
     {
-        $start = request()->get('start_date')
-            ?? request()->get('startDate')
-            ?? Carbon::now()->startOfYear()->format('Y-m-d');
-
-        $end = request()->get('end_date')
+        // QuickBooks Collection Report uses only "as of" date
+        $asOfDate = request()->get('end_date')
             ?? request()->get('endDate')
-            ?? Carbon::now()->endOfDay()->format('Y-m-d');
+            ?? request()->get('as_of_date')
+            ?? Carbon::now()->format('Y-m-d');
 
-        // 🧩 Combine all payment sources into a unified "collections" view
-        $collections = DB::table(DB::raw('(
-        SELECT 
-            p.id,
-            p.date,
-            p.amount,
-            p.account_id,
-            p.description,
-            c.name AS customer_name,
-            "General Payment" AS source_type
-        FROM payments p
-        LEFT JOIN customers c ON c.id = p.vender_id
-        WHERE p.amount > 0
-
-        UNION ALL
-
-        SELECT 
-            pp.id,
-            pp.date,
-            pp.amount,
-            pp.account_id,
-            pp.description,
-            v.name AS customer_name,
-            "Purchase Payment" AS source_type
-        FROM purchase_payments pp
-        LEFT JOIN vendors v ON v.id = pp.purchase_id
-        WHERE pp.amount > 0
-
-        UNION ALL
-
-        SELECT 
-            op.id,
-            op.date,
-            op.amount,
-            NULL AS account_id,
-            op.title AS description,
-            e.name AS customer_name,
-            CONCAT("Other Payment (", op.type, ")") AS source_type
-        FROM other_payments op
-        LEFT JOIN employees e ON e.id = op.employee_id
-        WHERE op.amount > 0
-
-        UNION ALL
-
-        SELECT 
-            ip.id,
-            ip.date,
-            ip.amount,
-            ip.account_id,
-            ip.description,
-            c.name AS customer_name,
-            "Invoice Payment" AS source_type
-        FROM invoice_payments ip
-        LEFT JOIN invoices i ON i.id = ip.invoice_id
-        LEFT JOIN customers c ON c.id = i.customer_id
-        WHERE ip.amount > 0
-
-        UNION ALL
-
-        SELECT 
-            bp.id,
-            bp.date,
-            bp.amount,
-            bp.account_id,
-            bp.description,
-            v.name AS customer_name,
-            "Bill Payment" AS source_type
-        FROM bill_payments bp
-        LEFT JOIN bills b ON b.id = bp.bill_id
-        LEFT JOIN vendors v ON v.id = b.vendor_id
-        WHERE bp.amount > 0
-    ) as all_collections'))
-            ->whereBetween('date', [$start, $end]);
-
-        // 🧮 Now join with invoices to get open balances etc. (for collection context)
         $query = $model->newQuery()
             ->select(
                 'invoices.id',
@@ -308,14 +239,21 @@ class CollectionDetailsDataTable extends DataTable
                     + (SELECT IFNULL(SUM(credit_notes.amount),0)
                     FROM credit_notes WHERE credit_notes.invoice = invoices.id))
             ) as open_balance'),
-                DB::raw('GREATEST(DATEDIFF(CURDATE(), invoices.due_date), 0) as age')
+                // Calculate age based on "as of" date
+                DB::raw("GREATEST(DATEDIFF('$asOfDate', invoices.due_date), 0) as age")
             )
             ->leftJoin('customers', 'customers.id', '=', 'invoices.customer_id')
             ->leftJoin('invoice_products', 'invoice_products.invoice_id', '=', 'invoices.id')
             ->leftJoin('invoice_payments', 'invoice_payments.invoice_id', '=', 'invoices.id')
             ->where('invoices.created_by', \Auth::user()->creatorId())
-            ->whereBetween('invoices.issue_date', [$start, $end])
-            ->groupBy('invoices.id');
+            // Show invoices issued on or before as-of date
+            ->whereDate('invoices.issue_date', '<=', $asOfDate)
+            // Only show overdue invoices (past due date)
+            ->whereDate('invoices.due_date', '<', $asOfDate)
+            ->havingRaw('open_balance > 0') // Only show invoices with outstanding balance
+            ->groupBy('invoices.id')
+            ->orderBy('customers.name', 'asc')
+            ->orderBy('invoices.due_date', 'asc');
 
         return $query;
     }

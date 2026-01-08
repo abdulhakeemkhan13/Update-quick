@@ -82,22 +82,22 @@ class AgingSummaryDataTable extends DataTable
                 ]);
 
                 // Update totals
-                $currentTotal      += $entry['buckets']['current'];
-                $days15Total       += $entry['buckets']['day_1_30'];
-                $days30Total       += $entry['buckets']['day_30_60'];
-                $days45Total       += $entry['buckets']['days_61_90'];
-                $daysMore45Total   += $entry['buckets']['days_90_plus'];
-                $grandTotal        += $entry['total_due'];
+                $currentTotal    += $entry['buckets']['current'];
+                $days30Total     += $entry['buckets']['day_1_30'];
+                $days60Total     += $entry['buckets']['day_30_60'];
+                $days90Total     += $entry['buckets']['days_61_90'];
+                $daysMore90Total += $entry['buckets']['days_90_plus'];
+                $grandTotal      += $entry['total_due'];
             }
 
             // Totals row
             $data->push([
                 'customer_name' => '<strong>Total</strong>',
                 'current'       => '<strong>' . number_format($currentTotal, 2) . '</strong>',
-                'day_1_30'      => '<strong>' . number_format($days15Total, 2) . '</strong>',
-                'day_30_60'     => '<strong>' . number_format($days30Total, 2) . '</strong>',
-                'days_61_90'    => '<strong>' . number_format($days45Total, 2) . '</strong>',
-                'days_90_plus'  => '<strong>' . number_format($daysMore45Total, 2) . '</strong>',
+                'day_1_30'      => '<strong>' . number_format($days30Total, 2) . '</strong>',
+                'day_30_60'     => '<strong>' . number_format($days60Total, 2) . '</strong>',
+                'days_61_90'    => '<strong>' . number_format($days90Total, 2) . '</strong>',
+                'days_90_plus'  => '<strong>' . number_format($daysMore90Total, 2) . '</strong>',
                 'total_due'     => '<strong>' . number_format($grandTotal, 2) . '</strong>',
                 'DT_RowClass'   => 'summary-total'
             ]);

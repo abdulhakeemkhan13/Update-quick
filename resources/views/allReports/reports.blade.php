@@ -620,7 +620,7 @@
                       </div>
                     </li>
 
-                    <li class="col-6 report-item {{ Request::route()->getName() == 'cash-flow.index' ? 'active' : '' }}"
+                    {{-- <li class="col-6 report-item {{ Request::route()->getName() == 'cash-flow.index' ? 'active' : '' }}"
                       data-key="cash-flow.index">
                       <div class="d-flex align-items-center w-100" style="min-width:0;">
                         <div class="d-flex align-items-center flex-grow-1" style="min-width:0;">
@@ -637,7 +637,7 @@
                           <i class="bi bi-three-dots-vertical text-muted ms-1"></i>
                         </span>
                       </div>
-                    </li>
+                    </li> --}}
 
                   </ul>
                 </div>

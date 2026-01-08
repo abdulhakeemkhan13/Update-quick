@@ -13,17 +13,13 @@ class AgingDetailsDataTable extends DataTable
 {
     public function dataTable($query)
     {
-        $end = request()->get('end_date')
-            ? Carbon::parse(request()->get('end_date'))->endOfDay()
-            : (request()->get('endDate')
-                ? Carbon::parse(request()->get('endDate'))->endOfDay()
-                : Carbon::today());
-
-        $start = request()->get('start_date')
-            ? Carbon::parse(request()->get('start_date'))->startOfDay()
-            : (request()->get('startDate')
-                ? Carbon::parse(request()->get('startDate'))->startOfDay()
-                : Carbon::now()->startOfYear());
+        // QuickBooks uses only "as of" date (to date)
+        $asOfDate = request()->get('end_date')
+            ?? request()->get('endDate')
+            ?? request()->get('as_of_date')
+            ?? Carbon::today()->format('Y-m-d');
+        
+        $end = Carbon::parse($asOfDate)->endOfDay();
 
         $data = collect($query->get());
 
@@ -44,17 +40,19 @@ class AgingDetailsDataTable extends DataTable
                 return 'Current';
             }
 
-            $age = $due->diffInDays($end, false); // 👈 use $end instead of today
+            // Calculate days past due from the "as of" date
+            $age = $end->diffInDays($due, false);
 
+            // QuickBooks standard aging buckets
             if ($age <= 0)
                 return 'Current';
-            if ($age <= 15)
-                return '1–15 Days';
             if ($age <= 30)
-                return '16–30 Days';
-            if ($age <= 45)
-                return '31–45 Days';
-            return '> 45 Days';
+                return '1-30';
+            if ($age <= 60)
+                return '31-60';
+            if ($age <= 90)
+                return '61-90';
+            return '91 and over';
         });
 
 
@@ -250,14 +248,11 @@ class AgingDetailsDataTable extends DataTable
 
     public function query(Invoice $model)
     {
-        // Accept both formats without breaking anything
-        $start = request()->get('start_date')
-            ?? request()->get('startDate')
-            ?? Carbon::now()->startOfYear()->format('Y-m-d');
-
-        $end = request()->get('end_date')
+        // QuickBooks uses only "as of" date - show invoices issued on or before this date
+        $asOfDate = request()->get('end_date')
             ?? request()->get('endDate')
-            ?? Carbon::now()->endOfDay()->format('Y-m-d');
+            ?? request()->get('as_of_date')
+            ?? Carbon::now()->format('Y-m-d');
 
         return $model->newQuery()
             ->select(
@@ -296,15 +291,16 @@ class AgingDetailsDataTable extends DataTable
                           FROM credit_notes 
                           WHERE credit_notes.invoice = invoices.id))
                 ) as open_balance'),
-
-
-                DB::raw('GREATEST(DATEDIFF(CURDATE(), invoices.due_date), 0) as age')
+                // Calculate age based on "as of" date
+                DB::raw("GREATEST(DATEDIFF('$asOfDate', invoices.due_date), 0) as age")
             )
             ->leftJoin('customers', 'customers.id', '=', 'invoices.customer_id')
             ->leftJoin('invoice_products', 'invoice_products.invoice_id', '=', 'invoices.id')
             ->leftJoin('invoice_payments', 'invoice_payments.invoice_id', '=', 'invoices.id')
             ->where('invoices.created_by', \Auth::user()->creatorId())
-            ->whereBetween('invoices.issue_date', [$start, $end]) // ✅ keep existing behavior
+            // QuickBooks: Show invoices issued on or before "as of" date with open balance
+            ->whereDate('invoices.issue_date', '<=', $asOfDate)
+            ->havingRaw('open_balance > 0') // Only show invoices with outstanding balance
             ->groupBy('invoices.id');
     }
 
