@@ -103,7 +103,7 @@
                                         <div class="col-md-6 qbo-left-column">
                                             <div class="form-group qbo-form-group" id="customer-box">
                                                 {{ Form::label('user_id', __('Name'), ['class' => 'form-label qbo-label']) }}
-                                                {{ Form::select('user_id', $employees, null, ['class' => 'form-control select2 qbo-select', 'id' => 'user_id', 'placeholder' => 'Select name']) }}
+                                                {{ Form::select('user_id', $venders, null, ['class' => 'form-control select2 qbo-select', 'id' => 'user_id', 'placeholder' => 'Select name']) }}
                                             </div>
                                             <div class="form-group qbo-form-group">
                                                 {{ Form::label('customer_id', __('Customers'), ['class' => 'form-label qbo-label']) }}

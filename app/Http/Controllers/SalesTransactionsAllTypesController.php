@@ -111,12 +111,26 @@ class SalesTransactionsAllTypesController extends Controller
 
         // Invoices
         if ($type === 'all' || $type === 'invoice') {
+            // Debug: Log all invoices before filtering
+            $allInvoices = Invoice::where('created_by', $companyId)->get();
+            \Log::info('All Invoices (before date filter)', [
+                'total' => $allInvoices->count(),
+                'ids' => $allInvoices->pluck('id')->toArray(),
+                'dates' => $allInvoices->pluck('issue_date', 'id')->toArray(),
+                'date_range' => ['start' => $startDate, 'end' => $endDate],
+            ]);
+
             $invoices = Invoice::where('created_by', $companyId)
                 ->whereBetween('issue_date', [$startDate, $endDate])
                 ->when($customerId, fn($q) => $q->where('customer_id', $customerId))
                 ->when($status !== 'all', fn($q) => $this->applyInvoiceStatusFilter($q, $status))
                 ->with('customer')
                 ->get();
+
+            \Log::info('Invoices after filters', [
+                'count' => $invoices->count(),
+                'ids' => $invoices->pluck('id')->toArray(),
+            ]);
 
             foreach ($invoices as $inv) {
                 $statusText = $this->getInvoiceStatusText($inv);
@@ -129,7 +143,8 @@ class SalesTransactionsAllTypesController extends Controller
                     'memo' => $inv->memo ?? $inv->ref_number ?? '',
                     'amount' => $inv->total_amount ?? (method_exists($inv, 'getTotal') ? $inv->getTotal() : 0),
                     'status' => $statusText,
-                    'view_url' => route('invoice.show', Crypt::encrypt($inv->id)),
+                    'view_url' => route('invoice.edit', Crypt::encrypt($inv->id)),
+                    'edit_url' => route('invoice.edit', Crypt::encrypt($inv->id)),
                 ]);
             }
         }
@@ -232,6 +247,13 @@ class SalesTransactionsAllTypesController extends Controller
                 ]);
             }
         }
+
+        // Debug logging to track transaction counts
+        \Log::info('Sales Transactions Debug', [
+            'type_filter' => $type,
+            'total_count' => $transactions->count(),
+            'by_type' => $transactions->groupBy('type')->map->count()->toArray(),
+        ]);
 
         // Sort by date descending
         return $transactions->sortByDesc('date')->values()->toArray();

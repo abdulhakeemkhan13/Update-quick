@@ -734,7 +734,7 @@ class Utility extends Model
 
     public static function getTax($tax)
     {
-        dd($tax);
+       
         if (self::$taxes == null) {
             $tax = Tax::find($tax);
             self::$taxes = $tax;
@@ -6100,6 +6100,70 @@ class Utility extends Model
                 }
                 $tax = 0;
             }
+
+            // Invoice-Level Sales Tax Entry (using Tax model's chart_account_id)
+            // This handles taxes applied at the invoice level via the tax_id dropdown
+            if (isset($data['tax_data']) && !empty($data['tax_data']) && $data['tax_data']['tax_amount'] > 0) {
+                $taxData = $data['tax_data'];
+                $taxAccountId = $taxData['chart_account_id'];
+                
+                // If no chart_account_id set on Tax model, fall back to default TAX liability account
+                if (!$taxAccountId) {
+                    $types_t = ChartOfAccountType::where('created_by', '=', $data['created_by'])->where('name', 'Liabilities')->first();
+                    if ($types_t) {
+                        $sub_type_t = ChartOfAccountSubType::where('type', $types_t->id)->where('name', 'Current Liabilities')->first();
+                        $taxAccount = ChartOfAccount::where('type', $types_t->id)
+                            ->where('sub_type', $sub_type_t->id)
+                            ->where('name', 'Sales Tax Payable')
+                            ->first();
+                        if (!$taxAccount) {
+                            $taxAccount = ChartOfAccount::create([
+                                'name' => 'Sales Tax Payable',
+                                'code' => '20100',
+                                'type' => $types_t->id,
+                                'sub_type' => $sub_type_t->id,
+                                'is_enabled' => 1,
+                                'created_by' => $data['created_by'],
+                            ]);
+                        }
+                        $taxAccountId = $taxAccount->id;
+                    }
+                }
+                
+                if ($taxAccountId) {
+                    // Add the tax amount to receivable (customer owes tax too)
+                    $reciveable += floatval($taxData['tax_amount']);
+                    
+                    // Create journal item for tax liability (credit)
+                    $journalItem = new JournalItem();
+                    $journalItem->journal = $journal->id;
+                    $journalItem->account = $taxAccountId;
+                    $journalItem->description = 'Sales Tax (' . $taxData['tax_name'] . ' @ ' . $taxData['tax_rate'] . '%) on Invoice No: ' . @$data['no'];
+                    $journalItem->credit = floatval($taxData['tax_amount']);
+                    $journalItem->debit = 0;
+                    $journalItem->save();
+                    $journalItem->created_at = @$data['created_at'] ? date('Y-m-d H:i:s', strtotime($data['created_at'])) : date('Y-m-d H:i:s');
+                    $journalItem->updated_at = @$data['created_at'] ? date('Y-m-d H:i:s', strtotime($data['created_at'])) : date('Y-m-d H:i:s');
+                    $journalItem->save();
+
+                    // Create transaction line for tax liability
+                    $dataline = [
+                        'account_id' => $taxAccountId,
+                        'transaction_type' => 'Credit',
+                        'transaction_amount' => $journalItem->credit,
+                        'reference' => 'Invoice Journal',
+                        'reference_id' => $journal->id,
+                        'reference_sub_id' => $journalItem->id,
+                        'date' => $journal->date,
+                        'created_at' => @$data['created_at'] ? date('Y-m-d H:i:s', strtotime($data['created_at'])) : date('Y-m-d H:i:s'),
+                        'product_id' => $data['id'],
+                        'product_type' => 'Invoice Sales Tax',
+                        'product_item_id' => 0,
+                    ];
+                    Utility::addTransactionLines($dataline, 'create');
+                }
+            }
+
             $account = self::getAccountReceivable(@$data['created_by']);
             // dd($account);
             if ($account) {

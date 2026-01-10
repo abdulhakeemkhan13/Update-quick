@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\BillProduct;
+use App\Models\ChartOfAccount;
+use App\Models\ChartOfAccountType;
 use App\Models\InvoiceProduct;
 use App\Models\ProposalProduct;
 use App\Models\Tax;
@@ -37,7 +39,14 @@ class TaxController extends Controller
     {
         if(\Auth::user()->can('create constant tax'))
         {
-            return view('taxes.create');
+            // chart of account type liabilities
+            $chartOfAccountType = ChartOfAccountType::where('created_by', \Auth::user()->creatorId())->where('name', 'Liabilities')->first();
+            $chartAccounts = ChartOfAccount::where('created_by', \Auth::user()->creatorId())
+                ->where('type', $chartOfAccountType->id)
+                ->pluck('name', 'id')
+                ->prepend(__('Select Account'), '');
+            
+            return view('taxes.create', compact('chartAccounts'));
         }
         else
         {
@@ -74,6 +83,7 @@ class TaxController extends Controller
             $tax             = new Tax();
             $tax->name       = $request->name;
             $tax->rate       = $request->rate;
+            $tax->chart_account_id = $request->chart_account_id;
             $tax->created_by = \Auth::user()->creatorId();
             $tax->owned_by = \Auth::user()->ownedId();
             $tax->save();
@@ -108,7 +118,13 @@ class TaxController extends Controller
         {
             if($tax->created_by == \Auth::user()->creatorId())
             {
-                return view('taxes.edit', compact('tax'));
+                 $chartOfAccountType = ChartOfAccountType::where('created_by', \Auth::user()->creatorId())->where('name', 'Liabilities')->first();
+            $chartAccounts = ChartOfAccount::where('created_by', \Auth::user()->creatorId())
+                ->where('type', $chartOfAccountType->id)
+                ->pluck('name', 'id')
+                ->prepend(__('Select Account'), '');
+                
+                return view('taxes.edit', compact('tax', 'chartAccounts'));
             }
             else
             {
@@ -143,6 +159,7 @@ class TaxController extends Controller
 
                 $tax->name = $request->name;
                 $tax->rate = $request->rate;
+                $tax->chart_account_id = $request->chart_account_id;
                 $tax->save();
                 Utility::makeActivityLog(\Auth::user()->id,'Tax',$tax->id,'Update Tax',$tax->name);
                 return redirect()->route('taxes.index')->with('success', __('Tax rate successfully updated.'));

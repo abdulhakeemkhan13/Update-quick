@@ -3382,8 +3382,8 @@
 
                                         <div class="totals-section col-md-4">
                                             {{-- Subtotal --}}
-                                            <div class="total-row subtotal">
-                                                <span>{{ __('Subtotal') }}</span>
+                                            <div class="total-row subTotal">
+                                                <span>Subtotal</span>
                                                 <span class="subTotal">0.00</span>
                                             </div>
 

@@ -1,3 +1,14 @@
+@extends('layouts.admin')
+@section('page-title')
+    {{__('Expense Edit')}}
+@endsection
+@section('breadcrumb')
+    <li class="breadcrumb-item"><a href="{{route('dashboard')}}">{{__('Dashboard')}}</a></li>
+    <li class="breadcrumb-item"><a href="{{route('expense.index')}}">{{__('Expense')}}</a></li>
+    <li class="breadcrumb-item">{{__('Expense Edit')}}</li>
+@endsection
+
+@push('script-page')
 <script src="{{ asset('js/jquery-ui.min.js') }}"></script>
 <script src="{{ asset('js/jquery.repeater.min.js') }}"></script>
 <script src="{{ asset('js/jquery-searchbox.js') }}"></script>
@@ -901,19 +912,20 @@
                         <td class="qbo-line-number">${++categoryLineCount}</td>
 
                         <td>
-                            <select name="category[${categoryLineCount}][account_id]" class="form-control category-account">
+                            <select name="categories[${categoryLineCount}][account_id]" class="form-control category-account">
                                 <option value="">{{ __('Select account') }}</option>
                                 @foreach ($chartAccounts as $id => $account)
                                     <option value="{{ $id }}">{{ $account }}</option>
                                 @endforeach
                             </select>
                         </td>
-                        <td><textarea name="category[${categoryLineCount}][description]" class="form-control" rows="1"></textarea></td>
-                        <td><input type="number" name="category[${categoryLineCount}][amount]" class="form-control category-amount text-end" step="0.01" value="0.00"></td>
-                        <td class="text-center text-center"><input type="checkbox" name="category[${categoryLineCount}][billable]" class="qbo-checkbox form-check-input" value="1"></td>
-                        <td class="text-center"><input type="checkbox " name="category[${categoryLineCount}][tax]" class="qbo-checkbox category-tax "></td>
+                        <td><textarea name="categories[${categoryLineCount}][description]" class="form-control" rows="1"></textarea></td>
+                        <td><input type="number" name="categories[${categoryLineCount}][amount]" class="form-control category-amount text-end" step="0.01" value="0.00"></td>
+                        <td class="text-center text-center"><input type="checkbox" name="categories[${categoryLineCount}][billable]" class="form-check-input" value="1"></td>
+                        <td class="text-center"><input type="checkbox " name="categories[${categoryLineCount}][tax]" class="qbo-checkbox form-check-input category-tax "></td>
+
                         <td>
-                            <select name="category[${categoryLineCount}][customer_id]" class="form-control customer-select">
+                            <select name="categories[${categoryLineCount}][customer_id]" class="form-control customer-select">
                                 <option value="">-</option>
                                 
                                 @foreach ($customers as $id => $name)
@@ -968,7 +980,7 @@
                         <td><input type="number" name="items[${itemLineCount}][price]" class="form-control item-rate" step="0.01" value="0.00"></td>
                         <td><input type="number" name="items[${itemLineCount}][amount]" class="form-control item-amount" step="0.01" value="0.00" readonly></td>
                         <td class="text-center"><input type="checkbox" name="items[${itemLineCount}][billable]" class="qbo-checkbox form-check-input"></td>
-                        <td class="text-center"><input type="checkbox" name="items[${itemLineCount}][tax]" class="qbo-checkbox item-tax form-check-input"></td>
+                        <td class="text-center"><input type="checkbox" name="items[${itemLineCount}][tax]" class="item-tax form-check-input"></td>
                         <td>
                             <select name="items[${itemLineCount}][customer_id]" class="form-control customer-select">
                                 <option value="">-</option>
@@ -1127,12 +1139,19 @@
                             show_toastr('success',
                                 '{{ __('Expense updated successfully') }}', 'success');
                         }
-                        setTimeout(() => window.location.reload(), 500);
+                         const EXPANSE_URL = "{{ url('/expense') }}";
+                                setTimeout(() => {
+                                    window.location.href = EXPANSE_URL;
+                                }, 500);
                     } else {
                         show_toastr('success', response.message ||
                             '{{ __('Expense updated successfully') }}', 'success');
                         $('.btn-qbo-save').prop('disabled', false).text(
                             '{{ __('Save') }}');
+                            const EXPANSE_URL = "{{ url('/expense') }}";
+                                setTimeout(() => {
+                                    window.location.href = EXPANSE_URL;
+                                }, 500);
                     }
                 },
                 error: function(xhr) {
@@ -1150,8 +1169,20 @@
         // Initialize
         calculateTotal();
     });
-</script>
 
+    $(document).ready(function() {
+        var expenseModal = new bootstrap.Modal(document.getElementById('expense-modal'), {
+            backdrop: 'static',
+            keyboard: false
+        });
+        expenseModal.show();
+    });
+</script>
+@endpush
+@section('content')
+<div class="modal fade" id="expense-modal" tabindex="-1" aria-labelledby="expenseModalLabel" aria-hidden="true" style="background: #ffffff;">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content">
 <div class="row">
     <div class="d-flex justify-content-between align-items-center border-bottom"
         style="
@@ -1677,7 +1708,7 @@
                                                             class="row-number qbo-line-number">{{ $i + 1 }}</span>
                                                     </td>
                                                     <td>
-                                                        {{ Form::select("items[{$i}][item_id]", $product_services ?? [], $item['product_id'] ?? null, [
+                                                        {{ Form::select("items[{$i}][product_id]", $product_services ?? [], $item['product_id'] ?? null, [
                                                             'class' => 'form-control select2 item-select item-product',
                                                             'placeholder' => 'Select Product/Service',
                                                         ]) }}
@@ -2547,3 +2578,7 @@
 
     {{ Form::close() }}
 </div>
+</div>
+</div>
+</div>
+@endsection

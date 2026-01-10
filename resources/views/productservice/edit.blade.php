@@ -35,7 +35,7 @@
         </div>
 
         <div class="form-group col-md-6">
-            {{ Form::label('sale_chartaccount_id', __('Income Account'),['class'=>'form-label']) }}
+            {{ Form::label('sale_chartaccount_id', __('Income Account'),['class'=>'form-label']) }}<span class="text-danger">*</span>
             {{-- {{ Form::select('sale_chartaccount_id',$incomeChartAccounts,null, array('class' => 'form-control select','required'=>'required')) }} --}}
             <select name="sale_chartaccount_id" class="form-control" required="required">
                 @foreach ($incomeChartAccounts as $key => $chartAccount)
@@ -56,7 +56,7 @@
             </div>
         </div>
         <div class="form-group col-md-6">
-            {{ Form::label('expense_chartaccount_id', __('Expense Account'),['class'=>'form-label']) }}
+            {{ Form::label('expense_chartaccount_id', __('Expense Account'),['class'=>'form-label']) }}<span class="text-danger">*</span>
             {{-- {{ Form::select('expense_chartaccount_id',$expenseChartAccounts,null, array('class' => 'form-control select','required'=>'required')) }} --}}
             <select name="expense_chartaccount_id" class="form-control" required="required">
                 @foreach ($expenseChartAccounts as $key => $chartAccount)

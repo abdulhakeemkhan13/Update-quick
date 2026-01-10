@@ -1133,7 +1133,10 @@
                             show_toastr('success',
                                 '{{ __('Expense created successfully') }}', 'success');
                         }
-                        setTimeout(() => window.location.reload(), 500);
+                         const EXPANSE_URL = "{{ url('/expense') }}";
+                            setTimeout(() => {
+                                window.location.href = EXPANSE_URL;
+                            }, 500);
                     } else {
                         show_toastr('success', response.message ||
                             '{{ __('Expense created successfully') }}', 'success');

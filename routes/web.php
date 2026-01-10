@@ -222,6 +222,7 @@ Route::put('/timeActivity/update/{id}', [ExpenseController::class, 'updateTimeAc
 
 // for checks(cheque)
 Route::get('/check', [ExpenseController::class, 'checksCreate'])->name('checks.create');
+Route::post('/check/store', [ExpenseController::class, 'checkstore'])->name('checks.store');
 
 // page and api endpoints
 Route::get('/quickbooks/sync', [QuickBooksApiController::class, 'index'])->name('quickbooks.sync');

@@ -18,4 +18,8 @@ class VendorCreditProduct extends Model
         'billable',
         'customer_id',
     ];
+    public function product()
+    {
+        return $this->hasOne('App\\Models\\ProductService', 'id', 'product_id');
+    }
 }

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Exception;
 
-class JournalService
+class JournalServicecredit
 {
     /**
      * Create a new journal entry with its items
@@ -29,8 +29,8 @@ class JournalService
             
             // Timestamps to use
             $timestamps = $backdate ? [
-                'created_at' => $entryDate. now()->format('H:i:s'),
-                'updated_at' => $entryDate . now()->format('H:i:s'),
+                'created_at' => $entryDate . ' ' . now()->format('H:i:s'),
+                'updated_at' => $entryDate . ' ' . now()->format('H:i:s'),
             ] : [];
             
             // Create main journal entry
@@ -59,8 +59,8 @@ class JournalService
                  $apItemData = [
                     'journal'     => $journalEntry->id,
                     'account'     => $data['ap_account_id'],
-                    'debit'       => 0,
-                    'credit'      => $data['ap_amount'],
+                    'debit'       => $data['ap_amount'],
+                    'credit'      => 0,
                     'description' => $data['ap_description'] ?? 'Account Payable',
                     'type'        => $data['category'] ?? null,
                     'name'        => $data['ap_name'] ?? '',
@@ -112,8 +112,8 @@ class JournalService
                     $journalItemData = [
                         'journal' => $journalEntry->id,
                         'account' => $itemData['account_id'] ?? 0,
-                        'debit' => $itemData['debit'] ?? 0,
-                        'credit' => $itemData['credit'] ?? 0,
+                        'debit' => $itemData['credit'] ?? 0,
+                        'credit' => $itemData['debit'] ?? 0,
                         'description' => $itemData['description'] ?? '',
                         'product_id' => $itemData['product_id'] ?? null,
                         'product_ids' => $itemData['product_ids'] ?? null,
@@ -228,13 +228,12 @@ class JournalService
      */
     public static function updateJournalEntry($id, array $data)
     {
-        // dd($data);
         DB::beginTransaction();
         
         try {
             $journalEntry = JournalEntry::findOrFail($id);
             // Extract entry date for potential backdating
-            $entryDate = $data['date'] ?? $journalEntry->date;
+            $entryDate = $data['date'] ?? $journalEntry->date .''.now()->format('H:i:s');
             $backdate = $data['backdate'] ?? false;
             
             // Timestamps to use
@@ -268,8 +267,8 @@ class JournalService
                 $apItemData = [
                     'journal'      => $journalEntry->id,
                     'account'      => $data['ap_account_id'],
-                    'debit'        => 0,
-                    'credit'       => $data['ap_amount'],
+                    'debit'        => $data['ap_amount'],
+                    'credit'       => 0,
                     'description'  => $data['ap_description'] ?? 'Account Payable',
                     'type'         => $data['category'] ?? $journalEntry->category,
                     'name'         => $data['ap_name'] ?? '',
@@ -303,8 +302,8 @@ class JournalService
                     'reference_id' => $journalEntry->id,
                     'reference_sub_id' => $apItem->id,
                     'date' => $entryDate,
-                    'credit' => $data['ap_amount'],
-                    'debit' => 0,
+                    'credit' => 0,
+                    'debit' => $data['ap_amount'],
                     'product_id' => $data['bill_id'] ?? null,
                     'product_type' => $data['ap_sub_type'] ?? 'Bill Payable',
                     'product_item_id' => 0,
@@ -325,8 +324,8 @@ class JournalService
                     $journalItemData = [
                         'journal'       => $journalEntry->id,
                         'account'       => $itemData['account_id'] ?? 0,
-                        'debit'         => $itemData['debit'] ?? 0,
-                        'credit'        => $itemData['credit'] ?? 0,
+                        'debit'         => $itemData['credit'] ?? 0,
+                        'credit'        => $itemData['debit'] ?? 0,
                         'description'   => $itemData['description'] ?? '',
                         'product_id'    => $itemData['product_id'] ?? null,
                         'product_ids'   => $itemData['product_ids'] ?? null,

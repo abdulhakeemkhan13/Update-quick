@@ -1133,12 +1133,19 @@
                             show_toastr('success',
                                 '{{ __('Expense created successfully') }}', 'success');
                         }
-                        setTimeout(() => window.location.reload(), 500);
+                        const EXPANSE_URL = "{{ url('/expense') }}";
+                            setTimeout(() => {
+                                window.location.href = EXPANSE_URL;
+                            }, 500);
                     } else {
                         show_toastr('success', response.message ||
                             '{{ __('Expense created successfully') }}', 'success');
                         $('.btn-qbo-save').prop('disabled', false).text(
                             '{{ __('Save') }}');
+                            const EXPANSE_URL = "{{ url('/expense') }}";
+                            setTimeout(() => {
+                                window.location.href = EXPANSE_URL;
+                            }, 500);
                     }
                 },
                 error: function(xhr) {
@@ -1232,7 +1239,7 @@
 
             </div>
             <div class="TrowserHeader">
-                <a href="{{route('bill.index')}}" class="text-dark me-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                <a href="{{route('expense.index')}}" class="text-dark me-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
                         viewBox="0 0 24 24" color="currentColor" width="24px" height="24px" focusable="false"
                         aria-hidden="true" class="">
                         <path fill="currentColor"

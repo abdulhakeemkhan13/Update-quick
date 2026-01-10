@@ -100,6 +100,21 @@ class VendorCredit extends Model
     }
 
     /**
+     * Get the total amount of the vendor credit
+     * Calculates from line items (accounts + products) or returns stored amount
+     */
+    public function getTotal()
+    {
+        $accountsTotal = $this->accounts()->sum('price');
+        $productsTotal = $this->products()->sum(\DB::raw('quantity * price'));
+        
+        $lineItemsTotal = $accountsTotal + $productsTotal;
+        
+        // If line items exist, use their total; otherwise use the stored amount
+        return $lineItemsTotal > 0 ? $lineItemsTotal : ($this->amount ?? 0);
+    }
+
+    /**
      * Update the status based on applied payments
      */
     public function updatePaymentStatus()
@@ -150,12 +165,12 @@ class VendorCredit extends Model
     public static function generateCreditNumber()
     {
         $prefix = 'VC-';
-        $lastCredit = static::where('credit_number', 'like', $prefix . '%')
+        $lastCredit = static::where('vendor_credit_id', 'like', $prefix . '%')
                            ->orderBy('created_at', 'desc')
                            ->first();
 
         if ($lastCredit) {
-            $lastNumber = (int) str_replace($prefix, '', $lastCredit->credit_number);
+            $lastNumber = (int) str_replace($prefix, '', $lastCredit->vendor_credit_id);
             $nextNumber = $lastNumber + 1;
         } else {
             $nextNumber = 1;

@@ -591,11 +591,28 @@ class InvoiceController extends Controller
                 $invoice->subtotal = $request->subtotal ?? 0;
                 $invoice->taxable_subtotal = $request->taxable_subtotal ?? 0;
                 $invoice->total_discount = $request->total_discount ?? 0;
-                $invoice->total_tax = $request->total_tax ?? 0;
-                $invoice->sales_tax_amount = $request->sales_tax_amount ?? 0;
-                $invoice->total_amount = $request->total_amount ?? 0;
-                $invoice->tax_id = $request->tax_id;
-                $invoice->tax_rate = $request->tax_rate;
+                
+                // Server-side tax calculation if tax_id is provided
+                $taxId = $request->tax_id;
+                $taxRate = $request->tax_rate ?? 0;
+                $totalTax = $request->total_tax ?? 0;
+                
+                if ($taxId) {
+                    // Get the tax from database to verify rate
+                    $tax = Tax::find($taxId);
+                    if ($tax) {
+                        $taxRate = $tax->rate;
+                        // Calculate tax: taxable_subtotal * tax_rate / 100
+                        $taxableSubtotal = floatval($request->taxable_subtotal ?? 0);
+                        $totalTax = $taxableSubtotal * $taxRate / 100;
+                    }
+                }
+                
+                $invoice->total_tax = $totalTax;
+                $invoice->sales_tax_amount = $totalTax;
+                $invoice->total_amount = floatval($request->subtotal ?? 0) - floatval($request->total_discount ?? 0) + $totalTax;
+                $invoice->tax_id = $taxId;
+                $invoice->tax_rate = $taxRate;
                 $invoice->memo = $request->memo;
                 $invoice->note = $request->note;
 
@@ -787,101 +804,101 @@ class InvoiceController extends Controller
                 $us_notify = 'false';
                 $us_approve = 'false';
                 $usr_Notification = [];
-                $workflow = WorkFlow::where('created_by', '=', \Auth::user()->creatorId())
-                    ->where('module', '=', 'crm')
-                    ->where('status', 1)
-                    ->first();
-                if ($workflow) {
-                    $workflowaction = WorkFlowAction::where('workflow_id', $workflow->id)->where('status', 1)->where('level_id', 4)->get();
-                    foreach ($workflowaction as $action) {
-                        $useraction = json_decode($action->assigned_users);
-                        if ('create-invoice' == $action->node_id) {
-                            if (@$useraction != '') {
-                                $useraction = json_decode($useraction);
-                                foreach ($useraction as $anyaction) {
-                                    // make new user array
-                                    if ($anyaction->type == 'user') {
-                                        $usr_Notification[] = $anyaction->id;
-                                    }
-                                }
-                            }
-                            $raw_json = trim($action->applied_conditions, '"');
-                            $cleaned_json = stripslashes($raw_json);
-                            $applied_conditions = json_decode($cleaned_json, true);
+                // $workflow = WorkFlow::where('created_by', '=', \Auth::user()->creatorId())
+                //     ->where('module', '=', 'crm')
+                //     ->where('status', 1)
+                //     ->first();
+                // if ($workflow) {
+                //     $workflowaction = WorkFlowAction::where('workflow_id', $workflow->id)->where('status', 1)->where('level_id', 4)->get();
+                //     foreach ($workflowaction as $action) {
+                //         $useraction = json_decode($action->assigned_users);
+                //         if ('create-invoice' == $action->node_id) {
+                //             if (@$useraction != '') {
+                //                 $useraction = json_decode($useraction);
+                //                 foreach ($useraction as $anyaction) {
+                //                     // make new user array
+                //                     if ($anyaction->type == 'user') {
+                //                         $usr_Notification[] = $anyaction->id;
+                //                     }
+                //                 }
+                //             }
+                //             $raw_json = trim($action->applied_conditions, '"');
+                //             $cleaned_json = stripslashes($raw_json);
+                //             $applied_conditions = json_decode($cleaned_json, true);
 
-                            if (isset($applied_conditions['conditions']) && is_array($applied_conditions['conditions'])) {
-                                $arr = [
-                                    'category' => 'category_name',
-                                    'customer' => 'customer_name',
-                                    'referance number' => 'ref_number',
-                                ];
-                                $relate = [
-                                    'category_name' => 'category',
-                                    'customer_name' => 'customer',
-                                ];
+                //             if (isset($applied_conditions['conditions']) && is_array($applied_conditions['conditions'])) {
+                //                 $arr = [
+                //                     'category' => 'category_name',
+                //                     'customer' => 'customer_name',
+                //                     'referance number' => 'ref_number',
+                //                 ];
+                //                 $relate = [
+                //                     'category_name' => 'category',
+                //                     'customer_name' => 'customer',
+                //                 ];
 
-                                foreach ($applied_conditions['conditions'] as $conditionGroup) {
-                                    if (in_array($conditionGroup['action'], ['send_email', 'send_notification', 'send_approval'])) {
-                                        $query = Invoice::where('id', $invoice->id);
-                                        foreach ($conditionGroup['conditions'] as $condition) {
-                                            $field = $condition['field'];
-                                            $operator = $condition['operator'];
-                                            $value = $condition['value'];
-                                            if (isset($arr[$field], $relate[$arr[$field]])) {
-                                                $relatedField = strpos($arr[$field], '_') !== false ? explode('_', $arr[$field], 2)[1] : $arr[$field];
-                                                $relation = $relate[$arr[$field]];
+                //                 foreach ($applied_conditions['conditions'] as $conditionGroup) {
+                //                     if (in_array($conditionGroup['action'], ['send_email', 'send_notification', 'send_approval'])) {
+                //                         $query = Invoice::where('id', $invoice->id);
+                //                         foreach ($conditionGroup['conditions'] as $condition) {
+                //                             $field = $condition['field'];
+                //                             $operator = $condition['operator'];
+                //                             $value = $condition['value'];
+                //                             if (isset($arr[$field], $relate[$arr[$field]])) {
+                //                                 $relatedField = strpos($arr[$field], '_') !== false ? explode('_', $arr[$field], 2)[1] : $arr[$field];
+                //                                 $relation = $relate[$arr[$field]];
 
-                                                // Apply condition to the related model
-                                                $query->whereHas($relation, function ($relatedQuery) use ($relatedField, $operator, $value) {
-                                                    $relatedQuery->where($relatedField, $operator, $value);
-                                                });
-                                            } else {
-                                                // Apply condition directly to the contract model
-                                                $query->where($arr[$field], $operator, $value);
-                                            }
-                                        }
-                                        $result = $query->first();
+                //                                 // Apply condition to the related model
+                //                                 $query->whereHas($relation, function ($relatedQuery) use ($relatedField, $operator, $value) {
+                //                                     $relatedQuery->where($relatedField, $operator, $value);
+                //                                 });
+                //                             } else {
+                //                                 // Apply condition directly to the contract model
+                //                                 $query->where($arr[$field], $operator, $value);
+                //                             }
+                //                         }
+                //                         $result = $query->first();
 
-                                        if (!empty($result)) {
-                                            if ($conditionGroup['action'] === 'send_email') {
-                                                $us_mail = 'true';
-                                            } elseif ($conditionGroup['action'] === 'send_notification') {
-                                                $us_notify = 'true';
-                                            } elseif ($conditionGroup['action'] === 'send_approval') {
-                                                $us_approve = 'true';
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            if ($us_mail == 'true') {
-                                // email send
-                            }
-                            if ($us_notify == 'true' || $us_approve == 'true') {
-                                // notification generate
-                                if (count($usr_Notification) > 0) {
-                                    $usr_Notification[] = Auth::user()->creatorId();
-                                    foreach ($usr_Notification as $usrLead) {
-                                        $data = [
-                                            'updated_by' => Auth::user()->id,
-                                            'data_id' => $invoice->id,
-                                            'name' => '',
-                                        ];
-                                        if ($us_notify == 'true') {
-                                            Utility::makeNotification($usrLead, 'create_invoice', $data, $invoice->id, 'create Invoice');
-                                            $invoice->status = 6; // Under Approval
-                                            $invoice->save();
-                                        } elseif ($us_approve == 'true') {
-                                            Utility::makeNotification($usrLead, 'approve_invoice', $data, $invoice->id, 'For Approval Invoice');
-                                            $invoice->status = 6; // Under Approval
-                                            $invoice->save();
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                //                         if (!empty($result)) {
+                //                             if ($conditionGroup['action'] === 'send_email') {
+                //                                 $us_mail = 'true';
+                //                             } elseif ($conditionGroup['action'] === 'send_notification') {
+                //                                 $us_notify = 'true';
+                //                             } elseif ($conditionGroup['action'] === 'send_approval') {
+                //                                 $us_approve = 'true';
+                //                             }
+                //                         }
+                //                     }
+                //                 }
+                //             }
+                //             if ($us_mail == 'true') {
+                //                 // email send
+                //             }
+                //             if ($us_notify == 'true' || $us_approve == 'true') {
+                //                 // notification generate
+                //                 if (count($usr_Notification) > 0) {
+                //                     $usr_Notification[] = Auth::user()->creatorId();
+                //                     foreach ($usr_Notification as $usrLead) {
+                //                         $data = [
+                //                             'updated_by' => Auth::user()->id,
+                //                             'data_id' => $invoice->id,
+                //                             'name' => '',
+                //                         ];
+                //                         if ($us_notify == 'true') {
+                //                             Utility::makeNotification($usrLead, 'create_invoice', $data, $invoice->id, 'create Invoice');
+                //                             $invoice->status = 6; // Under Approval
+                //                             $invoice->save();
+                //                         } elseif ($us_approve == 'true') {
+                //                             Utility::makeNotification($usrLead, 'approve_invoice', $data, $invoice->id, 'For Approval Invoice');
+                //                             $invoice->status = 6; // Under Approval
+                //                             $invoice->save();
+                //                         }
+                //                     }
+                //                 }
+                //             }
+                //         }
+                //     }
+                // }
 
                 //Product Stock Report
                 // $type = 'invoice';
@@ -889,13 +906,13 @@ class InvoiceController extends Controller
                 // StockReport::where('type', '=', 'invoice')->where('type_id', '=', $invoice->id)->delete();
                 // $description = $invoiceProduct->quantity . '  ' . __(' quantity sold in invoice') . ' ' . \Auth::user()->invoiceNumberFormat($invoice->invoice_id);
                 // Utility::addProductStock($invoiceProduct->product_id, $invoiceProduct->quantity, $type, $description, $type_id);
-                if (Auth::user()->type == 'company') {
+                // if (Auth::user()->type == 'company') {
                     $this->createInvoiceJournalVoucher($invoice);
                     // $this->approveInvoice($invoice->id);
                     $invoice->status = 6; // Approved
                     $invoice->save();
                     Utility::makeActivityLog(\Auth::user()->id, 'Invoice', $invoice->id, 'Create Invoice', 'Invoice Created & Approved');
-                }
+                // }
 
                 // Webhook
                 $module = 'New Invoice';
@@ -921,7 +938,7 @@ class InvoiceController extends Controller
                     ]);
                 }
 
-                return redirect()->route('invoice.index')->with('success', __('Invoice successfully created and waiting for approval.'));
+                return redirect()->route('sales.transactions.index')->with('success', __('Invoice successfully created and waiting for approval.'));
             } else {
                 if ($request->ajax()) {
                     return response()->json(['error' => __('Permission denied.')], 403);
@@ -946,9 +963,7 @@ class InvoiceController extends Controller
     private function createInvoiceJournalVoucher(Invoice $invoice)
     {
         $invoiceProducts = $invoice->items; // must have relation in Invoice model
-        // dd($invoiceProducts,'invpro');
         $newitems = [];
-
         // Include all items (products, subtotals, text lines)
         // Utility::jrentry will handle skipping non-product items safely
         foreach ($invoiceProducts as $product) {
@@ -963,6 +978,21 @@ class InvoiceController extends Controller
             ];
         }
 
+        // Get tax information if tax_id is set
+        $taxData = null;
+        if ($invoice->tax_id && $invoice->total_tax > 0) {
+            $tax = Tax::find($invoice->tax_id);
+            if ($tax) {
+                $taxData = [
+                    'tax_id' => $tax->id,
+                    'tax_name' => $tax->name,
+                    'tax_rate' => $tax->rate,
+                    'tax_amount' => $invoice->total_tax,
+                    'chart_account_id' => $tax->chart_account_id, // Tax liability account
+                ];
+            }
+        }
+
         $data = [
             'id' => $invoice->id,
             'no' => $invoice->invoice_id,
@@ -975,7 +1005,10 @@ class InvoiceController extends Controller
             'prod_id' => $invoiceProducts->where('product_id', '!=', null)->first()->product_id ?? null,
             'items' => $newitems,
             'customer_id' => $invoice->customer_id,
-            'total' => $invoice->getTotal(),
+            'total' => $invoice->total_amount ?? $invoice->getTotal(),
+            'subtotal' => $invoice->subtotal,
+            'total_tax' => $invoice->total_tax,
+            'tax_data' => $taxData, // Pass tax data for journal entry
         ];
 
         $voucherId = Utility::jrentry($data);
@@ -1568,11 +1601,28 @@ class InvoiceController extends Controller
                     $invoice->subtotal = $request->subtotal ?? 0;
                     $invoice->taxable_subtotal = $request->taxable_subtotal ?? 0;
                     $invoice->total_discount = $request->total_discount ?? 0;
-                    $invoice->total_tax = $request->total_tax ?? 0;
-                    $invoice->sales_tax_amount = $request->sales_tax_amount ?? 0;
-                    $invoice->total_amount = $request->total_amount ?? 0;
-                    $invoice->tax_id = $request->tax_id;
-                    $invoice->tax_rate = $request->tax_rate;
+                    
+                    // Server-side tax calculation if tax_id is provided (same as store method)
+                    $taxId = $request->tax_id;
+                    $taxRate = $request->tax_rate ?? 0;
+                    $totalTax = $request->total_tax ?? 0;
+                    
+                    if ($taxId) {
+                        // Get the tax from database to verify rate
+                        $tax = Tax::find($taxId);
+                        if ($tax) {
+                            $taxRate = $tax->rate;
+                            // Calculate tax: taxable_subtotal * tax_rate / 100
+                            $taxableSubtotal = floatval($request->taxable_subtotal ?? 0);
+                            $totalTax = $taxableSubtotal * $taxRate / 100;
+                        }
+                    }
+                    
+                    $invoice->total_tax = $totalTax;
+                    $invoice->sales_tax_amount = $totalTax;
+                    $invoice->total_amount = floatval($request->subtotal ?? 0) - floatval($request->total_discount ?? 0) + $totalTax;
+                    $invoice->tax_id = $taxId;
+                    $invoice->tax_rate = $taxRate;
 
                     // Handle logo upload
                     if ($request->hasFile('company_logo')) {
@@ -2223,11 +2273,121 @@ class InvoiceController extends Controller
             $productToDelete->delete();
         }
 
+        // ============================================================
+        // Invoice-Level Sales Tax Journal Entry (using Tax model's chart_account_id)
+        // This handles taxes applied at the invoice level via the tax_id dropdown
+        // Must process BEFORE updating receivables so the tax is included
+        // ============================================================
+        $existingSalesTaxJournal = JournalItem::where('journal', $voucher->id)
+            ->where('description', 'LIKE', 'Sales Tax%')
+            ->where(function($q) {
+                $q->whereNull('prod_tax_id')->orWhere('prod_tax_id', 0);
+            })
+            ->where(function($q) {
+                $q->whereNull('product_ids')->orWhere('product_ids', 0);
+            })
+            ->first();
+
+        if ($invoice->tax_id && $invoice->total_tax > 0) {
+            $tax = Tax::find($invoice->tax_id);
+            if ($tax) {
+                $taxAccountId = $tax->chart_account_id;
+                
+                // If no chart_account_id set on Tax model, fall back to default Sales Tax Payable account
+                if (!$taxAccountId) {
+                    $types_t = ChartOfAccountType::where('created_by', '=', $invoice->created_by)->where('name', 'Liabilities')->first();
+                    if ($types_t) {
+                        $sub_type_t = ChartOfAccountSubType::where('type', $types_t->id)->where('name', 'Current Liabilities')->first();
+                        $taxAccount = ChartOfAccount::where('type', $types_t->id)
+                            ->where('sub_type', $sub_type_t->id)
+                            ->where('name', 'Sales Tax Payable')
+                            ->first();
+                        if (!$taxAccount) {
+                            $taxAccount = ChartOfAccount::create([
+                                'name' => 'Sales Tax Payable',
+                                'code' => '20100',
+                                'type' => $types_t->id,
+                                'sub_type' => $sub_type_t->id,
+                                'is_enabled' => 1,
+                                'created_by' => $invoice->created_by,
+                            ]);
+                        }
+                        $taxAccountId = $taxAccount->id;
+                    }
+                }
+                
+                if ($taxAccountId) {
+                    // Add the tax amount to receivable (customer owes tax too)
+                    $reciveable += floatval($invoice->total_tax);
+                    
+                    if ($existingSalesTaxJournal) {
+                        // Update existing tax journal item
+                        $existingSalesTaxJournal->account = $taxAccountId;
+                        $existingSalesTaxJournal->description = 'Sales Tax (' . $tax->name . ' @ ' . $tax->rate . '%) on Invoice No: ' . $invoice->invoice_id;
+                        $existingSalesTaxJournal->credit = floatval($invoice->total_tax);
+                        $existingSalesTaxJournal->save();
+                        
+                        // Update transaction line
+                        $taxTransactionLine = TransactionLines::where('reference_id', $voucher->id)
+                            ->where('reference', 'Invoice Journal')
+                            ->where('product_type', 'Invoice Sales Tax')
+                            ->first();
+                        if ($taxTransactionLine) {
+                            $taxTransactionLine->account_id = $taxAccountId;
+                            $taxTransactionLine->credit = floatval($invoice->total_tax);
+                            $taxTransactionLine->debit = 0;
+                            $taxTransactionLine->save();
+                        }
+                    } else {
+                        // Create new journal item for tax liability (credit)
+                        $journalItem = new JournalItem();
+                        $journalItem->journal = $voucher->id;
+                        $journalItem->account = $taxAccountId;
+                        $journalItem->description = 'Sales Tax (' . $tax->name . ' @ ' . $tax->rate . '%) on Invoice No: ' . $invoice->invoice_id;
+                        $journalItem->credit = floatval($invoice->total_tax);
+                        $journalItem->debit = 0;
+                        $journalItem->product_ids = null;
+                        $journalItem->prod_tax_id = null;
+                        $journalItem->save();
+                        $journalItem->created_at = date('Y-m-d H:i:s', strtotime($invoice->created_at));
+                        $journalItem->updated_at = date('Y-m-d H:i:s', strtotime($invoice->created_at));
+                        $journalItem->save();
+
+                        // Create transaction line for tax liability
+                        $dataline = [
+                            'account_id' => $taxAccountId,
+                            'transaction_type' => 'Credit',
+                            'transaction_amount' => floatval($invoice->total_tax),
+                            'reference' => 'Invoice Journal',
+                            'reference_id' => $voucher->id,
+                            'reference_sub_id' => $journalItem->id,
+                            'date' => $voucher->date,
+                            'created_at' => date('Y-m-d H:i:s', strtotime($invoice->created_at)),
+                            'product_id' => $invoice->id,
+                            'product_type' => 'Invoice Sales Tax',
+                        ];
+                        Utility::addTransactionLines($dataline, 'create');
+                    }
+                }
+            }
+        } elseif ($existingSalesTaxJournal) {
+            // Tax was removed - delete the tax journal entry and transaction line
+            TransactionLines::where('reference_id', $voucher->id)
+                ->where('reference', 'Invoice Journal')
+                ->where('product_type', 'Invoice Sales Tax')
+                ->delete();
+            $existingSalesTaxJournal->delete();
+        }
+
+        // ============================================================
         // Update receivable journal item and transaction line
+        // This is AFTER tax processing so $reciveable includes tax amount
+        // ============================================================
         $inv_receviable = TransactionLines::where('reference_id', $invoice->voucher_id)->where('reference', 'Invoice Journal')->where('product_type', 'Invoice Reciveable')->first();
 
         if ($inv_receviable) {
-            $inv_receviable->credit = $reciveable;
+            $inv_receviable->debit = $reciveable;
+            $inv_receviable->credit = 0;
             $inv_receviable->save();
         }
 

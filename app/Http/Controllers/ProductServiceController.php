@@ -509,6 +509,8 @@ class ProductServiceController extends Controller
                 'category_id' => 'required',
                 'unit_id' => 'required',
                 'type' => 'required',
+                'sale_chartaccount_id' => 'required',
+                'expense_chartaccount_id' => 'required',
             ];
 
             $validator = \Validator::make($request->all(), $rules);
@@ -646,7 +648,8 @@ class ProductServiceController extends Controller
                     'category_id' => 'required',
                     'unit_id' => 'required',
                     'type' => 'required',
-
+                    'sale_chartaccount_id' => 'required',
+                    'expense_chartaccount_id' => 'required',
                 ];
 
                 $validator = \Validator::make($request->all(), $rules);

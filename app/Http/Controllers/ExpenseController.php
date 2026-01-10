@@ -56,6 +56,15 @@ class ExpenseController extends Controller
 
         return $latest->bill_id + 1;
     }
+    public function checkNumber()
+    {
+        $latest = Bill::where('created_by', '=', \Auth::user()->creatorId())->where('type', '=', 'Check')->latest()->first();
+        if (!$latest) {
+            return 1;
+        }
+
+        return $latest->bill_id + 1;
+    }
 
     public function employee(Request $request)
     {
@@ -119,9 +128,9 @@ class ExpenseController extends Controller
             $dataHelper->status = $statusFilter;
             $dataHelper->startDate = $startDate;
             $dataHelper->endDate = $endDate;
-            
             $transactions = $dataHelper->getTransactions();
             $totalAmount = $dataHelper->calculateTotal($transactions);
+        
 
             // Type options for filter dropdown
             $typeOptions = [
@@ -175,7 +184,7 @@ class ExpenseController extends Controller
                 ->where('created_by', \Auth::user()->creatorId())
                 ->get()->pluck('name', 'id')->toArray();
             $accounts = ['__add__' => '➕ Add New Account'] + ['' => 'Select Account'] + $accounts;
-
+            
             return view('expense.create', compact('employees', 'customers', 'venders', 'expense_number', 'product_services', 'category', 'customFields', 'Id', 'chartAccounts', 'accounts', 'subAccounts'));
         } else {
             return response()->json(['error' => __('Permission denied.')], 401);
@@ -1230,6 +1239,124 @@ class ExpenseController extends Controller
         return $updatedJournalEntry;
     }
 
+       private function createCheckJournalEntry($expense)
+    {
+        // Build journal items from expense categories and products
+        $journalItems = [];
+
+        $vendor = null;
+        if ($expense->user_type == 'vendor') {
+            $vendor = Vender::find($expense->vender_id);
+        } elseif ($expense->user_type == 'employee') {
+            $vendor = Employee::find($expense->vender_id);
+        } elseif ($expense->user_type == 'customer') {
+            $vendor = Customer::find($expense->vender_id);
+        }
+        
+        $vendorName = $vendor ? $vendor->name : 'Unknown';
+
+        // Add category-based expenses (BillAccount with type='Bill' for expenses)
+        $expenseAccounts = BillAccount::where('ref_id', $expense->id)->where('type', 'Check')->get();
+        foreach ($expenseAccounts as $expenseAccount) {
+            $journalItems[] = [
+                'account_id' => $expenseAccount->chart_account_id,
+                'debit' => $expenseAccount->price,
+                'credit' => 0,
+                'description' => $expenseAccount->description ?: 'Expense',
+                'type' => 'Check',
+                'sub_type' => 'check account',
+                'name' => $vendorName,
+                'ref_number' => $expense->ref_number,
+                'user_type' => $expense->user_type,
+                'vendor_id' => $expense->vender_id,
+                'customer_id' => null,
+                'created_user' => \Auth::user()->id,
+                'created_by' => \Auth::user()->creatorId(),
+                'company_id' => \Auth::user()->ownedId(),
+            ];
+        }
+
+        // Add product/service items (BillProduct)
+        $expenseProducts = BillProduct::where('bill_id', $expense->id)->get();
+        foreach ($expenseProducts as $expenseProduct) {
+            $product = $expenseProduct->product;
+            
+            // Determine account ID based on product type
+            $accountId = null;
+            if ($product) {
+                $accountId = $expenseProduct->account_id ?: $product->expense_chartaccount_id;
+            }
+            
+            $journalItems[] = [
+                'account_id' => $accountId,
+                'debit' => $expenseProduct->line_total ?: ($expenseProduct->quantity * $expenseProduct->price),
+                'credit' => 0,
+                'description' => $expenseProduct->description ?: ($product ? $product->name : 'Product'),
+                'product_id' => $expenseProduct->product_id,
+                'type' => 'Check',
+                'sub_type' => 'check item',
+                'name' => $vendorName,
+                'ref_number' => $expense->ref_number,
+                'user_type' => $expense->user_type,
+                'vendor_id' => $expense->vender_id,
+                'customer_id' => null,
+                'created_user' => \Auth::user()->id,
+                'created_by' => \Auth::user()->creatorId(),
+                'company_id' => \Auth::user()->ownedId(),
+            ];
+        }
+
+        $billPayment = BillPayment::where('bill_id', $expense->id)->first();
+        $bank = BankAccount::find($billPayment->account_id);
+        if($bank){
+            $accountPayable = ChartOfAccount::where('id', $bank->chart_account_id)->first();
+        }else{
+            $accountPayable = Utility::getAccountPayableAccount($bank->creatorId());
+        }
+
+        // Calculate total amount
+        $totalAmount = 0;
+        foreach ($journalItems as $item) {
+            $totalAmount += $item['debit'];
+        }
+
+        // Create journal entry using JournalService
+        $journalEntry = JournalService::createJournalEntry([
+            'date' => $expense->bill_date,
+            'backdate' => true,
+            'reference' => \Auth::user()->checkNumberFormat($expense->bill_id),
+            'description' => 'Check from ' . $vendorName,
+            'journal_id' => Utility::journalNumber(),
+            'voucher_type' => 'JV',
+            'reference_id' => $expense->id,
+            'prod_id' => null,
+            'category' => 'Check',
+            'module' => 'check',
+            'source' => 'check_creation',
+            'created_user' => \Auth::user()->id,
+            'created_by' => \Auth::user()->creatorId(),
+            'owned_by' => \Auth::user()->ownedId(),
+            'ref_number' => $expense->ref_number,
+            'user_type' => $expense->user_type,
+            'vendor_id' => $expense->vender_id,
+            'company_id' => \Auth::user()->ownedId(),
+            'bill_id' => $expense->id,
+            'items' => $journalItems,
+            'ap_name' => $vendorName,
+            'ap_account_id' => $accountPayable->id,
+            'ap_amount' => $totalAmount,
+            'ap_sub_type' => 'check payment',
+            'ap_description' => 'Check Payment - ' . \Auth::user()->checkNumberFormat($expense->bill_id),
+        ]);
+
+        \Log::info('Journal entry created for check', [
+            'expense_id' => $expense->id,
+            'journal_entry_id' => $journalEntry->id,
+        ]);
+        
+        return $journalEntry;
+    }
+
     public function approveExpense($id)
     {
         \DB::beginTransaction();
@@ -1550,6 +1677,7 @@ class ExpenseController extends Controller
 
     public function update(Request $request, $id)
     {
+   
         \DB::beginTransaction();
         try {
             if (!\Auth::user()->can('edit bill')) {
@@ -1600,9 +1728,13 @@ class ExpenseController extends Controller
             // ===================================
             $existingCategoryIds = [];
 
-            if ($request->has('category') && is_array($request->category)) {
+            if ($request->has('categories') && is_array($request->categories)) {
                 
-                foreach ($request->category as $index => $categoryData) {
+                foreach ($request->categories as $index => $categoryData) {
+                    // 🚫 Skip if product_id is empty or null
+                    if (empty($categoryData['account_id'])) {
+                        continue;
+                    }
                     $billAccountId = $categoryData['id'] ?? null;
                     
                     if ($billAccountId) {
@@ -1661,7 +1793,10 @@ class ExpenseController extends Controller
            if ($request->has('items') && is_array($request->items)) {
 
                 foreach ($request->items as $index => $itemData) {
-
+                    // 🚫 Skip if product_id is empty or null
+                    if (empty($itemData['product_id']) ) {
+                        continue;
+                    }
                     $billProductId = $itemData['id'] ?? null;
                     $billProduct   = null;
 
@@ -1683,7 +1818,7 @@ class ExpenseController extends Controller
                     }
                     // dd($itemData);
                     // ✅ Assign values
-                    $billProduct->product_id  = $itemData['product_id'] ?? null;
+                    $billProduct->product_id  = $itemData['product_id'] ?? $itemData['item_id'] ?? null;
                     $billProduct->quantity    = $itemData['quantity'] ?? 1;
                     $billProduct->price       = $itemData['price'] ?? 0;
                     $billProduct->discount    = $itemData['discount'] ?? 0;
@@ -2091,7 +2226,7 @@ class ExpenseController extends Controller
             $timeActivity->created_by = \Auth::user()->creatorId();
             $timeActivity->save();
 
-            return redirect()->route('timeActivity.create')->with('success', __('Time Activity successfully created.'));
+            return redirect()->route('expense.index')->with('success', __('Time Activity successfully created.'));
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
@@ -2184,6 +2319,373 @@ class ExpenseController extends Controller
             return view('expense.checks', compact('employees', 'customers', 'venders', 'expense_number', 'product_services', 'category', 'customFields', 'Id', 'chartAccounts', 'accounts', 'subAccounts'));
         } else {
             return response()->json(['error' => __('Permission denied.')], 401);
+        }
+    }
+
+     public function checkstore(Request $request)
+    {
+        // dd($request->all());
+        \DB::beginTransaction();
+        try {
+            if (\Auth::user()->can('create bill')) {
+                $validator = \Validator::make(
+                    $request->all(),
+                    [
+                        'payment_date' => 'required',
+                        'account_id' => 'required',
+                        'payee' => 'required',
+                    ]
+                );
+                if ($validator->fails()) {
+                    $messages3 = $validator->getMessageBag();
+                    // Return JSON for AJAX requests
+                    if ($request->ajax() || $request->wantsJson()) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => $messages3->first()
+                        ], 422);
+                    }
+                    return redirect()->back()->with('error', $messages3->first());
+                }
+
+                // Parse payee field (format: "type_id", e.g., "customer_1", "vendor_2", "employee_3")
+                $payeeParts = explode('_', $request->payee);
+                if (count($payeeParts) !== 2) {
+                    if ($request->ajax() || $request->wantsJson()) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => __('Invalid payee format.')
+                        ], 422);
+                    }
+                    return redirect()->back()->with('error', __('Invalid payee format.'));
+                }
+                
+                $payeeType = $payeeParts[0]; // 'customer', 'vendor', or 'employee'
+                $payeeId = $payeeParts[1];   // The ID
+
+                // Validate billable items have customers
+                $billableValidationError = null;
+                
+                // Check category items (note: payload uses 'categories' not 'category')
+                $categoriesData = $request->has('categories') ? $request->categories : ($request->has('category') ? $request->category : []);
+                if (is_array($categoriesData)) {
+                    foreach ($categoriesData as $index => $categoryData) {
+                        // billable might be an array like ["1"] or a simple value
+                        $isBillable = false;
+                        if (isset($categoryData['billable'])) {
+                            if (is_array($categoryData['billable'])) {
+                                $isBillable = !empty($categoryData['billable'][0]);
+                            } else {
+                                $isBillable = (bool)$categoryData['billable'];
+                            }
+                        }
+                        
+                        if ($isBillable && empty($categoryData['customer_id'])) {
+                            $billableValidationError = __('Select a customer for each billable split line.') . ' (Category row ' . ($index + 1) . ')';
+                            break;
+                        }
+                    }
+                }
+                
+                // Check item details
+                if (!$billableValidationError && $request->has('items') && is_array($request->items)) {
+                    foreach ($request->items as $index => $itemData) {
+                        // billable might be an array like ["1"] or a simple value
+                        $isBillable = false;
+                        if (isset($itemData['billable'])) {
+                            if (is_array($itemData['billable'])) {
+                                $isBillable = !empty($itemData['billable'][0]);
+                            } else {
+                                $isBillable = (bool)$itemData['billable'];
+                            }
+                        }
+                        
+                        if ($isBillable && empty($itemData['customer_id'])) {
+                            $billableValidationError = __('Select a customer for each billable split line.') . ' (Item row ' . ($index + 1) . ')';
+                            break;
+                        }
+                    }
+                }
+                
+                if ($billableValidationError) {
+                    if ($request->ajax() || $request->wantsJson()) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => $billableValidationError
+                        ], 422);
+                    }
+                    return redirect()->back()->with('error', $billableValidationError);
+                }
+
+                // Create Expense
+                $expense = new Bill();
+                $expense->bill_id = $this->checkNumber();
+                
+                // Set vendor based on parsed payee type and ID
+                $expense->vender_id = $payeeId;
+                $expense->user_type = $payeeType;
+                
+                $expense->bill_date = $request->payment_date;
+                $expense->due_date = $request->payment_date;
+                $expense->status = 0; // Draft
+                $expense->type = 'Check';
+                $expense->ref_number = $request->reference_no;
+                // New QBO fields
+                $expense->notes = $request->memo ?? $request->notes;
+                $expense->subtotal = $request->subtotal ?? 0;
+                $expense->total = $request->total ?? 0;
+                
+                $expense->category_id = !empty($request->category_id) ? $request->category_id : 0;
+                $expense->order_number = 0;
+                $expense->created_by = \Auth::user()->creatorId();
+                $expense->owned_by = \Auth::user()->ownedId();
+                $expense->save();
+
+                // Save Custom Fields
+                if ($request->has('customField')) {
+                    CustomField::saveData($expense, $request->customField);
+                }
+
+                $newitems = [];
+
+                // Process CATEGORY DETAILS (Account-based expenses)
+                // Note: The payload uses 'categories' not 'category'
+                if (is_array($categoriesData) && !empty($categoriesData)) {
+                    foreach ($categoriesData as $index => $categoryData) {
+                        // Skip empty rows
+                        if (empty($categoryData['account_id']) && empty($categoryData['amount'])) {
+                            continue;
+                        }
+
+                        $billAccount = new BillAccount();
+                        $billAccount->ref_id = $expense->id;
+                        $billAccount->type = 'Check';
+                        $billAccount->chart_account_id = $categoryData['account_id'] ?? null;
+                        $billAccount->description = $categoryData['description'] ?? '';
+                        $billAccount->price = $categoryData['amount'] ?? 0;
+                        
+                        // Handle billable (could be array or simple value)
+                        if (isset($categoryData['billable'])) {
+                            if (is_array($categoryData['billable'])) {
+                                $billAccount->billable = !empty($categoryData['billable'][0]) ? 1 : 0;
+                            } else {
+                                $billAccount->billable = $categoryData['billable'] ? 1 : 0;
+                            }
+                        } else {
+                            $billAccount->billable = 0;
+                        }
+                        
+                        $billAccount->customer_id = $categoryData['customer_id'] ?? null;
+                        
+                        // Handle tax checkbox (store as 1 or 0)
+                        $billAccount->tax = isset($categoryData['tax']) ? 1 : 0;
+                        
+                        // IMPORTANT: Save order to maintain exact row position
+                        $billAccount->order = $index;
+                        
+                        $billAccount->save();
+                        
+                        $newitems[] = [
+                            'bill_account_id' => $billAccount->id,
+                            'chart_account_id' => $billAccount->chart_account_id,
+                            'amount' => $billAccount->price,
+                            'description' => $billAccount->description,
+                            'order' => $index,
+                        ];
+                    }
+                }
+
+                // Process ITEM DETAILS (Product/Service-based)
+                if ($request->has('items') && is_array($request->items)) {
+                    foreach ($request->items as $index => $itemData) {
+                        // Skip empty rows
+                        // Note: payload uses 'item_id' not 'product_id', and 'rate' not 'price'
+                        $itemId = $itemData['item_id'] ?? $itemData['product_id'] ?? null;
+                        $itemRate = $itemData['rate'] ?? $itemData['price'] ?? 0;
+                        
+                        if (empty($itemId) || empty($itemData['quantity']) && empty($itemRate)) {
+                            continue;
+                        }
+                        $product = ProductService::find($itemId);
+                        $account = null;
+                        if ($product) {
+                            if($product->type == 'product'){
+                                $account = $product->asset_chartaccount_id ?? $product->expense_chartaccount_id;
+                            }else{
+                                $account = $product->expense_chartaccount_id;
+                            }
+                        }
+
+                        $billProduct = new BillProduct();
+                        $billProduct->bill_id = $expense->id;
+                        $billProduct->product_id = $itemId;
+                        $billProduct->description = $itemData['description'] ?? '';
+                        $billProduct->quantity = $itemData['quantity'] ?? 1;
+                        $billProduct->price = $itemRate;
+                        $billProduct->discount = $itemData['discount'] ?? 0;
+                        $billProduct->account_id = $account;
+                        
+                        // Handle tax checkbox (store as 1 or 0)
+                        $billProduct->tax = isset($itemData['tax']) ? 1 : 0;
+                        
+                        // Calculate line total
+                        $billProduct->line_total = $itemData['amount'] ?? ($billProduct->quantity * $billProduct->price);
+                        
+                        // Handle billable (could be array or simple value)
+                        if (isset($itemData['billable'])) {
+                            if (is_array($itemData['billable'])) {
+                                $billProduct->billable = !empty($itemData['billable'][0]) ? 1 : 0;
+                            } else {
+                                $billProduct->billable = $itemData['billable'] ? 1 : 0;
+                            }
+                        } else {
+                            $billProduct->billable = 0;
+                        }
+                        
+                        $billProduct->customer_id = $itemData['customer_id'] ?? null;
+                        
+                        // IMPORTANT: Save order to maintain exact row position
+                        $billProduct->order = $index;
+                        
+                        $billProduct->save();
+                        
+                        $newitems[] = [
+                            'prod_id' => $billProduct->id,
+                            'product_id' => $billProduct->product_id,
+                            'quantity' => $billProduct->quantity,
+                            'price' => $billProduct->price,
+                            'order' => $index,
+                        ];
+                    }
+                }
+
+                // Store payment details
+                $bank = BankAccount::find($request->account_id);
+                if (!$bank || !$bank->chart_account_id) {
+                    \DB::rollback();
+                    if ($request->ajax() || $request->wantsJson()) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => __('Please select chart of account in bank account.')
+                        ], 422);
+                    }
+                    return redirect()->back()->with('error', __('Please select chart of account in bank account.'));
+                }
+
+                $expensePayment = new BillPayment();
+                $expensePayment->bill_id = $expense->id;
+                $expensePayment->date = $request->payment_date;
+                $expensePayment->amount = $request->total ?? 0;
+                $expensePayment->account_id = $request->account_id;
+                $expensePayment->coa_account = $bank ? $bank->chart_account_id : null;
+                $expensePayment->payment_type = $request->payment_type;
+                $expensePayment->payment_method = 0;
+                $expensePayment->reference = $request->reference ?? '';
+                $expensePayment->description = $request->memo ?? '';
+                $expensePayment->save();
+
+                // Get user for notifications
+                if ($payeeType == 'employee') {
+                    $user = Employee::find($payeeId);
+                    $contact = $user->phone ?? '';
+                } else if ($payeeType == 'customer') {
+                    $user = Customer::find($payeeId);
+                    $contact = $user->contact ?? '';
+                } else {
+                    $user = Vender::find($payeeId);
+                    $contact = $user->contact ?? '';
+                }
+
+                // Notifications
+                $setting = Utility::settings(\Auth::user()->creatorId());
+                $expenseNotificationArr = [
+                    'expense_number' => \Auth::user()->expenseNumberFormat($expense->bill_id),
+                    'user_name' => \Auth::user()->name,
+                    'bill_date' => $expense->bill_date,
+                    'bill_due_date' => $expense->due_date,
+                    'vendor_name' => $user->name ?? 'N/A',
+                ];
+
+                if (isset($setting['bill_notification']) && $setting['bill_notification'] == 1) {
+                    Utility::send_slack_msg('new_bill', $expenseNotificationArr);
+                }
+                if (isset($setting['telegram_bill_notification']) && $setting['telegram_bill_notification'] == 1) {
+                    Utility::send_telegram_msg('new_bill', $expenseNotificationArr);
+                }
+                if (isset($setting['twilio_bill_notification']) && $setting['twilio_bill_notification'] == 1) {
+                    Utility::send_twilio_msg($contact, 'new_bill', $expenseNotificationArr);
+                }
+
+                // Auto-approve and create journal entry for company users
+                // if (Auth::user()->type == 'company') {
+                    $expense->status = 6; // Approved
+                    $expense->save();
+                    
+                    // Create journal entry using JournalService
+                    $this->createCheckJournalEntry($expense);
+                    
+                    Utility::makeActivityLog(\Auth::user()->id, 'Check', $expense->id, 'Create Check', 'Check Created & Approved');
+                // }
+                
+                // Webhook
+                $module = 'New Bill';
+                $webhook = Utility::webhookSetting($module);
+                if ($webhook) {
+                    $parameter = json_encode($expense);
+                    $status = Utility::WebhookCall($webhook['url'], $parameter, $webhook['method']);
+
+                    if ($status == true) {
+                        Utility::makeActivityLog(\Auth::user()->id, 'Check', $expense->id, 'Create Check', 'Check Created (Pending Approval)');
+                        \DB::commit();
+                        if ($request->ajax() || $request->wantsJson()) {
+                            return response()->json([
+                                'status' => 'success',
+                                'message' => __('Check successfully created.'),
+                                'expense_id' => $expense->id
+                            ], 200);
+                        }
+                        return redirect()->route('expense.index', $expense->id)->with('success', __('Check successfully created and waiting for approval.'));
+                    } else {
+                        \DB::commit();
+                        if ($request->ajax() || $request->wantsJson()) {
+                            return response()->json([
+                                'status' => 'error',
+                                'message' => __('Webhook call failed.')
+                            ], 500);
+                        }
+                        return redirect()->back()->with('error', __('Webhook call failed.'));
+                    }
+                }
+
+                Utility::makeActivityLog(\Auth::user()->id, 'Check', $expense->id, 'Create Check', 'Check Created (Pending Approval)');
+                \DB::commit();
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json([
+                        'status' => 'success',
+                        'message' => __('Check successfully created.'),
+                        'expense_id' => $expense->id
+                    ], 200);
+                }
+                return redirect()->route('expense.index', $expense->id)->with('success', __('Check successfully created and waiting for approval.'));
+            } else {
+                if ($request->ajax() || $request->wantsJson()) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => __('Permission denied.')
+                    ], 403);
+                }
+                return redirect()->back()->with('error', __('Permission denied.'));
+            }
+        } catch (\Exception $e) {
+            \DB::rollback();
+            \Log::error('Check Store Error: ' . $e->getMessage());
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $e->getMessage()
+                ], 500);
+            }
+            return redirect()->back()->with('error', $e->getMessage());
         }
     }
 

@@ -49,6 +49,9 @@ class Invoice extends Model
         'memo',
         'terms',
         'note',
+        'owned_by',
+        'total_tax',
+        'voucher_id',
     ];
 
     

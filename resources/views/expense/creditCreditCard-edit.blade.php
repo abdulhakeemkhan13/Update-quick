@@ -908,19 +908,19 @@
                         <td class="qbo-line-number">${++categoryLineCount}</td>
 
                         <td>
-                            <select name="category[${categoryLineCount}][account_id]" class="form-control category-account">
+                            <select name="categories[${categoryLineCount}][account_id]" class="form-control category-account">
                                 <option value="">{{ __('Select account') }}</option>
                                 @foreach ($chartAccounts as $id => $account)
                                     <option value="{{ $id }}">{{ $account }}</option>
                                 @endforeach
                             </select>
                         </td>
-                        <td><textarea name="category[${categoryLineCount}][description]" class="form-control" rows="1"></textarea></td>
-                        <td><input type="number" name="category[${categoryLineCount}][amount]" class="form-control category-amount text-end" step="0.01" value="0.00"></td>
-                        <td class="text-center text-center"><input type="checkbox" name="category[${categoryLineCount}][billable]" class="qbo-checkbox form-check-input" value="1"></td>
-                        <td class="text-center"><input type="checkbox " name="category[${categoryLineCount}][tax]" class="qbo-checkbox category-tax form-check-input"></td>
+                        <td><textarea name="categories[${categoryLineCount}][description]" class="form-control" rows="1"></textarea></td>
+                        <td><input type="number" name="categories[${categoryLineCount}][amount]" class="form-control category-amount text-end" step="0.01" value="0.00"></td>
+                        <td class="text-center text-center"><input type="checkbox" name="categories[${categoryLineCount}][billable]" class="qbo-checkbox form-check-input" value="1"></td>
+                        <td class="text-center"><input type="checkbox " name="categories[${categoryLineCount}][tax]" class="qbo-checkbox category-tax form-check-input"></td>
                         <td>
-                            <select name="category[${categoryLineCount}][customer_id]" class="form-control customer-select">
+                            <select name="categories[${categoryLineCount}][customer_id]" class="form-control customer-select">
                                 <option value="">-</option>
                                 
                                 @foreach ($customers as $id => $name)
@@ -1233,7 +1233,7 @@
 
             </div>
             <div class="TrowserHeader">
-                <a href="{{route('bill.index')}}" class="text-dark me-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                <a href="{{route('expense.index')}}" class="text-dark me-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
                         viewBox="0 0 24 24" color="currentColor" width="24px" height="24px" focusable="false"
                         aria-hidden="true" class="">
                         <path fill="currentColor"

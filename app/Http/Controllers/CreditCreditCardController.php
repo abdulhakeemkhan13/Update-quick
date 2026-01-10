@@ -27,7 +27,7 @@ use App\Models\Notification;
 use App\Models\Tax;
 use App\Models\WorkFlowAction;
 use App\Models\Project;
-use App\Services\JournalService;
+use App\Services\JournalServicecredit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -49,7 +49,7 @@ class CreditCreditCardController extends Controller
 
     public function creditCreditCardNumber()
     {
-        $latest = Bill::where('created_by', '=', \Auth::user()->creatorId())->where('type', '=', 'Credit Credit Card')->latest()->first();
+        $latest = Bill::where('created_by', '=', \Auth::user()->creatorId())->where('type', '=', 'Credit Card Credit')->latest()->first();
         if (!$latest) {
             return 1;
         }
@@ -105,7 +105,7 @@ class CreditCreditCardController extends Controller
 
             $status = Bill::$statues;
 
-            $query = Bill::where('type', '=', 'Credit Credit Card')
+            $query = Bill::where('type', '=', 'Credit Card Credit ')
                 ->where('created_by', '=', \Auth::user()->creatorId());
             if (!empty($request->vender)) {
                 $query->where('vender_id', '=', $request->vender);
@@ -297,7 +297,7 @@ class CreditCreditCardController extends Controller
                     return redirect()->back()->with('error', $billableValidationError);
                 }
 
-                // Create Credit Credit Card
+                // Create Credit Card Credit 
                 $expense = new Bill();
                 $expense->bill_id = $this->creditCreditCardNumber();
                 
@@ -308,7 +308,7 @@ class CreditCreditCardController extends Controller
                 $expense->bill_date = $request->bill_date;
                 $expense->due_date = $request->bill_date;
                 $expense->status = 0; // Draft
-                $expense->type = 'Credit Credit Card';
+                $expense->type = 'Credit Card Credit ';
                 $expense->ref_number = $request->order_number;
                 // New QBO fields
                 $expense->notes = $request->memo ?? $request->notes;
@@ -339,7 +339,7 @@ class CreditCreditCardController extends Controller
 
                         $billAccount = new BillAccount();
                         $billAccount->ref_id = $expense->id;
-                        $billAccount->type = 'Credit Credit Card';
+                        $billAccount->type = 'Credit Card Credit ';
                         $billAccount->chart_account_id = $categoryData['account_id'] ?? null;
                         $billAccount->description = $categoryData['description'] ?? '';
                         $billAccount->price = $categoryData['amount'] ?? 0;
@@ -504,7 +504,7 @@ class CreditCreditCardController extends Controller
                     // Create journal entry using JournalService
                     $this->createExpenseJournalEntry($expense);
                     
-                    Utility::makeActivityLog(\Auth::user()->id, 'Credit Credit Card', $expense->id, 'Create Credit Credit Card', 'Credit Credit Card Created & Approved');
+                    Utility::makeActivityLog(\Auth::user()->id, 'Credit Card Credit ', $expense->id, 'Create Credit Card Credit ', 'Credit Card Credit  Created & Approved');
                 // }
                 
                 // Webhook
@@ -515,16 +515,16 @@ class CreditCreditCardController extends Controller
                     $status = Utility::WebhookCall($webhook['url'], $parameter, $webhook['method']);
 
                     if ($status == true) {
-                        Utility::makeActivityLog(\Auth::user()->id, 'Credit Credit Card', $expense->id, 'Create Credit Credit Card', 'Credit Credit Card Created');
+                        Utility::makeActivityLog(\Auth::user()->id, 'Credit Card Credit ', $expense->id, 'Create Credit Card Credit ', 'Credit Card Credit  Created');
                         \DB::commit();
                         if ($request->ajax() || $request->wantsJson()) {
                             return response()->json([
                                 'status' => 'success',
-                                'message' => __('Credit Credit Card successfully created.'),
+                                'message' => __('Credit Card Credit  successfully created.'),
                                 'expense_id' => $expense->id
                             ], 200);
                         }
-                        return redirect()->route('creditcreditcard.index')->with('success', __('Credit Credit Card successfully created.'));
+                        return redirect()->route('creditcreditcard.index')->with('success', __('Credit Card Credit  successfully created.'));
                     } else {
                         \DB::commit();
                         if ($request->ajax() || $request->wantsJson()) {
@@ -537,16 +537,16 @@ class CreditCreditCardController extends Controller
                     }
                 }
 
-                Utility::makeActivityLog(\Auth::user()->id, 'Credit Credit Card', $expense->id, 'Create Credit Credit Card', 'Credit Credit Card Created');
+                Utility::makeActivityLog(\Auth::user()->id, 'Credit Card Credit ', $expense->id, 'Create Credit Card Credit ', 'Credit Card Credit  Created');
                 \DB::commit();
                 if ($request->ajax() || $request->wantsJson()) {
                     return response()->json([
                         'status' => 'success',
-                        'message' => __('Credit Credit Card successfully created.'),
+                        'message' => __('Credit Card Credit  successfully created.'),
                         'expense_id' => $expense->id
                     ], 200);
                 }
-                return redirect()->route('creditcreditcard.index')->with('success', __('Credit Credit Card successfully created.'));
+                return redirect()->route('creditcreditcard.index')->with('success', __('Credit Card Credit  successfully created.'));
             } else {
                 if ($request->ajax() || $request->wantsJson()) {
                     return response()->json([
@@ -558,7 +558,7 @@ class CreditCreditCardController extends Controller
             }
         } catch (\Exception $e) {
             \DB::rollback();
-            \Log::error('Credit Credit Card Store Error: ' . $e->getMessage());
+            \Log::error('Credit Card Credit  Store Error: ' . $e->getMessage());
             if ($request->ajax() || $request->wantsJson()) {
                 return response()->json([
                     'status' => 'error',
@@ -654,16 +654,16 @@ class CreditCreditCardController extends Controller
         
         $vendorName = $vendor ? $vendor->name : 'Unknown';
 
-        // Add category-based expenses (BillAccount with type='Credit Credit Card')
-        $expenseAccounts = BillAccount::where('ref_id', $expense->id)->where('type', 'Credit Credit Card')->get();
+        // Add category-based expenses (BillAccount with type='Credit Card Credit ')
+        $expenseAccounts = BillAccount::where('ref_id', $expense->id)->where('type', 'Credit Card Credit ')->get();
         foreach ($expenseAccounts as $expenseAccount) {
             $journalItems[] = [
                 'account_id' => $expenseAccount->chart_account_id,
                 'debit' => $expenseAccount->price,
                 'credit' => 0,
-                'description' => $expenseAccount->description ?: 'Expense',
-                'type' => 'Expense',
-                'sub_type' => 'expense account',
+                'description' => $expenseAccount->description ?: 'Credit Card Credit',
+                'type' => 'Credit Card Credit',
+                'sub_type' => 'creditCardCredit account',
                 'name' => $vendorName,
                 'ref_number' => $expense->ref_number,
                 'user_type' => $expense->user_type,
@@ -672,6 +672,7 @@ class CreditCreditCardController extends Controller
                 'created_user' => \Auth::user()->id,
                 'created_by' => \Auth::user()->creatorId(),
                 'company_id' => \Auth::user()->ownedId(),
+                'created_at' => date('Y-m-d H:i:s', strtotime($expense->bill_date)),
             ];
         }
 
@@ -692,8 +693,8 @@ class CreditCreditCardController extends Controller
                 'credit' => 0,
                 'description' => $expenseProduct->description ?: ($product ? $product->name : 'Product'),
                 'product_id' => $expenseProduct->product_id,
-                'type' => 'Expense',
-                'sub_type' => 'expense item',
+                'type' => 'Credit Card Credit',
+                'sub_type' => 'creditCardCredit item',
                 'name' => $vendorName,
                 'ref_number' => $expense->ref_number,
                 'user_type' => $expense->user_type,
@@ -702,6 +703,7 @@ class CreditCreditCardController extends Controller
                 'created_user' => \Auth::user()->id,
                 'created_by' => \Auth::user()->creatorId(),
                 'company_id' => \Auth::user()->ownedId(),
+                'created_at' => date('Y-m-d H:i:s', strtotime($expense->bill_date)),
             ];
         }
 
@@ -720,18 +722,18 @@ class CreditCreditCardController extends Controller
         }
 
         // Create journal entry using JournalService
-        $journalEntry = JournalService::createJournalEntry([
+        $journalEntry = JournalServicecredit::createJournalEntry([
             'date' => $expense->bill_date,
             'backdate' => true,
             'reference' => \Auth::user()->expenseNumberFormat($expense->bill_id),
-            'description' => 'Expense from ' . $vendorName,
+            'description' => 'Credit Card Credit from ' . $vendorName,
             'journal_id' => Utility::journalNumber(),
             'voucher_type' => 'JV',
             'reference_id' => $expense->id,
             'prod_id' => null,
-            'category' => 'Expense',
-            'module' => 'expense',
-            'source' => 'expense_creation',
+            'category' => 'Credit Card Credit',
+            'module' => 'creditCardCredit',
+            'source' => 'creditCardCredit_creation',
             'created_user' => \Auth::user()->id,
             'created_by' => \Auth::user()->creatorId(),
             'owned_by' => \Auth::user()->ownedId(),
@@ -781,15 +783,15 @@ class CreditCreditCardController extends Controller
         $vendorName = $vendor ? $vendor->name : 'Unknown';
  
         // Add category-based expenses (BillAccount)
-        $expenseAccounts = BillAccount::where('ref_id', $expense->id)->where('type', 'Expense')->get();
+        $expenseAccounts = BillAccount::where('ref_id', $expense->id)->where('type', 'Credit Card Credit')->get();
         foreach ($expenseAccounts as $expenseAccount) {
             $journalItems[] = [
                 'account_id' => $expenseAccount->chart_account_id,
                 'debit' => $expenseAccount->price,
                 'credit' => 0,
-                'description' => $expenseAccount->description ?: 'Expense',
-                'type' => 'Expense',
-                'sub_type' => 'expense account',
+                'description' => $expenseAccount->description ?: 'Credit Card Credit',
+                'type' => 'Credit Card Credit',
+                'sub_type' => 'creditCardCredit account',
                 'name' => $vendorName,
                 'vendor_id' => $expense->vender_id,
                 'user_type' => $expense->user_type,
@@ -798,6 +800,7 @@ class CreditCreditCardController extends Controller
                 'created_user' => \Auth::user()->id,
                 'created_by' => \Auth::user()->creatorId(),
                 'company_id' => \Auth::user()->ownedId(),
+                'created_at' => date('Y-m-d H:i:s', strtotime($expense->bill_date)),
             ];
         }
 
@@ -818,8 +821,8 @@ class CreditCreditCardController extends Controller
                 'credit' => 0,
                 'description' => $expenseProduct->description ?: ($product ? $product->name : 'Product'),
                 'product_id' => $expenseProduct->product_id,
-                'type' => 'Expense',
-                'sub_type' => 'expense item',
+                'type' => 'Credit Card Credit',
+                'sub_type' => 'creditCardCredit item',
                 'user_type' => $expense->user_type,
                 'ref_number' => $expense->ref_number,
                 'name' => $vendorName,
@@ -828,6 +831,7 @@ class CreditCreditCardController extends Controller
                 'created_user' => \Auth::user()->id,
                 'created_by' => \Auth::user()->creatorId(),
                 'company_id' => \Auth::user()->ownedId(),
+                'created_at' => date('Y-m-d H:i:s', strtotime($expense->bill_date)),
             ];
         }
 
@@ -846,15 +850,15 @@ class CreditCreditCardController extends Controller
         }
 
         // Update journal entry using JournalService
-        $updatedJournalEntry = JournalService::updateJournalEntry($journalEntry->id, [
+        $updatedJournalEntry = JournalServicecredit::updateJournalEntry($journalEntry->id, [
             'date' => $expense->bill_date,
             'backdate' => true,
             'reference' => \Auth::user()->expenseNumberFormat($expense->bill_id),
-            'description' => 'Expense from ' . $vendorName,
+            'description' => 'Credit Card Credit from ' . $vendorName,
             'reference_id' => $expense->id,
-            'category' => 'Expense',
-            'module' => 'expense',
-            'source' => 'expense_update',
+            'category' => 'Credit Card Credit',
+            'module' => 'creditCardCredit',
+            'source' => 'creditCardCredit_update',
             'user_type' => $expense->user_type,
             'ref_number' => $expense->ref_number,
             'vendor_id' => $expense->vender_id,
@@ -863,8 +867,8 @@ class CreditCreditCardController extends Controller
             'ap_name' => $vendorName,
             'ap_account_id' => $accountPayable->id,
             'ap_amount' => $totalAmount,
-            'ap_sub_type' => 'expense payment',
-            'ap_description' => 'Expense Payment - ' . \Auth::user()->expenseNumberFormat($expense->bill_id),
+            'ap_sub_type' => 'creditCardCredit payment',
+            'ap_description' => 'Credit Card Credit Payment - ' . \Auth::user()->expenseNumberFormat($expense->bill_id),
         ]);
 
         \Log::info('Journal entry updated for expense', [
@@ -910,7 +914,7 @@ class CreditCreditCardController extends Controller
             $expense->status = 4;
             $expense->save();
 
-            Utility::makeActivityLog(\Auth::user()->id, 'Expense', $expense->id, 'Approve Expense', 'Expense approved and journal entry created');
+            Utility::makeActivityLog(\Auth::user()->id, 'Credit Card Credit ', $expense->id, 'Approve Credit Card Credit ', 'Credit Card Credit  approved and journal entry created');
 
             // Send notification to expense creator
             $data = [
@@ -918,10 +922,10 @@ class CreditCreditCardController extends Controller
                 "data_id" => $expense->id,
                 "name" => '',
             ];
-            Utility::makeNotification($expense->created_by, 'expense_approved', $data, $expense->id, 'Expense Approved');
+            Utility::makeNotification($expense->created_by, 'creditCardCredit_approved', $data, $expense->id, 'Credit Card Credit  Approved');
 
             \DB::commit();
-            return redirect()->route('expense.index')->with('success', __('Expense approved successfully and journal entry created.'));
+            return redirect()->route('expense.index')->with('success', __('Credit Card Credit  approved successfully and journal entry created.'));
         } catch (\Exception $e) {
             \DB::rollBack();
             // dd($e);
@@ -1212,6 +1216,7 @@ class CreditCreditCardController extends Controller
 
     public function update(Request $request, $id)
     {
+        // dd($request->all());
         \DB::beginTransaction();
         try {
             if (!\Auth::user()->can('edit bill')) {
@@ -1273,9 +1278,13 @@ class CreditCreditCardController extends Controller
             // ===================================
             $existingCategoryIds = [];
 
-            if ($request->has('category') && is_array($request->category)) {
+            if ($request->has('categories') && is_array($request->categories)) {
                 
-                foreach ($request->category as $index => $categoryData) {
+                foreach ($request->categories as $index => $categoryData) {
+                    if (empty($categoryData['account_id']) || empty($categoryData['amount'])) {
+                        continue;
+                    }
+
                     $billAccountId = $categoryData['id'] ?? null;
                     
                     if ($billAccountId) {
@@ -1333,6 +1342,10 @@ class CreditCreditCardController extends Controller
            if ($request->has('items') && is_array($request->items)) {
 
                 foreach ($request->items as $index => $itemData) {
+
+                    if(empty($itemData['product_id']) || empty($itemData['quantity']) || empty($itemData['price'])){
+                        continue;
+                    }
 
                     $billProductId = $itemData['id'] ?? null;
                     $billProduct   = null;
@@ -1420,7 +1433,7 @@ class CreditCreditCardController extends Controller
             // UPDATE JOURNAL ENTRY using JournalService
             // ===================================
             $journalEntry = JournalEntry::where('reference_id', $expense->id)
-                ->where('module', 'expense')
+                ->where('module', 'creditCardCredit')
                 ->first();
             if ($journalEntry) {
                 // Update existing journal entry
@@ -1431,7 +1444,7 @@ class CreditCreditCardController extends Controller
             }
 
             // Activity Log
-            Utility::makeActivityLog(\Auth::user()->id, 'Expense', $expense->id, 'Update Expense', 'Expense Updated');
+            Utility::makeActivityLog(\Auth::user()->id, 'Credit Card Credit ', $expense->id, 'Update ', 'Credit Card Credit Updated');
 
             \DB::commit();
             return response()->json(['success' => __('Expense successfully updated.')]);
@@ -1641,7 +1654,7 @@ class CreditCreditCardController extends Controller
                 
                 // Check ExpenseAccounts (BillAccounts with expense)
                 $billableAccounts = BillAccount::where('ref_id', $expense->id)
-                    ->where('type', 'Expense')
+                    ->where('type', 'Credit Card Credit ')
                     ->where('billable', 1)
                     ->where('status', 1)
                     ->count();
@@ -1661,14 +1674,14 @@ class CreditCreditCardController extends Controller
 
                     $expensepayment = BillPayment::find($value->id)->first();
                     if (@$value->voucher_id != 0 || @$value->voucher_id != null) {
-                        JournalEntry::where('id', $value->voucher_id)->where('category', 'Expense')->delete();
+                        JournalEntry::where('id', $value->voucher_id)->where('category', 'Credit Card Credit')->delete();
                         JournalItem::where('journal', $value->voucher_id)->delete();
                     }
                     $expensepayment->delete();
                 }
                 
                 // Delete journal entry and related records for this expense
-                $journalEntry = JournalEntry::where('category', 'Expense')
+                $journalEntry = JournalEntry::where('category', 'Credit Card Credit')
                     ->where('reference_id', $expense->id)
                     ->where('voucher_type', 'JV')
                     ->first();
@@ -1699,11 +1712,11 @@ class CreditCreditCardController extends Controller
                 BillAccount::where('ref_id', '=', $expense->id)->delete();
 
                 // Delete transaction lines related directly to expense
-                TransactionLines::where('product_id', $expense->id)->where('reference', 'Expense Journal')->delete();
-                TransactionLines::where('reference_id', $expense->id)->where('reference', 'Expense Journal')->delete();
-                TransactionLines::where('reference_id', $expense->id)->where('reference', 'Expense Payment')->delete();
-                TransactionLines::where('reference_id', $expense->id)->where('reference', 'Expense')->delete();
-                TransactionLines::where('reference_id', $expense->id)->where('reference', 'Expense Account')->delete();
+                TransactionLines::where('product_id', $expense->id)->where('reference', 'Credit Card Credit Journal')->delete();
+                TransactionLines::where('reference_id', $expense->id)->where('reference', 'Credit Card Credit Journal')->delete();
+                TransactionLines::where('reference_id', $expense->id)->where('reference', 'Credit Card Credit Payment')->delete();
+                TransactionLines::where('reference_id', $expense->id)->where('reference', 'Credit Card Credit')->delete();
+                TransactionLines::where('reference_id', $expense->id)->where('reference', 'Credit Card Credit Account')->delete();
 
                 return redirect()->route('expense.index')->with('success', __('Expense successfully deleted.'));
             } else {

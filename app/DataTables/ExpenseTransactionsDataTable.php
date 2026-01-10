@@ -4,6 +4,7 @@ namespace App\DataTables;
 
 use App\Models\Bill;
 use App\Models\BillPayment;
+use App\Models\CreditCardPayment;
 use App\Models\Purchase;
 use App\Models\VendorCredit;
 use Carbon\Carbon;
@@ -64,19 +65,54 @@ class ExpenseTransactionsDataTable
                     'type_key' => 'expense',
                     'no' => $exp->ref_number ?? '',
                     'payee' => optional($exp->vender)->name ?? '-',
-                    'class' => '-',
+                    'class' => $this->hasMultiple($exp) ? '--Split--' : $category,
                     'location' => '-',
                     'status' => $statusText,
                     'method' => '-',
                     'source' => '-',
-                    'category' => $category,
+                    'category' => $this->hasMultiple($exp) ? '--Split--' : $category,
                     'memo' => $exp->notes ?? '',
                     'due_date' => '',
                     'balance' => 0,
                     'total' => $exp->getTotal(),
                     'attachments' => '',
-                    'view_url' => route('expense.show', Crypt::encrypt($exp->id)),
+                    'view_url' => route('expense.edit', Crypt::encrypt($exp->id)),
                     'edit_url' => route('expense.edit', Crypt::encrypt($exp->id)),
+                ]);
+            }
+        }
+        if ($type === 'all' || $type === 'credit_card') {
+            $expenses = Bill::where('created_by', $companyId)
+                ->where('type', 'Credit Card Credit')
+                ->whereBetween('bill_date', [$startDate, $endDate])
+                ->when($vendorId, fn($q) => $q->where('vender_id', $vendorId))
+                ->with(['vender', 'accounts.chartAccount'])
+                ->get();
+
+            foreach ($expenses as $exp) {
+                $statusText = $this->getExpenseStatus($exp);
+                $category = $this->getCategory($exp);
+                
+                $transactions->push([
+                    'id' => $exp->id,
+                    'date' => $exp->bill_date,
+                    'type' => __('Credit Card Credit'),
+                    'type_key' => 'credit_card',
+                    'no' => $exp->ref_number ?? '',
+                    'payee' => optional($exp->vender)->name ?? '-',
+                    'class' => $this->hasMultiple($exp) ? '--Split--' : $category,
+                    'location' => '-',
+                    'status' => $statusText,
+                    'method' => '-',
+                    'source' => '-',
+                    'category' => $this->hasMultiple($exp) ? '--Split--' : $category,
+                    'memo' => $exp->notes ?? '',
+                    'due_date' => '',
+                    'balance' => 0,
+                    'total' => -$exp->getTotal(),
+                    'attachments' => '',
+                    'view_url' => route('creditcreditcard.edit', Crypt::encrypt($exp->id)),
+                    'edit_url' => route('creditcreditcard.edit', Crypt::encrypt($exp->id)),
                 ]);
             }
         }
@@ -86,9 +122,16 @@ class ExpenseTransactionsDataTable
             $bills = Bill::where('created_by', $companyId)
                 ->where('type', 'Bill')
                 ->whereBetween('bill_date', [$startDate, $endDate])
-                ->when($vendorId, fn($q) => $q->where('vender_id', $vendorId))
+                ->when(!empty($vendorId), function ($q) use ($vendorId) {
+                    return $q->where('vender_id', $vendorId);
+                })
                 ->with(['vender', 'accounts.chartAccount', 'items'])
                 ->get();
+
+            \Log::info('Bills Query Debug', [
+                'count' => $bills->count(),
+                'ids' => $bills->pluck('id')->toArray(),
+            ]);
 
             foreach ($bills as $bill) {
                 $statusText = $this->getBillStatus($bill);
@@ -113,7 +156,7 @@ class ExpenseTransactionsDataTable
                     'balance' => $balance,
                     'total' => $bill->getTotal(),
                     'attachments' => '',
-                    'view_url' => route('bill.show', Crypt::encrypt($bill->id)),
+                    'view_url' => route('bill.edit', Crypt::encrypt($bill->id)),
                     'edit_url' => route('bill.edit', Crypt::encrypt($bill->id)),
                 ]);
             }
@@ -122,7 +165,8 @@ class ExpenseTransactionsDataTable
         // Bill Payments
         if ($type === 'all' || $type === 'bill_payment') {
             $billPayments = BillPayment::whereHas('bill', function($q) use ($companyId) {
-                    $q->where('created_by', $companyId);
+                    $q->where('created_by', $companyId)
+                    ->whereNotIn('type', ['Expense', 'Credit Card Credit']);
                 })
                 ->whereBetween('date', [$startDate, $endDate])
                 ->with(['bill.vender'])
@@ -220,7 +264,7 @@ class ExpenseTransactionsDataTable
                     'balance' => 0,
                     'total' => $po->getTotal(),
                     'attachments' => '',
-                    'view_url' => route('purchase.show', Crypt::encrypt($po->id)),
+                    'view_url' => route('purchase.edit', Crypt::encrypt($po->id)),
                     'edit_url' => route('purchase.edit', Crypt::encrypt($po->id)),
                 ]);
             }
@@ -244,23 +288,64 @@ class ExpenseTransactionsDataTable
                     'payee' => optional($vc->vendor)->name ?? '-',
                     'class' => '-',
                     'location' => '-',
-                    'status' => $vc->remaining_credit > 0 ? __('Unapplied') : __('Applied'),
+                    'status' => $vc->getRemainingAmountAttribute() > 0 ? __('Unapplied') : __('Applied'),
                     'method' => '-',
                     'source' => '-',
                     'category' => '',
                     'memo' => $vc->memo ?? '',
                     'due_date' => '',
                     'balance' => 0,
-                    'total' => -$vc->total, // Negative for credits
+                    'total' => -$vc->getRemainingAmountAttribute(), // Negative for credits
                     'attachments' => '',
-                    'view_url' => route('vendor-credit.show', $vc->id),
+                    'view_url' => route('vendor-credit.edit', $vc->id),
                     'edit_url' => route('vendor-credit.edit', $vc->id),
+                ]);
+            }
+        }
+        // Vendor Credits
+        if ($type === 'all' || $type === 'pay_down_credit_card') {
+            $vendorCredits = CreditCardPayment::where('created_by', $companyId)
+            ->whereBetween('payment_date', [$startDate, $endDate])
+            ->when($vendorId, function ($q) use ($vendorId) {
+                $q->where(function ($qq) use ($vendorId) {
+                    $qq->where('payee_id', $vendorId)
+                    ->orWhereNull('payee_id');
+                });
+            })
+            ->with('payee')
+            ->get();
+
+            foreach ($vendorCredits as $vc) {
+                $transactions->push([
+                    'id' => $vc->id,
+                    'date' => $vc->payment_date,
+                    'type' => __('Pay Down Credit Card'),
+                    'type_key' => 'pay_down_credit_card',
+                    'no' => $vc->credit_number ?? '',
+                    'payee' => optional($vc->payee)->name ?? '-',
+                    'class' => '-',
+                    'location' => '-',
+                    'status' => $vc->status == 0 ? __('Draft') : __('Cleared'),
+                    'method' => '-',
+                    'source' => '-',
+                    'category' => '',
+                    'memo' => $vc->memo ?? '',
+                    'due_date' => '',
+                    'balance' => 0,
+                    'total' => $vc->amount, // Negative for credits
+                    'attachments' => '',
+                    'view_url' => route('paydowncreditcard.edit', $vc->id),
+                    'edit_url' => route('paydowncreditcard.edit', $vc->id),
                 ]);
             }
         }
 
         // Sort by date descending and return as array
-        return $transactions->sortByDesc('date')->values()->toArray();
+        $result = $transactions->sortByDesc('date')->values()->toArray();
+        
+        
+        
+        return $result;
     }
 
     /**

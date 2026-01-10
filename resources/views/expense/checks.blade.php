@@ -1351,7 +1351,7 @@
 
             </div>
             <div class="TrowserHeader">
-                <a href="#" class="text-dark me-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                <a href="{{route('expense.index')}}" class="text-dark me-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none"
                         viewBox="0 0 24 24" color="currentColor" width="24px" height="24px" focusable="false"
                         aria-hidden="true" class="">
                         <path fill="currentColor"
@@ -1363,7 +1363,7 @@
 
         </div>
     </div>
-    {{ Form::open(['url' => 'expense', 'class' => 'w-100', 'style' => 'padding: 30px 30px; background: #ffffff;']) }}
+    {{ Form::open(['url' => 'check/store', 'class' => 'w-100', 'style' => 'padding: 30px 30px; background: #ffffff;']) }}
     <div class="col-12">
         <input type="hidden" name="_token" id="token" value="{{ csrf_token() }}">
         <div class="card">
@@ -1457,7 +1457,7 @@
                     <div class="col-2">
                         <div class="form-group mb-0">
                             {{ Form::label('payment_date', __('Payment date'), ['class' => 'form-label']) }}
-                            {{ Form::date('payment_date', null, ['class' => 'form-control', 'required' => 'required']) }}
+                            {{ Form::date('payment_date', date('Y-m-d'), ['class' => 'form-control', 'required' => 'required']) }}
                         </div>
                     </div>
                     <div class="col-2">
@@ -1773,7 +1773,7 @@
                                                 </td>
                                                 <td>
                                                     {{ Form::select("items[{$i}][item_id]", $product_services ?? [], null, [
-                                                        'class' => 'form-control select2 item-select',
+                                                        'class' => 'form-control select2 item-select item-product ',
                                                         'placeholder' => 'Select Product/Service',
                                                     ]) }}
                                                 </td>

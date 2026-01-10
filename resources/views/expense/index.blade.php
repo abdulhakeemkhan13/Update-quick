@@ -13,8 +13,8 @@
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
     <style>
         /* =========================================
-           QBO Expense Transactions - Exact Design
-           ========================================= */
+                   QBO Expense Transactions - Exact Design
+                   ========================================= */
 
         /* Page container */
         .qbo-expense-container {
@@ -160,7 +160,7 @@
             background: #fff;
             border: 1px solid #e0e3e5;
             border-radius: 4px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             min-width: 240px;
             max-height: 300px;
             overflow-y: auto;
@@ -254,8 +254,8 @@
         }
 
         /* =========================================
-           Table - QBO Style
-           ========================================= */
+                   Table - QBO Style
+                   ========================================= */
         .qbo-table-wrapper {
             background: #fff;
             overflow-x: auto;
@@ -301,7 +301,7 @@
             padding: 12px 16px;
             text-align: left;
             position: sticky;
-            top: 60px;
+            top: 0;
             z-index: 100;
         }
 
@@ -362,8 +362,8 @@
         }
 
         /* =========================================
-           Footer/Pagination
-           ========================================= */
+                   Footer/Pagination
+                   ========================================= */
         .qbo-table-footer {
             display: flex;
             justify-content: flex-end;
@@ -419,7 +419,7 @@
             background: #fff;
             border: 1px solid #e0e3e5;
             border-radius: 4px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             min-width: 200px;
             z-index: 1000;
             display: none;
@@ -476,7 +476,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.5);
+            background: rgba(0, 0, 0, 0.5);
             z-index: 2000;
             display: none;
             align-items: flex-start;
@@ -493,7 +493,7 @@
             border-radius: 8px;
             padding: 24px;
             min-width: 400px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
         }
 
         .qbo-filter-modal-header {
@@ -565,431 +565,459 @@
 @endpush
 
 @section('content')
-{{-- MY APPS Sidebar (Fixed Position) --}}
-@include('partials.admin.allApps-subMenu-Sidebar', [
-    'activeSection' => 'expenses',
-    'activeItem' => 'expense_transactions'
-])
+    {{-- MY APPS Sidebar (Fixed Position) --}}
+    @include('partials.admin.allApps-subMenu-Sidebar', [
+        'activeSection' => 'expenses',
+        'activeItem' => 'expense_transactions',
+    ])
 
-<div class="qbo-expense-container">
-    {{-- Page Header --}}
-    <div class="qbo-page-header">
-        <h1 class="qbo-page-title">{{ __('Expenses') }}</h1>
-        <div class="qbo-header-actions">
-            {{-- Give feedback --}}
-            <button class="qbo-btn-tertiary">
-                <i class="ti ti-message-circle"></i>
-                {{ __('Give feedback') }}
-            </button>
-
-            {{-- Purchase notifications --}}
-            <button class="qbo-btn-secondary">
-                {{ __('Purchase notifications') }}
-            </button>
-
-            {{-- Print Checks Split Button --}}
-            <div class="qbo-split-btn">
-                <button class="qbo-btn-secondary">{{ __('Print Checks') }}</button>
-                <button class="qbo-btn-secondary dropdown-toggle" data-bs-toggle="dropdown">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" width="16" height="16">
-                        <path fill="currentColor" d="M12.014 16.018a1 1 0 0 1-.708-.294L5.314 9.715A1.001 1.001 0 0 1 6.73 8.3l5.286 5.3 5.3-5.285a1 1 0 0 1 1.413 1.416l-6.009 5.995a1 1 0 0 1-.706.292"></path>
-                    </svg>
+    <div class="qbo-expense-container">
+        {{-- Page Header --}}
+        <div class="qbo-page-header">
+            <h1 class="qbo-page-title">{{ __('Expenses') }}</h1>
+            <div class="qbo-header-actions">
+                {{-- Give feedback --}}
+                <button class="qbo-btn-tertiary">
+                    <i class="ti ti-message-circle"></i>
+                    {{ __('Give feedback') }}
                 </button>
-            </div>
 
-            {{-- New Transaction Dropdown --}}
-            <div class="qbo-new-txn-dropdown">
-                <button class="qbo-btn-primary" onclick="toggleNewTxnDropdown()">
-                    {{ __('New transaction') }}
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" width="16" height="16">
-                        <path fill="currentColor" d="M12.014 16.018a1 1 0 0 1-.708-.294L5.314 9.715A1.001 1.001 0 0 1 6.73 8.3l5.286 5.3 5.3-5.285a1 1 0 0 1 1.413 1.416l-6.009 5.995a1 1 0 0 1-.706.292"></path>
-                    </svg>
+                {{-- Purchase notifications --}}
+                <button class="qbo-btn-secondary">
+                    {{ __('Purchase notifications') }}
                 </button>
-                <div class="qbo-new-txn-menu">
-                    <a href="{{ route('timeActivity.create') }}">{{ __('Time activity') }}</a>
-                    <a href="{{ route('bill.create', 0) }}">{{ __('Bill') }}</a>
-                    <a href="#" class="openChecksModal" data-url="{{ route('expense.create', 0) }}">{{ __('Expense') }}</a>
-                    <a href="#" class="openChecksModal" data-url="{{ route('checks.create') }}">{{ __('Check') }}</a>
-                    <a href="{{ url('purchase/create/0') }}">{{ __('Purchase order') }}</a>
-                    <a href="#" class="openChecksModal" data-url="{{ route('vendor-credit.create') }}">{{ __('Vendor credit') }}</a>
-                    <a href="{{ route('creditcreditcard.create', 0) }}">{{ __('Credit card credit') }}</a>
-                    <a href="#" class="openChecksModal" data-url="{{ route('paydowncreditcard.create') }}">{{ __('Pay down credit card') }}</a>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    {{-- Filter Bar --}}
-    <div class="qbo-filter-bar">
-        {{-- All Transactions Dropdown --}}
-        <div class="qbo-filter-dropdown" id="txnTypeDropdown">
-            <button class="qbo-filter-btn" onclick="toggleFilterDropdown('txnTypeDropdown')">
-                <span id="selectedTxnType">{{ __('All transactions') }}</span>
-            </button>
-            <div class="qbo-filter-dropdown-menu">
-                <div class="qbo-filter-dropdown-item active" data-value="all">{{ __('All transactions') }}</div>
-                <div class="qbo-filter-dropdown-item" data-value="expense">{{ __('Expense') }}</div>
-                <div class="qbo-filter-dropdown-item" data-value="bill">{{ __('Bill') }}</div>
-                <div class="qbo-filter-dropdown-item" data-value="bill_payment">{{ __('Bill payment') }}</div>
-                <div class="qbo-filter-dropdown-item" data-value="check">{{ __('Check') }}</div>
-                <div class="qbo-filter-dropdown-item" data-value="purchase_order">{{ __('Purchase order') }}</div>
-                <div class="qbo-filter-dropdown-item" data-value="recently_paid">{{ __('Recently paid') }}</div>
-                <div class="qbo-filter-dropdown-item" data-value="vendor_credit">{{ __('Vendor credit') }}</div>
-                <div class="qbo-filter-dropdown-item" data-value="cc_payment">{{ __('Credit card payment') }}</div>
-            </div>
-        </div>
-
-        {{-- Filter Button --}}
-        <button class="qbo-filter-icon-btn" onclick="openFilterModal()">
-            <i class="ti ti-adjustments-horizontal"></i>
-            {{ __('Filter') }}
-        </button>
-
-        {{-- Date Chip --}}
-        <div class="qbo-date-chip">
-            <span class="qbo-date-chip-label">{{ __('Dates:') }}</span>
-            {{ __('Last 12 months') }}
-        </div>
-
-        {{-- Right side icons --}}
-        <div class="qbo-table-header-actions">
-            <button class="qbo-icon-btn" title="{{ __('Export to Excel') }}">
-                <i class="ti ti-download"></i>
-            </button>
-            <button class="qbo-icon-btn" title="{{ __('Print') }}">
-                <i class="ti ti-printer"></i>
-            </button>
-            <button class="qbo-icon-btn" title="{{ __('Settings') }}">
-                <i class="ti ti-settings"></i>
-            </button>
-        </div>
-    </div>
-
-    {{-- Table --}}
-    <div class="qbo-table-wrapper">
-        <table id="expenseTable" class="display" style="width:100%">
-            <thead>
-                <tr>
-                    <th width="40"><input type="checkbox" class="form-check-input" id="selectAllHeader"></th>
-                    <th>{{ __('DATE') }}</th>
-                    <th>{{ __('TYPE') }}</th>
-                    <th>{{ __('NO.') }}</th>
-                    <th>{{ __('PAYEE') }}</th>
-                    <th>{{ __('CLASS') }}</th>
-                    <th>{{ __('LOCATION') }}</th>
-                    <th>{{ __('STATUS') }}</th>
-                    <th>{{ __('METHOD') }}</th>
-                    <th>{{ __('SOURCE') }}</th>
-                    <th>{{ __('CATEGORY') }}</th>
-                    <th>{{ __('MEMO') }}</th>
-                    <th>{{ __('DUE DATE') }}</th>
-                    <th class="text-end">{{ __('BALANCE') }}</th>
-                    <th class="text-end">{{ __('TOTAL') }}</th>
-                    <th width="50">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" width="20" height="20">
-                            <path fill="currentColor" d="M10 22a4 4 0 0 1-4-4V7.5a5.5 5.5 0 1 1 11 0V19a1 1 0 0 1-2 0V7.5a3.5 3.5 0 1 0-7 0V18a2 2 0 0 0 4 0V8.5a.5.5 0 0 0-1 0V17a1 1 0 0 1-2 0V8.5a2.5 2.5 0 1 1 5 0V18a4 4 0 0 1-4 4"></path>
+                {{-- Print Checks Split Button --}}
+                <div class="qbo-split-btn">
+                    <button class="qbo-btn-secondary">{{ __('Print Checks') }}</button>
+                    <button class="qbo-btn-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" width="16"
+                            height="16">
+                            <path fill="currentColor"
+                                d="M12.014 16.018a1 1 0 0 1-.708-.294L5.314 9.715A1.001 1.001 0 0 1 6.73 8.3l5.286 5.3 5.3-5.285a1 1 0 0 1 1.413 1.416l-6.009 5.995a1 1 0 0 1-.706.292">
+                            </path>
                         </svg>
-                    </th>
-                    <th>{{ __('ACTION') }}</th>
-                </tr>
-            </thead>
-            <tbody>
-                @forelse($transactions ?? [] as $txn)
-                <tr>
-                    <td><input type="checkbox" class="form-check-input row-checkbox" value="{{ $txn['id'] }}" data-type="{{ $txn['type_key'] }}"></td>
-                    <td>{{ \Auth::user()->dateFormat($txn['date']) }}</td>
-                    <td>{{ $txn['type'] }}</td>
-                    <td>{{ $txn['no'] }}</td>
-                    <td>{{ $txn['payee'] }}</td>
-                    <td>{{ $txn['class'] }}</td>
-                    <td>{{ $txn['location'] }}</td>
-                    <td>
-                        @php
-                            $status = strtolower($txn['status']);
-                            $statusClass = 'default';
-                            if (str_contains($status, 'overdue')) $statusClass = 'danger';
-                            elseif ($status === 'paid' || $status === 'applied') $statusClass = 'success';
-                            elseif ($status === 'partial') $statusClass = 'warning';
-                            elseif ($status === 'open' || $status === 'unapplied') $statusClass = 'info';
-                        @endphp
-                        <span class="qbo-status-{{ $statusClass }}">{{ $txn['status'] }}</span>
-                    </td>
-                    <td>{{ $txn['method'] }}</td>
-                    <td>{{ $txn['source'] }}</td>
-                    <td>{{ $txn['category'] }}</td>
-                    <td>{{ $txn['memo'] }}</td>
-                    <td>{{ $txn['due_date'] }}</td>
-                    <td class="text-end">{{ \Auth::user()->priceFormat($txn['balance']) }}</td>
-                    <td class="text-end" data-amount="{{ $txn['total'] }}">
-                        @if($txn['total'] < 0)
-                            -{{ \Auth::user()->priceFormat(abs($txn['total'])) }}
-                        @else
-                            {{ \Auth::user()->priceFormat($txn['total']) }}
-                        @endif
-                    </td>
-                    <td>{{ $txn['attachments'] }}</td>
-                    <td>
-                        <a href="{{ $txn['view_url'] }}" class="qbo-action-btn">{{ __('View/Edit') }}</a>
-                    </td>
-                </tr>
-                @empty
-                <tr>
-                    <td colspan="17" class="text-center">{{ __('No transactions found.') }}</td>
-                </tr>
-                @endforelse
-            </tbody>
-            <tfoot>
-                <tr class="qbo-total-row">
-                    <td></td>
-                    <td>{{ __('Total') }}</td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td class="text-end" id="totalAmount">{{ \Auth::user()->priceFormat($totalAmount ?? 0) }}</td>
-                    <td></td>
-                    <td></td>
-                </tr>
-            </tfoot>
-        </table>
-    </div>
-
-    {{-- Footer/Pagination --}}
-    <div class="qbo-table-footer">
-        <div class="qbo-pagination">
-            <button class="qbo-pagination-btn" id="paginateFirst">{{ __('First') }}</button>
-            <button class="qbo-pagination-btn" id="paginatePrev">{{ __('Previous') }}</button>
-            <span class="qbo-pagination-info" id="paginateInfo">1-{{ count($transactions ?? []) }} of {{ count($transactions ?? []) }}</span>
-            <button class="qbo-pagination-btn" id="paginateNext">{{ __('Next') }}</button>
-            <button class="qbo-pagination-btn" id="paginateLast">{{ __('Last') }}</button>
-        </div>
-    </div>
-</div>
-
-{{-- Filter Modal --}}
-<div class="qbo-filter-modal" id="filterModal">
-    <div class="qbo-filter-modal-content">
-        <div class="qbo-filter-modal-header">
-            <h3>{{ __('Filter') }}</h3>
-            <button class="qbo-filter-modal-close" onclick="closeFilterModal()">&times;</button>
-        </div>
-        
-        <form method="GET" action="{{ route('expense.index') }}">
-            <div class="qbo-filter-group">
-                <label class="qbo-filter-label">{{ __('Status') }}</label>
-                <select class="qbo-filter-select" name="status">
-                    <option value="">{{ __('All statuses') }}</option>
-                    <option value="open">{{ __('Open') }}</option>
-                    <option value="paid">{{ __('Paid') }}</option>
-                </select>
-            </div>
-
-            <div class="qbo-filter-group">
-                <label class="qbo-filter-label">{{ __('Delivery method') }}</label>
-                <select class="qbo-filter-select" name="delivery">
-                    <option value="">{{ __('Any') }}</option>
-                </select>
-            </div>
-
-            <div class="qbo-filter-group">
-                <label class="qbo-filter-label">{{ __('Date') }}</label>
-                <select class="qbo-filter-select" name="date_range">
-                    <option value="last_12_months">{{ __('Last 12 months') }}</option>
-                    <option value="this_month">{{ __('This month') }}</option>
-                    <option value="last_month">{{ __('Last month') }}</option>
-                    <option value="custom">{{ __('Custom') }}</option>
-                </select>
-            </div>
-
-            <div class="qbo-filter-row">
-                <div class="qbo-filter-group">
-                    <label class="qbo-filter-label">{{ __('From') }}</label>
-                    <input type="date" class="qbo-filter-select" name="date_from">
+                    </button>
                 </div>
-                <div class="qbo-filter-group">
-                    <label class="qbo-filter-label">{{ __('To') }}</label>
-                    <input type="date" class="qbo-filter-select" name="date_to">
+
+                {{-- New Transaction Dropdown --}}
+                <div class="qbo-new-txn-dropdown">
+                    <button class="qbo-btn-primary" onclick="toggleNewTxnDropdown()">
+                        {{ __('New transaction') }}
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" width="16"
+                            height="16">
+                            <path fill="currentColor"
+                                d="M12.014 16.018a1 1 0 0 1-.708-.294L5.314 9.715A1.001 1.001 0 0 1 6.73 8.3l5.286 5.3 5.3-5.285a1 1 0 0 1 1.413 1.416l-6.009 5.995a1 1 0 0 1-.706.292">
+                            </path>
+                        </svg>
+                    </button>
+                    <div class="qbo-new-txn-menu">
+                        <a href="{{ route('timeActivity.create') }}">{{ __('Time activity') }}</a>
+                        <a href="{{ route('bill.create', 0) }}">{{ __('Bill') }}</a>
+                        <a href="{{ route('expense.create', 0) }}">{{ __('Expense') }}</a>
+                        <a href="#" class="openChecksModal"
+                            data-url="{{ route('checks.create') }}">{{ __('Check') }}</a>
+                        <a href="{{ url('purchase/create/0') }}">{{ __('Purchase order') }}</a>
+                        <a href="#" class="openChecksModal"
+                            data-url="{{ route('vendor-credit.create') }}">{{ __('Vendor credit') }}</a>
+                        <a href="{{ route('creditcreditcard.create', 0) }}">{{ __('Credit card credit') }}</a>
+                        <a href="#" class="openChecksModal"
+                            data-url="{{ route('paydowncreditcard.create') }}">{{ __('Pay down credit card') }}</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- Filter Bar --}}
+        <div class="qbo-filter-bar">
+            {{-- All Transactions Dropdown --}}
+            <div class="qbo-filter-dropdown" id="txnTypeDropdown">
+                <button class="qbo-filter-btn" onclick="toggleFilterDropdown('txnTypeDropdown')">
+                    <span id="selectedTxnType">{{ __('All transactions') }}</span>
+                </button>
+                <div class="qbo-filter-dropdown-menu">
+                    <div class="qbo-filter-dropdown-item active" data-value="all">{{ __('All transactions') }}</div>
+                    <div class="qbo-filter-dropdown-item" data-value="expense">{{ __('Expense') }}</div>
+                    <div class="qbo-filter-dropdown-item" data-value="bill">{{ __('Bill') }}</div>
+                    <div class="qbo-filter-dropdown-item" data-value="bill_payment">{{ __('Bill payment') }}</div>
+                    <div class="qbo-filter-dropdown-item" data-value="check">{{ __('Check') }}</div>
+                    <div class="qbo-filter-dropdown-item" data-value="purchase_order">{{ __('Purchase order') }}</div>
+                    <div class="qbo-filter-dropdown-item" data-value="recently_paid">{{ __('Recently paid') }}</div>
+                    <div class="qbo-filter-dropdown-item" data-value="vendor_credit">{{ __('Vendor credit') }}</div>
+                    <div class="qbo-filter-dropdown-item" data-value="cc_payment">{{ __('Credit card payment') }}</div>
                 </div>
             </div>
 
-            <div class="qbo-filter-group">
-                <label class="qbo-filter-label">{{ __('Payee') }}</label>
-                <select class="qbo-filter-select" name="payee">
-                    <option value="">{{ __('All') }}</option>
-                </select>
+            {{-- Filter Button --}}
+            <button class="qbo-filter-icon-btn" onclick="openFilterModal()">
+                <i class="ti ti-adjustments-horizontal"></i>
+                {{ __('Filter') }}
+            </button>
+
+            {{-- Date Chip --}}
+            <div class="qbo-date-chip">
+                <span class="qbo-date-chip-label">{{ __('Dates:') }}</span>
+                {{ __('Last 12 months') }}
             </div>
 
-            <div class="qbo-filter-group">
-                <label class="qbo-filter-label">{{ __('Category') }}</label>
-                <select class="qbo-filter-select" name="category">
-                    <option value="">{{ __('All') }}</option>
-                    @foreach($category ?? [] as $id => $name)
-                        <option value="{{ $id }}">{{ $name }}</option>
-                    @endforeach
-                </select>
+            {{-- Right side icons --}}
+            <div class="qbo-table-header-actions">
+                <button class="qbo-icon-btn" title="{{ __('Export to Excel') }}">
+                    <i class="ti ti-download"></i>
+                </button>
+                <button class="qbo-icon-btn" title="{{ __('Print') }}">
+                    <i class="ti ti-printer"></i>
+                </button>
+                <button class="qbo-icon-btn" title="{{ __('Settings') }}">
+                    <i class="ti ti-settings"></i>
+                </button>
             </div>
+        </div>
 
-            <div class="qbo-filter-actions">
-                <button type="button" class="qbo-filter-reset" onclick="closeFilterModal()">{{ __('Reset') }}</button>
-                <button type="submit" class="qbo-filter-apply">{{ __('Apply') }}</button>
+        {{-- Table --}}
+        <div class="qbo-table-wrapper">
+            <table id="expenseTable" class="display" style="width:100%">
+                <thead>
+                    <tr>
+                        <th width="40"><input type="checkbox" class="form-check-input" id="selectAllHeader"></th>
+                        <th>{{ __('DATE') }}</th>
+                        <th>{{ __('TYPE') }}</th>
+                        <th>{{ __('NO.') }}</th>
+                        <th>{{ __('PAYEE') }}</th>
+                        <th>{{ __('CLASS') }}</th>
+                        <th>{{ __('LOCATION') }}</th>
+                        <th>{{ __('STATUS') }}</th>
+                        <th>{{ __('METHOD') }}</th>
+                        <th>{{ __('SOURCE') }}</th>
+                        <th>{{ __('CATEGORY') }}</th>
+                        <th>{{ __('MEMO') }}</th>
+                        <th>{{ __('DUE DATE') }}</th>
+                        <th class="text-end">{{ __('BALANCE') }}</th>
+                        <th class="text-end">{{ __('TOTAL') }}</th>
+                        <th width="50">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" width="20"
+                                height="20">
+                                <path fill="currentColor"
+                                    d="M10 22a4 4 0 0 1-4-4V7.5a5.5 5.5 0 1 1 11 0V19a1 1 0 0 1-2 0V7.5a3.5 3.5 0 1 0-7 0V18a2 2 0 0 0 4 0V8.5a.5.5 0 0 0-1 0V17a1 1 0 0 1-2 0V8.5a2.5 2.5 0 1 1 5 0V18a4 4 0 0 1-4 4">
+                                </path>
+                            </svg>
+                        </th>
+                        <th>{{ __('ACTION') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($transactions ?? [] as $txn)
+                        <tr>
+                            <td><input type="checkbox" class="form-check-input row-checkbox" value="{{ $txn['id'] }}"
+                                    data-type="{{ $txn['type_key'] }}"></td>
+                            <td>{{ \Auth::user()->dateFormat($txn['date']) }}</td>
+                            <td>{{ $txn['type'] }}</td>
+                            <td>{{ $txn['no'] }}</td>
+                            <td>{{ $txn['payee'] }}</td>
+                            <td>{{ $txn['class'] }}</td>
+                            <td>{{ $txn['location'] }}</td>
+                            <td>
+                                @php
+                                    $status = strtolower($txn['status']);
+                                    $statusClass = 'default';
+                                    if (str_contains($status, 'overdue')) {
+                                        $statusClass = 'danger';
+                                    } elseif ($status === 'paid' || $status === 'applied') {
+                                        $statusClass = 'success';
+                                    } elseif ($status === 'partial') {
+                                        $statusClass = 'warning';
+                                    } elseif ($status === 'open' || $status === 'unapplied') {
+                                        $statusClass = 'info';
+                                    }
+                                @endphp
+                                <span class="qbo-status-{{ $statusClass }}">{{ $txn['status'] }}</span>
+                            </td>
+                            <td>{{ $txn['method'] }}</td>
+                            <td>{{ $txn['source'] }}</td>
+                            <td>{{ $txn['category'] }}</td>
+                            <td>{{ $txn['memo'] }}</td>
+                            <td>{{ $txn['due_date'] }}</td>
+                            <td class="text-end">{{ \Auth::user()->priceFormat($txn['balance']) }}</td>
+                            <td class="text-end" data-amount="{{ $txn['total'] }}">
+                                @if ($txn['total'] < 0)
+                                    -{{ \Auth::user()->priceFormat(abs($txn['total'])) }}
+                                @else
+                                    {{ \Auth::user()->priceFormat($txn['total']) }}
+                                @endif
+                            </td>
+                            <td>{{ $txn['attachments'] }}</td>
+                            <td>
+                                <a href="{{ $txn['view_url'] }}" class="qbo-action-btn">{{ __('View/Edit') }}</a>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="17" class="text-center">{{ __('No transactions found.') }}</td>
+                        </tr>
+                    @endforelse
+                </tbody>
+                <tfoot>
+                    <tr class="qbo-total-row">
+                        <td></td>
+                        <td>{{ __('Total') }}</td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <td class="text-end" id="totalAmount">{{ \Auth::user()->priceFormat($totalAmount ?? 0) }}</td>
+                        <td></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+
+        {{-- Footer/Pagination --}}
+        <div class="qbo-table-footer">
+            <div class="qbo-pagination">
+                <button class="qbo-pagination-btn" id="paginateFirst">{{ __('First') }}</button>
+                <button class="qbo-pagination-btn" id="paginatePrev">{{ __('Previous') }}</button>
+                <span class="qbo-pagination-info" id="paginateInfo">1-{{ count($transactions ?? []) }} of
+                    {{ count($transactions ?? []) }}</span>
+                <button class="qbo-pagination-btn" id="paginateNext">{{ __('Next') }}</button>
+                <button class="qbo-pagination-btn" id="paginateLast">{{ __('Last') }}</button>
             </div>
-        </form>
-    </div>
-</div>
-
-{{-- Modal for Create Forms --}}
-<div class="modal fade" id="ajaxModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-fullscreen">
-        <div class="modal-content">
         </div>
     </div>
-</div>
+
+    {{-- Filter Modal --}}
+    <div class="qbo-filter-modal" id="filterModal">
+        <div class="qbo-filter-modal-content">
+            <div class="qbo-filter-modal-header">
+                <h3>{{ __('Filter') }}</h3>
+                <button class="qbo-filter-modal-close" onclick="closeFilterModal()">&times;</button>
+            </div>
+
+            <form method="GET" action="{{ route('expense.index') }}">
+                <div class="qbo-filter-group">
+                    <label class="qbo-filter-label">{{ __('Status') }}</label>
+                    <select class="qbo-filter-select" name="status">
+                        <option value="">{{ __('All statuses') }}</option>
+                        <option value="open">{{ __('Open') }}</option>
+                        <option value="paid">{{ __('Paid') }}</option>
+                    </select>
+                </div>
+
+                <div class="qbo-filter-group">
+                    <label class="qbo-filter-label">{{ __('Delivery method') }}</label>
+                    <select class="qbo-filter-select" name="delivery">
+                        <option value="">{{ __('Any') }}</option>
+                    </select>
+                </div>
+
+                <div class="qbo-filter-group">
+                    <label class="qbo-filter-label">{{ __('Date') }}</label>
+                    <select class="qbo-filter-select" name="date_range">
+                        <option value="last_12_months">{{ __('Last 12 months') }}</option>
+                        <option value="this_month">{{ __('This month') }}</option>
+                        <option value="last_month">{{ __('Last month') }}</option>
+                        <option value="custom">{{ __('Custom') }}</option>
+                    </select>
+                </div>
+
+                <div class="qbo-filter-row">
+                    <div class="qbo-filter-group">
+                        <label class="qbo-filter-label">{{ __('From') }}</label>
+                        <input type="date" class="qbo-filter-select" name="date_from">
+                    </div>
+                    <div class="qbo-filter-group">
+                        <label class="qbo-filter-label">{{ __('To') }}</label>
+                        <input type="date" class="qbo-filter-select" name="date_to">
+                    </div>
+                </div>
+
+                <div class="qbo-filter-group">
+                    <label class="qbo-filter-label">{{ __('Payee') }}</label>
+                    <select class="qbo-filter-select" name="payee">
+                        <option value="">{{ __('All') }}</option>
+                    </select>
+                </div>
+
+                <div class="qbo-filter-group">
+                    <label class="qbo-filter-label">{{ __('Category') }}</label>
+                    <select class="qbo-filter-select" name="category">
+                        <option value="">{{ __('All') }}</option>
+                        @foreach ($category ?? [] as $id => $name)
+                            <option value="{{ $id }}">{{ $name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div class="qbo-filter-actions">
+                    <button type="button" class="qbo-filter-reset"
+                        onclick="closeFilterModal()">{{ __('Reset') }}</button>
+                    <button type="submit" class="qbo-filter-apply">{{ __('Apply') }}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {{-- Modal for Create Forms --}}
+    <div class="modal fade" id="ajaxModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-fullscreen">
+            <div class="modal-content">
+            </div>
+        </div>
+    </div>
 @endsection
 
 @push('script-page')
-<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
-<script>
-    var expenseTable;
-    var currentTxnType = '{{ $type ?? "all" }}';
+    <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+    <script>
+        var expenseTable;
+        var currentTxnType = '{{ $type ?? 'all' }}';
 
-    $(document).ready(function() {
-        // Initialize DataTable - client-side (no AJAX)
-        expenseTable = $('#expenseTable').DataTable({
-            processing: false,
-            serverSide: false,
-            order: [[1, 'desc']],
-            pageLength: 50,
-            lengthMenu: [[50, 75, 100, 150, 300], [50, 75, 100, 150, 300]],
-            dom: 'rt', // Hide default pagination, we use custom
-            language: {
-                emptyTable: "{{ __('No transactions found.') }}",
-            },
-            drawCallback: function(settings) {
-                var api = this.api();
-                updatePagination(api);
-                $('[data-bs-toggle="tooltip"]').tooltip();
+        $(document).ready(function() {
+            // Initialize DataTable - client-side (no AJAX)
+            expenseTable = $('#expenseTable').DataTable({
+                processing: false,
+                serverSide: false,
+                order: [
+                    [1, 'desc']
+                ],
+                pageLength: 50,
+                lengthMenu: [
+                    [50, 75, 100, 150, 300],
+                    [50, 75, 100, 150, 300]
+                ],
+                dom: 'rt', // Hide default pagination, we use custom
+                retrieve: true,
+                destroy: true,
+                language: {
+                    emptyTable: "{{ __('No transactions found.') }}",
+                },
+                drawCallback: function(settings) {
+                    var api = this.api();
+                    updatePagination(api);
+                    $('[data-bs-toggle="tooltip"]').tooltip();
+                }
+            });
+
+            // Update pagination info
+            function updatePagination(api) {
+                if (!api) return;
+                var pageInfo = api.page.info();
+                var start = pageInfo.recordsTotal > 0 ? pageInfo.start + 1 : 0;
+                var end = pageInfo.end;
+                var total = pageInfo.recordsTotal;
+
+                $('#paginateInfo').text(start + '-' + end + ' of ' + total);
+
+                // Enable/disable buttons
+                $('#paginateFirst, #paginatePrev').prop('disabled', pageInfo.page === 0);
+                $('#paginateNext, #paginateLast').prop('disabled', pageInfo.page >= pageInfo.pages - 1);
             }
-        });
 
-        // Update pagination info
-        function updatePagination(api) {
-            if (!api) return;
-            var pageInfo = api.page.info();
-            var start = pageInfo.recordsTotal > 0 ? pageInfo.start + 1 : 0;
-            var end = pageInfo.end;
-            var total = pageInfo.recordsTotal;
+            // Custom pagination buttons
+            $('#paginateFirst').on('click', function() {
+                expenseTable.page('first').draw('page');
+            });
+            $('#paginatePrev').on('click', function() {
+                expenseTable.page('previous').draw('page');
+            });
+            $('#paginateNext').on('click', function() {
+                expenseTable.page('next').draw('page');
+            });
+            $('#paginateLast').on('click', function() {
+                expenseTable.page('last').draw('page');
+            });
 
-            $('#paginateInfo').text(start + '-' + end + ' of ' + total);
-
-            // Enable/disable buttons
-            $('#paginateFirst, #paginatePrev').prop('disabled', pageInfo.page === 0);
-            $('#paginateNext, #paginateLast').prop('disabled', pageInfo.page >= pageInfo.pages - 1);
-        }
-
-        // Custom pagination buttons
-        $('#paginateFirst').on('click', function() {
-            expenseTable.page('first').draw('page');
-        });
-        $('#paginatePrev').on('click', function() {
-            expenseTable.page('previous').draw('page');
-        });
-        $('#paginateNext').on('click', function() {
-            expenseTable.page('next').draw('page');
-        });
-        $('#paginateLast').on('click', function() {
-            expenseTable.page('last').draw('page');
-        });
-
-        // Select all checkbox
-        $('#selectAllHeader').on('change', function() {
-            var checked = this.checked;
-            $('.row-checkbox').each(function() {
-                this.checked = checked;
+            // Select all checkbox
+            $('#selectAllHeader').on('change', function() {
+                var checked = this.checked;
+                $('.row-checkbox').each(function() {
+                    this.checked = checked;
+                });
             });
         });
-    });
 
-    // Toggle New Transaction Dropdown
-    function toggleNewTxnDropdown() {
-        document.querySelector('.qbo-new-txn-dropdown').classList.toggle('show');
-    }
-
-    // Toggle Filter Dropdown
-    function toggleFilterDropdown(id) {
-        document.getElementById(id).classList.toggle('show');
-    }
-
-    // Filter dropdown item selection - reload page with new filter
-    document.querySelectorAll('.qbo-filter-dropdown-item').forEach(item => {
-        item.addEventListener('click', function() {
-            const dropdown = this.closest('.qbo-filter-dropdown');
-            dropdown.querySelectorAll('.qbo-filter-dropdown-item').forEach(i => i.classList.remove('active'));
-            this.classList.add('active');
-            dropdown.querySelector('.qbo-filter-btn span').textContent = this.textContent;
-            dropdown.classList.remove('show');
-
-            // Reload page with new filter
-            var txnType = this.dataset.value;
-            var currentUrl = new URL(window.location.href);
-            currentUrl.searchParams.set('txn_type', txnType);
-            window.location.href = currentUrl.toString();
-        });
-    });
-
-    // Close dropdowns when clicking outside
-    document.addEventListener('click', function(e) {
-        if (!e.target.closest('.qbo-new-txn-dropdown')) {
-            document.querySelector('.qbo-new-txn-dropdown')?.classList.remove('show');
+        // Toggle New Transaction Dropdown
+        function toggleNewTxnDropdown() {
+            document.querySelector('.qbo-new-txn-dropdown').classList.toggle('show');
         }
-        if (!e.target.closest('.qbo-filter-dropdown')) {
-            document.querySelectorAll('.qbo-filter-dropdown').forEach(d => d.classList.remove('show'));
+
+        // Toggle Filter Dropdown
+        function toggleFilterDropdown(id) {
+            document.getElementById(id).classList.toggle('show');
         }
-    });
 
-    // Filter Modal
-    function openFilterModal() {
-        document.getElementById('filterModal').classList.add('show');
-    }
+        // Filter dropdown item selection - reload page with new filter
+        document.querySelectorAll('.qbo-filter-dropdown-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const dropdown = this.closest('.qbo-filter-dropdown');
+                dropdown.querySelectorAll('.qbo-filter-dropdown-item').forEach(i => i.classList.remove(
+                    'active'));
+                this.classList.add('active');
+                dropdown.querySelector('.qbo-filter-btn span').textContent = this.textContent;
+                dropdown.classList.remove('show');
 
-    function closeFilterModal() {
-        document.getElementById('filterModal').classList.remove('show');
-    }
-
-    // Select All checkbox
-    document.getElementById('selectAll')?.addEventListener('change', function() {
-        document.querySelectorAll('.row-checkbox').forEach(cb => {
-            cb.checked = this.checked;
+                // Reload page with new filter
+                var txnType = this.dataset.value;
+                var currentUrl = new URL(window.location.href);
+                currentUrl.searchParams.set('txn_type', txnType);
+                window.location.href = currentUrl.toString();
+            });
         });
-    });
 
-    // AJAX Modal for create forms
-    $(document).on('click', '.openChecksModal', function(e) {
-        e.preventDefault();
-        var url = $(this).data('url');
-        $('#ajaxModal').modal('show');
-        $.ajax({
-            url: url,
-            type: 'GET',
-            success: function(res) {
-                $('#ajaxModal .modal-content').html(res);
-            },
-            error: function() {
-                alert('Something went wrong!');
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.qbo-new-txn-dropdown')) {
+                document.querySelector('.qbo-new-txn-dropdown')?.classList.remove('show');
+            }
+            if (!e.target.closest('.qbo-filter-dropdown')) {
+                document.querySelectorAll('.qbo-filter-dropdown').forEach(d => d.classList.remove('show'));
             }
         });
-    });
 
-    // Coming Soon toast
-    function showComingSoon() {
-        show_toastr('info', 'Coming soon!', 'info');
-    }
-</script>
+        // Filter Modal
+        function openFilterModal() {
+            document.getElementById('filterModal').classList.add('show');
+        }
+
+        function closeFilterModal() {
+            document.getElementById('filterModal').classList.remove('show');
+        }
+
+        // Select All checkbox
+        document.getElementById('selectAll')?.addEventListener('change', function() {
+            document.querySelectorAll('.row-checkbox').forEach(cb => {
+                cb.checked = this.checked;
+            });
+        });
+
+        // AJAX Modal for create forms
+        $(document).on('click', '.openChecksModal', function(e) {
+            e.preventDefault();
+            var url = $(this).data('url');
+            $('#ajaxModal').modal('show');
+            $.ajax({
+                url: url,
+                type: 'GET',
+                success: function(res) {
+                    $('#ajaxModal .modal-content').html(res);
+                },
+                error: function() {
+                    alert('Something went wrong!');
+                }
+            });
+        });
+
+        // Coming Soon toast
+        function showComingSoon() {
+            show_toastr('info', 'Coming soon!', 'info');
+        }
+    </script>
 @endpush

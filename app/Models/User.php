@@ -246,6 +246,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $settings["expense_prefix"] . sprintf("%05d", $number);
     }
 
+    public function checkNumberFormat($number)
+    {
+        return 'CHK' . sprintf("%05d", $number);
+    }
+
     public function journalNumberFormat($number)
     {
         $settings = Utility::settings();

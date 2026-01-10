@@ -625,8 +625,8 @@ public function index(Request $request)
                 $newitems = [];
 
                 // Process CATEGORY DETAILS (Account-based expenses)
-                if ($request->has('category') && is_array($request->category)) {
-                    foreach ($request->category as $index => $categoryData) {
+                if ($request->has('categories') && is_array($request->categories)) {
+                    foreach ($request->categories as $index => $categoryData) {
                         // Skip empty rows
                         if (empty($categoryData['account_id']) && empty($categoryData['amount'])) {
                             continue;
@@ -684,7 +684,7 @@ public function index(Request $request)
                         $billProduct->product_id = $itemData['product_id'];
                         $billProduct->description = $itemData['description'] ?? '';
                         $billProduct->quantity = $itemData['quantity'] ?? 1;
-                        $billProduct->price = $itemData['price'] ?? 0;
+                        $billProduct->price = $itemData['amount'] ?? 0;
                         $billProduct->discount = $itemData['discount'] ?? 0;
                         $billProduct->account_id = $account;
                         
@@ -1054,7 +1054,7 @@ public function index(Request $request)
 
     public function edit($ids)
     {
-
+        
         if (\Auth::user()->can('edit bill')) {
             try {
                 $id = Crypt::decrypt($ids);
@@ -1503,8 +1503,8 @@ public function index(Request $request)
                     $billableValidationError = null;
                     
                     // Check category items
-                    if ($request->has('category') && is_array($request->category)) {
-                        foreach ($request->category as $index => $categoryData) {
+                    if ($request->has('categories') && is_array($request->categories)) {
+                        foreach ($request->categories as $index => $categoryData) {
                             if (isset($categoryData['billable']) && $categoryData['billable']) {
                                 if (empty($categoryData['customer_id'])) {
                                     $billableValidationError = __('Select a customer for each billable split line.') . ' (Category row ' . ($index + 1) . ')';
@@ -1581,7 +1581,8 @@ public function index(Request $request)
                     \DB::commit();
                     return response()->json([
                         'status' => 'success',
-                        'message' => __('Bill successfully updated.')
+                        'message' => __('Bill successfully updated.'),
+                        'redirect' => url()->previous()
                     ], 200);
                     // return redirect()->route('bill.index')->with('success', __('Bill successfully updated.'));
                 } else {
@@ -1661,7 +1662,7 @@ public function index(Request $request)
         if ($request->has('items') && is_array($request->items)) {
             foreach ($request->items as $index => $itemData) {
                 // Skip empty rows
-                if (empty($itemData['product_id']) && empty($itemData['quantity']) && empty($itemData['price'])) {
+                if (empty($itemData['product_id']) && empty($itemData['quantity']) && empty($itemData['amount'])) {
                     continue;
                 }
 
@@ -1780,8 +1781,8 @@ public function index(Request $request)
         // ========================================
         $existingAccountIds = [];
         
-        if ($request->has('category') && is_array($request->category)) {
-            foreach ($request->category as $index => $categoryData) {
+        if ($request->has('categories') && is_array($request->categories)) {
+            foreach ($request->categories as $index => $categoryData) {
                 // Skip empty rows
                 if (empty($categoryData['account_id']) && empty($categoryData['amount'])) {
                     continue;
@@ -3504,8 +3505,8 @@ public function index(Request $request)
         if (!$accountPayable) {
             throw new \Exception('Accounts Payable account not found. Please configure your chart of accounts.');
         }
-    //    dd all
-    // dd($bill, $billProducts, $billAccounts);
+        //    dd all
+
         // Create journal entry using JournalService
         // This will throw an exception if creation fails, causing the entire bill transaction to rollback
         $journalEntry = JournalService::createJournalEntry([

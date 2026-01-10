@@ -62,14 +62,15 @@ class CreditCardPayment extends Model
     /**
      * Get the payee (Vendor)
      */
+    
     public function payee()
     {
-        if ($this->payee_type === 'vendor') {
+        // if ($this->payee_type === 'vendor') {
             return $this->belongsTo(Vender::class, 'payee_id');
-        }
-        return null;
+        // }
+        // return null;
     }
-
+       
     /**
      * Get payee name
      */

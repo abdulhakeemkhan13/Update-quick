@@ -48,7 +48,7 @@
             </div>
         </div>
         <div class="form-group col-md-6">
-            {{ Form::label('sale_chartaccount_id', __('Income Account'), ['class' => 'form-label']) }}
+            {{ Form::label('sale_chartaccount_id', __('Income Account'), ['class' => 'form-label']) }}<span class="text-danger">*</span>
             <select name="sale_chartaccount_id" class="form-control" required="required" data-create-url="{{ route('chart-of-account.create') }}" data-create-title="{{ __('Create New Account') }}">
                 <option value="add_new">➕  Add New</option>
                 <option value="0" selected>Select Account</option>                
@@ -72,7 +72,7 @@
             </div>
         </div>
         <div class="form-group col-md-6">
-            {{ Form::label('expense_chartaccount_id', __('Expense Account'), ['class' => 'form-label']) }}
+            {{ Form::label('expense_chartaccount_id', __('Expense Account'), ['class' => 'form-label']) }}<span class="text-danger">*</span>
             <select name="expense_chartaccount_id" class="form-control" required="required" data-create-url="{{ route('chart-of-account.create') }}" data-create-title="{{ __('Create New Account') }}">
                 <option value="add_new">➕  Add New</option>
                 <option value="0" selected>Select Account</option>                

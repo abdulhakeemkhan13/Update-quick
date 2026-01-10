@@ -39,6 +39,7 @@ class Purchase extends Model
         'status',
         'expected_date',
         'ship_to_address',
+        'vendor_email',
     ];
 
     public static $statues = [

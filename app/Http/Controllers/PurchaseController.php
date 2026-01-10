@@ -66,7 +66,7 @@ class PurchaseController extends Controller
             $po_number = \Auth::user()->purchaseNumberFormat($this->purchaseNumber());
             
             $vendors = Vender::where($column, $ownerId)->get()->pluck('name', 'id')->toArray();
-            $vendors = ['__add__' => '➕ Add new vendor'] + ['' => 'Select Vendor'] + $vendors;
+            $vendors =  $vendors;
 
             $product_services = ProductService::where($column, $ownerId)->get()->pluck('name', 'id');
             $product_services->prepend('Select Item', '');
@@ -96,7 +96,6 @@ class PurchaseController extends Controller
      */
     public function store(Request $request)
     {
-
         if (\Auth::user()->can('create purchase')) {
             $validator = \Validator::make(
                     $request->all(),
@@ -132,6 +131,7 @@ class PurchaseController extends Controller
                 $po->ship_via = $request->ship_via;
                 $po->ref_no = $request->ref_no;
                 $po->ship_to = $request->ship_to;
+                $po->vendor_email = $request->vendor_email;
                 $po->mailing_address = $request->mailing_address;
                 $po->vendor_message = $request->vendor_message;
                 $po->status = 1; // Open
@@ -147,8 +147,8 @@ class PurchaseController extends Controller
                 $po->save();
 
                 // Process CATEGORY DETAILS (Account-based expenses)
-                if ($request->has('category') && is_array($request->category)) {
-                    foreach ($request->category as $index => $categoryData) {
+                if ($request->has('categories') && is_array($request->categories)) {
+                    foreach ($request->categories as $index => $categoryData) {
                         // Skip empty rows
                         if (empty($categoryData['account_id']) && empty($categoryData['amount'])) {
                             continue;
@@ -180,10 +180,10 @@ class PurchaseController extends Controller
                 if ($request->has('items') && is_array($request->items)) {
                     foreach ($request->items as $index => $itemData) {
                         // Skip empty rows
-                        if (empty($itemData['product_id']) && empty($itemData['quantity']) && empty($itemData['price'])) {
+                        if (empty($itemData['product_id']) || empty($itemData['quantity']) || empty($itemData['price'])) {
                             continue;
                         }
-                        
+                
                         $product = ProductService::find($itemData['product_id']);
                         $account = null;
                         if ($product) {
@@ -220,6 +220,7 @@ class PurchaseController extends Controller
                     }
                 }
 
+
                 // Notifications
                 $setting = Utility::settings(\Auth::user()->creatorId());
                 $vendor = Vender::find($request->vendor_id);
@@ -249,7 +250,7 @@ class PurchaseController extends Controller
                     ], 200);
                 }
                 
-                return redirect()->route('purchase.index')->with('success', __('Purchase Order successfully created.'));
+                return redirect()->route('expense.index')->with('success', __('Purchase Order successfully created.'));
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
@@ -327,114 +328,132 @@ class PurchaseController extends Controller
     {
         if(\Auth::user()->can('edit purchase'))
         {
-
-            $validator = \Validator::make(
-                    $request->all(),
-                    [
-                        'vendor_id' => 'required',
-                        'po_date' => 'required',
-                        ]
-                    );
-                    
-                if ($validator->fails()) {
-                    $messages = $validator->getMessageBag();
-                    return redirect()->back()->with('error', $messages->first());
-                }
-                $po = Purchase::find($purchase->id);
-                // Update PO header
-                $po->vender_id = $request->vendor_id;
-                $po->purchase_date = $request->po_date;
-                $po->expected_date = $request->expected_date;
-                $po->ship_to_address = $request->ship_to_address;
-                $po->terms = $request->terms;
-                $po->notes = $request->notes;
-                $po->vendor_message = $request->vendor_message;
-                $po->subtotal = $request->subtotal ?? 0;
-                $po->tax_total = $request->tax_total ?? 0;
-                $po->shipping = $request->shipping ?? 0;
-                $po->total = $request->total ?? 0;
-                $po->ship_via = $request->ship_via;
-                $po->ref_no = $request->ref_no;
-                $po->ship_to = $request->ship_to;
-                $po->mailing_address = $request->mailing_address;
-                $po->save();
-
-                // Delete old items and accounts, then recreate
-                PurchaseProduct::where('purchase_id', $po->id)->delete();
-                PurchaseOrderAccount::where('ref_id', $po->id)->delete();
-
-                // Process CATEGORY DETAILS (Account-based expenses)
-                if ($request->has('category') && is_array($request->category)) {
-                    foreach ($request->category as $index => $categoryData) {
-                        if (empty($categoryData['account_id']) && empty($categoryData['amount'])) {
-                            continue;
-                        }
-
-                        $poAccount = new PurchaseOrderAccount();
-                        $poAccount->ref_id = $po->id;
-                        $poAccount->type = 'Purchase Order';
-                        $poAccount->chart_account_id = $categoryData['account_id'] ?? null;
-                        $poAccount->description = $categoryData['description'] ?? '';
-                        $poAccount->price = $categoryData['amount'] ?? 0;
-                        $poAccount->quantity_ordered = $categoryData['quantity'] ?? 1;
-                        $poAccount->quantity_received = 0;
-                        $poAccount->billable = isset($categoryData['billable']) ? 1 : 0;
-                        $poAccount->customer_id = $categoryData['customer_id'] ?? null;
-                        $poAccount->tax = isset($categoryData['tax']) ? 1 : 0;
-                        $poAccount->order = $index;
-                        $poAccount->save();
-                    }
-                }
-
-                // Process ITEM DETAILS
-                if ($request->has('items') && is_array($request->items)) {
-                    foreach ($request->items as $index => $itemData) {
-                        if (empty($itemData['product_id']) && empty($itemData['quantity']) && empty($itemData['price'])) {
-                            continue;
-                        }
+            // dd($request->all());
+            \DB::beginTransaction();
+            try {
+                $validator = \Validator::make(
+                        $request->all(),
+                        [
+                            'vendor_id' => 'required',
+                            'po_date' => 'required',
+                            ]
+                        );
                         
-                        $product = ProductService::find($itemData['product_id']);
-                        $account = null;
-                        if ($product) {
-                            if($product->type == 'product'){
-                                $account = $product->asset_chartaccount_id ?? $product->expense_chartaccount_id;
-                            }else{
-                                $account = $product->expense_chartaccount_id;
-                            }
+                    if ($validator->fails()) {
+                        $messages = $validator->getMessageBag();
+                        if ($request->ajax() || $request->wantsJson()) {
+                            return response()->json([
+                                'status' => 'error',
+                                'message' => $messages->first()
+                            ], 422);
                         }
-
-                        $poItem = new PurchaseProduct();
-                        $poItem->purchase_id = $po->id;
-                        $poItem->product_id = $itemData['product_id'] ?? null;
-                        $poItem->description = $itemData['description'] ?? '';
-                        $poItem->quantity = $itemData['quantity'] ?? 1;
-                        $poItem->price = $itemData['price'] ?? 0;
-                        $poItem->discount = $itemData['discount'] ?? 0;
-                        $poItem->account_id = $account;
-                        $poItem->tax = isset($itemData['tax']) ? 1 : 0;
-                        $poItem->line_total = $itemData['amount'] ?? ($poItem->quantity * $poItem->price);
-                        $poItem->billable = isset($itemData['billable']) ? 1 : 0;
-                        $poItem->customer_id = $itemData['customer_id'] ?? null;
-                        $poItem->order = $index;
-                        $poItem->save();
+                        return redirect()->back()->with('error', $messages->first());
                     }
-                }
+                    $po = Purchase::find($purchase->id);
+                    // Update PO header
+                    $po->vender_id = $request->vendor_id;
+                    $po->purchase_date = $request->po_date;
+                    $po->expected_date = $request->expected_date;
+                    $po->ship_to_address = $request->ship_to_address;
+                    $po->terms = $request->terms;
+                    $po->notes = $request->notes;
+                    $po->vendor_message = $request->vendor_message;
+                    $po->subtotal = $request->subtotal ?? 0;
+                    $po->tax_total = $request->tax_total ?? 0;
+                    $po->shipping = $request->shipping ?? 0;
+                    $po->total = $request->total ?? 0;
+                    $po->ship_via = $request->ship_via;
+                    $po->ref_no = $request->ref_number ?? $request->ref_no;
+                    $po->ship_to = $request->ship_to;
+                    $po->mailing_address = $request->mailing_address;
+                    $po->vendor_email = $request->vendor_email;
+                    $po->status = $request->status ?? $po->status;
+                    $po->save();
 
-                Utility::makeActivityLog(\Auth::user()->id, 'Purchase Order', $po->id, 'Update Purchase Order', 'Purchase Order Updated');
-                
-                \DB::commit();
+                    // Delete old items and accounts, then recreate
+                    PurchaseProduct::where('purchase_id', $po->id)->delete();
+                    PurchaseOrderAccount::where('ref_id', $po->id)->delete();
+
+                    // Process CATEGORY DETAILS (Account-based expenses)
+                    if ($request->has('category') && is_array($request->category)) {
+                        foreach ($request->category as $index => $categoryData) {
+                            if (empty($categoryData['account_id']) && empty($categoryData['amount'])) {
+                                continue;
+                            }
+
+                            $poAccount = new PurchaseOrderAccount();
+                            $poAccount->ref_id = $po->id;
+                            $poAccount->type = 'Purchase Order';
+                            $poAccount->chart_account_id = $categoryData['account_id'] ?? null;
+                            $poAccount->description = $categoryData['description'] ?? '';
+                            $poAccount->price = $categoryData['amount'] ?? 0;
+                            $poAccount->quantity_ordered = $categoryData['quantity'] ?? 1;
+                            $poAccount->quantity_received = 0;
+                            $poAccount->billable = isset($categoryData['billable']) ? 1 : 0;
+                            $poAccount->customer_id = $categoryData['customer_id'] ?? null;
+                            $poAccount->tax = isset($categoryData['tax']) ? 1 : 0;
+                            $poAccount->order = $index;
+                            $poAccount->save();
+                        }
+                    }
+
+                    // Process ITEM DETAILS
+                    if ($request->has('items') && is_array($request->items)) {
+                        foreach ($request->items as $index => $itemData) {
+                            if (empty($itemData['product_id']) && empty($itemData['quantity']) && empty($itemData['price'])) {
+                                continue;
+                            }
+                            
+                            $product = ProductService::find($itemData['product_id']);
+                            $account = null;
+                            if ($product) {
+                                if($product->type == 'product'){
+                                    $account = $product->asset_chartaccount_id ?? $product->expense_chartaccount_id;
+                                }else{
+                                    $account = $product->expense_chartaccount_id;
+                                }
+                            }
+
+                            $poItem = new PurchaseProduct();
+                            $poItem->purchase_id = $po->id;
+                            $poItem->product_id = $itemData['product_id'] ?? null;
+                            $poItem->description = $itemData['description'] ?? '';
+                            $poItem->quantity = $itemData['quantity'] ?? 1;
+                            $poItem->price = $itemData['price'] ?? 0;
+                            $poItem->discount = $itemData['discount'] ?? 0;
+                            $poItem->account_id = $account;
+                            $poItem->tax = isset($itemData['tax']) ? 1 : 0;
+                            $poItem->line_total = $itemData['amount'] ?? ($poItem->quantity * $poItem->price);
+                            $poItem->billable = isset($itemData['billable']) ? 1 : 0;
+                            $poItem->customer_id = $itemData['customer_id'] ?? null;
+                            $poItem->order = $index;
+                            $poItem->save();
+                        }
+                    }
+
+                    Utility::makeActivityLog(\Auth::user()->id, 'Purchase Order', $po->id, 'Update Purchase Order', 'Purchase Order Updated');
+                    
+                    \DB::commit();
+                    if ($request->ajax() || $request->wantsJson()) {
+                        return response()->json([
+                            'status' => 'success',
+                            'message' => __('Purchase Order successfully updated.'),
+                            'po_id' => $po->id
+                        ], 200);
+                    }
+
+                    return redirect()->route('expense.index')->with('success', __('Purchase Order successfully updated.'));
+            } catch (\Exception $e) {
+                \DB::rollback();
+                \Log::error('Purchase Order Update Error: ' . $e->getMessage());
                 if ($request->ajax() || $request->wantsJson()) {
                     return response()->json([
-                        'status' => 'success',
-                        'message' => __('Purchase Order successfully created.'),
-                        'po_id' => $po->id
-                    ], 200);
+                        'status' => 'error',
+                        'message' => $e->getMessage()
+                    ], 500);
                 }
-
-                
-
-                return redirect()->route('purchase-order.index')->with('success', __('Purchase Order successfully updated.'));
-     
+                return redirect()->back()->with('error', $e->getMessage());
+            }
         }
         else
         {

@@ -1,3 +1,14 @@
+@extends('layouts.admin')
+@section('page-title')
+    {{__('Vendor Credit Edit')}}
+@endsection
+@section('breadcrumb')
+    <li class="breadcrumb-item"><a href="{{route('dashboard')}}">{{__('Dashboard')}}</a></li>
+    <li class="breadcrumb-item"><a href="{{route('expense.index')}}">{{__('Vendor Credits')}}</a></li>
+    <li class="breadcrumb-item">{{__('Vendor Credit Edit')}}</li>
+@endsection
+
+@push('script-page')
 <script src="{{ asset('js/jquery-ui.min.js') }}"></script>
 <script src="{{ asset('js/jquery.repeater.min.js') }}"></script>
 <script src="{{ asset('js/jquery-searchbox.js') }}"></script>
@@ -937,19 +948,19 @@
                         <td class="qbo-line-number">${++categoryLineCount}</td>
 
                         <td>
-                            <select name="category[${categoryLineCount}][account_id]" class="form-control category-account">
+                            <select name="categories[${categoryLineCount}][account_id]" class="form-control category-account">
                                 <option value="">{{ __('Select account') }}</option>
                                 @foreach ($chartAccounts as $id => $account)
                                     <option value="{{ $id }}">{{ $account }}</option>
                                 @endforeach
                             </select>
                         </td>
-                        <td><textarea name="category[${categoryLineCount}][description]" class="form-control" rows="1"></textarea></td>
-                        <td><input type="number" name="category[${categoryLineCount}][amount]" class="form-control category-amount text-end" step="0.01" value="0.00"></td>
-                        <td class="text-center text-center"><input type="checkbox" name="category[${categoryLineCount}][billable]" class="qbo-checkbox form-check-input" value="1"></td>
-                        <td class="text-center"><input type="checkbox " name="category[${categoryLineCount}][tax]" class="qbo-checkbox category-tax "></td>
+                        <td><textarea name="categories[${categoryLineCount}][description]" class="form-control" rows="1"></textarea></td>
+                        <td><input type="number" name="categories[${categoryLineCount}][amount]" class="form-control category-amount text-end" step="0.01" value="0.00"></td>
+                        <td class="text-center text-center"><input type="checkbox" name="categories[${categoryLineCount}][billable]" class="qbo-checkbox form-check-input" value="1"></td>
+                        <td class="text-center"><input type="checkbox " name="categories[${categoryLineCount}][tax]" class="qbo-checkbox  category-tax form-check-input"></td>
                         <td>
-                            <select name="category[${categoryLineCount}][customer_id]" class="form-control customer-select">
+                            <select name="categories[${categoryLineCount}][customer_id]" class="form-control customer-select">
                                 <option value="">-</option>
                                 
                                 @foreach ($customers as $id => $name)
@@ -992,7 +1003,7 @@
                         </td>
                         <td class="qbo-line-number">${++itemLineCount}</td>
                         <td>
-                            <select name="items[${itemLineCount}][product_id]" class="form-control item-product">
+                            <select name="items[${itemLineCount}][item_id]" class="form-control item-product">
                                 <option value="">{{ __('Select Item') }}</option>
                                 @foreach ($product_services as $id => $product)
                                     <option value="{{ $id }}">{{ $product }}</option>
@@ -1186,9 +1197,23 @@
         // Initialize
         calculateTotal();
     });
-</script>
+    // Auto-show modal
+        $(document).ready(function() {
+            var expenseModal = new bootstrap.Modal(document.getElementById('expense-modal'), {
+                backdrop: 'static',
+                keyboard: false
+            });
+            expenseModal.show();
+        });
 
-<div class="row">
+</script>
+@endpush
+@section('content')
+   <div class="modal fade" id="expense-modal" tabindex="-1" aria-labelledby="expenseModalLabel" aria-hidden="true"
+        style="background: #ffffff;">
+        <div class="modal-dialog modal-fullscreen">
+            <div class="modal-content">
+    <div class="row">
     <div class="d-flex justify-content-between align-items-center border-bottom"
         style="
                                 font-size: 15px;
@@ -2501,3 +2526,7 @@
 
     {{ Form::close() }}
 </div>
+         </div>
+        </div>
+    </div>
+@endsection
