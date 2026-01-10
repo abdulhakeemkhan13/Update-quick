@@ -197,7 +197,7 @@ class SalesTransactionsAllTypesController extends Controller
                     'memo' => '',
                     'amount' => $prop->total_amount ?? (method_exists($prop, 'getTotal') ? $prop->getTotal() : 0),
                     'status' => __($statusText),
-                    'view_url' => route('proposal.show', Crypt::encrypt($prop->id)),
+                    'view_url' => route('proposal.edit', Crypt::encrypt($prop->id)),
                 ]);
             }
         }
@@ -221,7 +221,7 @@ class SalesTransactionsAllTypesController extends Controller
                     'memo' => $sr->memo ?? '',
                     'amount' => $sr->total_amount ?? 0,
                     'status' => __($statusText),
-                    'view_url' => route('sales-receipt.show', $sr->id),
+                    'view_url' => route('sales-receipt.edit', $sr->id),
                 ]);
             }
         }

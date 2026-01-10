@@ -152,7 +152,7 @@ class SalesTransactionsAllTypesDataTable extends DataTable
                     'memo' => '',
                     'amount' => $prop->total_amount ?? $prop->getTotal(),
                     'status' => __($statusText),
-                    'view_url' => route('proposal.show', Crypt::encrypt($prop->id)),
+                    'view_url' => route('proposal.edit', Crypt::encrypt($prop->id)),
                     'edit_url' => route('proposal.edit', Crypt::encrypt($prop->id)),
                 ]);
             }

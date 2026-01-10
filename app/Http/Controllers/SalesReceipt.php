@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BankAccount;
 use App\Models\Customer;
 use App\Models\CustomField;
 use App\Models\Invoice;
@@ -41,10 +42,13 @@ class SalesReceipt extends Controller
             $category = ['__add__' => '➕ Add new category'] + ['' => 'Select Category'] + $category;
             $product_services = ProductService::get()->pluck('name', 'id');
             $product_services->prepend('--', '');
+             $bank_Account = BankAccount::select('*', \DB::raw("CONCAT(bank_name,' ',holder_name) AS name"))
+                    ->where('created_by', \Auth::user()->creatorId())
+                    ->get()->pluck('name', 'id')->toArray();
+                $accounts = ['' => 'Select Bank Account'] + $bank_Account;
             $taxes = Tax::where('created_by', \Auth::user()->creatorId())->get();
-
             // Always return modal view
-            return view('sales-reciepts.sales-reciepts', compact('customers', 'invoice_number', 'product_services', 'category', 'customFields', 'customerId', 'taxes'));
+            return view('sales-reciepts.sales-reciepts', compact('customers', 'invoice_number','accounts', 'product_services', 'category', 'customFields', 'customerId', 'taxes'));
         } else {
             return response()->json(['error' => __('Permission denied.')], 401);
         }
@@ -75,6 +79,7 @@ class SalesReceipt extends Controller
 
     public function store(Request $request)
     {
+        // dd($request->all());
         \DB::beginTransaction();
         try {
             if (\Auth::user()->can('create invoice')) {
@@ -205,7 +210,7 @@ class SalesReceipt extends Controller
                     if ($itemType === 'product') {
                         $salesReceiptProduct->product_id = $prod['item_id'] ?? ($prod['item'] ?? null);
                         $salesReceiptProduct->quantity = $prod['quantity'] ?? 0;
-                        $salesReceiptProduct->tax = $prod['tax'] ?? null;
+                        $salesReceiptProduct->tax = $prod['tax'] != null ? 1 : null;
                         $salesReceiptProduct->discount = $prod['discount'] ?? 0;
                         $salesReceiptProduct->price = $prod['price'] ?? 0;
                         $salesReceiptProduct->description = $prod['description'] ?? '';
@@ -251,13 +256,13 @@ class SalesReceipt extends Controller
                     $salesReceiptProduct->save();
                 }
 
+
                 // Create Journal Voucher for sales receipt
-                if (\Auth::user()->type == 'company') {
-                    // $this->createSalesReceiptJournalVoucher($salesReceipt);
-                    // $salesReceipt->status = 2; // Approved
-                    // $salesReceipt->save();
-                    \App\Models\Utility::makeActivityLog(\Auth::user()->id, 'Sales Receipt', $salesReceipt->id, 'Create Sales Receipt', 'Sales Receipt Created & Approved');
-                }
+                $this->createSalesReceiptJournalVoucher($salesReceipt);
+                $salesReceipt->status = 2; // Approved
+                $salesReceipt->save();
+                \App\Models\Utility::makeActivityLog(\Auth::user()->id, 'Sales Receipt', $salesReceipt->id, 'Create Sales Receipt', 'Sales Receipt Created & Approved');
+
 
                 // Webhook
                 $module = 'New Sales Receipt';
@@ -279,11 +284,11 @@ class SalesReceipt extends Controller
                     return response()->json([
                         'success' => true,
                         'message' => __('Sales receipt successfully created.'),
-                        'redirect' => route('sales-receipt.index'),
+                        'redirect' => route('sales.transactions.index'),
                     ]);
                 }
 
-                return redirect()->route('sales-receipt.index')->with('success', __('Sales receipt successfully created.'));
+                return redirect()->route('sales.transactions.index')->with('success', __('Sales receipt successfully created.'));
             } else {
                 if ($request->ajax()) {
                     return response()->json(['error' => __('Permission denied.')], 403);
@@ -305,39 +310,359 @@ class SalesReceipt extends Controller
 
     private function createSalesReceiptJournalVoucher(\App\Models\SalesReceipt $salesReceipt)
     {
-        $salesReceiptProducts = $salesReceipt->items;
-        $newitems = [];
+        // Import required models
+        $JournalEntry = \App\Models\JournalEntry::class;
+        $JournalItem = \App\Models\JournalItem::class;
+        $ChartOfAccount = \App\Models\ChartOfAccount::class;
+        $ChartOfAccountType = \App\Models\ChartOfAccountType::class;
+        $ChartOfAccountSubType = \App\Models\ChartOfAccountSubType::class;
+        $BankAccount = \App\Models\BankAccount::class;
+        $ProductService = \App\Models\ProductService::class;
+        $Tax = \App\Models\Tax::class;
+        $Utility = \App\Models\Utility::class;
+        $TransactionLines = \App\Models\TransactionLines::class;
 
+        // Get next journal ID
+        $latest = $JournalEntry::where('created_by', '=', $salesReceipt->created_by)
+            ->where('voucher_type', 'JV')
+            ->orderBy('id', 'Desc')
+            ->first();
+        $journalId = $latest ? $latest->journal_id + 1 : 1;
+
+        // Create Journal Entry
+        $journal = new $JournalEntry();
+        $journal->journal_id = $journalId;
+        $journal->date = $salesReceipt->issue_date;
+        $journal->reference = $salesReceipt->ref_number;
+        $journal->description = 'Sales Receipt No: ' . $salesReceipt->sales_receipt_id;
+        $journal->reference_id = $salesReceipt->id;
+        $journal->category = 'Sales Receipt';
+        $journal->voucher_type = 'JV';
+        $journal->owned_by = $salesReceipt->owned_by;
+        $journal->created_by = $salesReceipt->created_by;
+        $journal->save();
+
+        $totalCredits = 0; // Total credits (sales + tax)
+        $totalDebits = 0;  // Total debits (bank + discount)
+        
+        // Get customer info for journal items
+        $customer = \App\Models\Customer::find($salesReceipt->customer_id);
+        $customerName = $customer ? $customer->name : '';
+        $customerId = $salesReceipt->customer_id;
+
+        // ============================================================
+        // 1. Credit entries for each product (Sales Revenue)
+        // ============================================================
+        $salesReceiptProducts = $salesReceipt->items;
         foreach ($salesReceiptProducts as $product) {
-            $newitems[] = [
-                'prod_id' => $product->id,
-                'item' => $product->product_id,
-                'quantity' => $product->quantity,
-                'price' => $product->price,
-                'discount' => $product->discount,
-                'itemTaxPrice' => $product->tax,
-                'description' => $product->description,
-            ];
+            if (!$product->product_id) continue; // Skip non-product items
+
+            $productService = $ProductService::find($product->product_id);
+            if (!$productService || !$productService->sale_chartaccount_id) continue;
+
+            // Calculate product amount (qty * price - line discount)
+            $lineAmount = (floatval($product->quantity) * floatval($product->price)) - floatval($product->discount);
+
+            // Credit Sales/Income account
+            $journalItem = new $JournalItem();
+            $journalItem->journal = $journal->id;
+            $journalItem->account = $productService->sale_chartaccount_id;
+            $journalItem->product_ids = $product->id;
+            $journalItem->description = $product->description ?? 'Sales - ' . ($productService->name ?? 'Product');
+            $journalItem->credit = $lineAmount;
+            $journalItem->debit = 0;
+            $journalItem->type = 'Sales Receipt';
+            $journalItem->name = $customerName;
+            $journalItem->customer_id = $customerId;
+            $journalItem->save();
+            $totalCredits += $lineAmount;
+
+            // Create transaction line
+            $Utility::addTransactionLines([
+                'account_id' => $productService->sale_chartaccount_id,
+                'transaction_type' => 'Credit',
+                'transaction_amount' => $lineAmount,
+                'reference' => 'Sales Receipt Journal',
+                'reference_id' => $journal->id,
+                'reference_sub_id' => $journalItem->id,
+                'date' => $journal->date,
+                'product_id' => $salesReceipt->id,
+                'product_type' => 'Sales Receipt',
+                'product_item_id' => $product->id,
+            ], 'create');
+
+            // ============================================================
+            // 2. Credit entry for item-level tax (if any)
+            // ============================================================
+            $itemTax = floatval($product->item_tax_price ?? 0);
+            if ($itemTax > 0 && $product->tax) {
+                $taxModel = $Tax::find($product->tax);
+                $taxAccountId = $taxModel ? $taxModel->chart_account_id : null;
+
+                // If no chart_account_id, find or create default Tax Liability account
+                if (!$taxAccountId) {
+                    $taxAccountId = $this->getOrCreateTaxLiabilityAccount($salesReceipt->created_by);
+                }
+
+                if ($taxAccountId) {
+                    $journalItem = new $JournalItem();
+                    $journalItem->journal = $journal->id;
+                    $journalItem->account = $taxAccountId;
+                    $journalItem->prod_tax_id = $product->id;
+                    $journalItem->description = 'Tax on Sales Receipt No: ' . $salesReceipt->sales_receipt_id;
+                    $journalItem->credit = $itemTax;
+                    $journalItem->debit = 0;
+                    $journalItem->type = 'Sales Receipt';
+                    $journalItem->name = $customerName;
+                    $journalItem->customer_id = $customerId;
+                    $journalItem->save();
+                    $totalCredits += $itemTax;
+
+                    $Utility::addTransactionLines([
+                        'account_id' => $taxAccountId,
+                        'transaction_type' => 'Credit',
+                        'transaction_amount' => $itemTax,
+                        'reference' => 'Sales Receipt Journal',
+                        'reference_id' => $journal->id,
+                        'reference_sub_id' => $journalItem->id,
+                        'date' => $journal->date,
+                        'product_id' => $salesReceipt->id,
+                        'product_type' => 'Sales Receipt Tax',
+                        'product_item_id' => $product->id,
+                    ], 'create');
+                }
+            }
         }
 
-        $data = [
-            'id' => $salesReceipt->id,
-            'no' => $salesReceipt->sales_receipt_id,
-            'date' => $salesReceipt->issue_date,
-            'created_at' => now()->format('Y-m-d h:i:s'),
-            'reference' => $salesReceipt->ref_number,
-            'category' => 'Sales Receipt',
-            'owned_by' => $salesReceipt->owned_by,
-            'created_by' => $salesReceipt->created_by,
-            'prod_id' => $salesReceiptProducts->where('product_id', '!=', null)->first()->product_id ?? null,
-            'items' => $newitems,
-        ];
+        // ============================================================
+        // 3. Credit entry for invoice-level Sales Tax (if any)
+        // ============================================================
+        $invoiceTax = floatval($salesReceipt->sales_tax_amount ?? 0);
+        if ($invoiceTax > 0) {
+            // Get tax account from sales_tax_rate if it's a tax ID, otherwise use default
+            $taxAccountId = null;
+            if ($salesReceipt->sales_tax_rate) {
+                $taxModel = $Tax::find($salesReceipt->sales_tax_rate);
+                $taxAccountId = $taxModel ? $taxModel->chart_account_id : null;
+            }
+            if (!$taxAccountId) {
+                $taxAccountId = $this->getOrCreateTaxLiabilityAccount($salesReceipt->created_by);
+            }
 
-        $voucherId = \App\Models\Utility::jrentry($data);
-        $salesReceipt->voucher_id = $voucherId;
+            if ($taxAccountId) {
+                $journalItem = new $JournalItem();
+                $journalItem->journal = $journal->id;
+                $journalItem->account = $taxAccountId;
+                $journalItem->description = 'Sales Tax on Sales Receipt No: ' . $salesReceipt->sales_receipt_id;
+                $journalItem->credit = $invoiceTax;
+                $journalItem->debit = 0;
+                $journalItem->type = 'Sales Receipt';
+                $journalItem->name = $customerName;
+                $journalItem->customer_id = $customerId;
+                $journalItem->save();
+                $totalCredits += $invoiceTax;
+
+                $Utility::addTransactionLines([
+                    'account_id' => $taxAccountId,
+                    'transaction_type' => 'Credit',
+                    'transaction_amount' => $invoiceTax,
+                    'reference' => 'Sales Receipt Journal',
+                    'reference_id' => $journal->id,
+                    'reference_sub_id' => $journalItem->id,
+                    'date' => $journal->date,
+                    'product_id' => $salesReceipt->id,
+                    'product_type' => 'Sales Receipt Sales Tax',
+                ], 'create');
+            }
+        }
+
+        // ============================================================
+        // 4. Debit entry for Discount (if any)
+        // ============================================================
+        $totalDiscount = floatval($salesReceipt->total_discount ?? 0);
+        if ($totalDiscount > 0) {
+            $discountAccountId = $this->getOrCreateSalesDiscountAccount($salesReceipt->created_by);
+
+            if ($discountAccountId) {
+                $journalItem = new $JournalItem();
+                $journalItem->journal = $journal->id;
+                $journalItem->account = $discountAccountId;
+                $journalItem->description = 'Discount on Sales Receipt No: ' . $salesReceipt->sales_receipt_id;
+                $journalItem->credit = 0;
+                $journalItem->debit = $totalDiscount;
+                $journalItem->type = 'Sales Receipt';
+                $journalItem->name = $customerName;
+                $journalItem->customer_id = $customerId;
+                $journalItem->save();
+                $totalDebits += $totalDiscount;
+
+                $Utility::addTransactionLines([
+                    'account_id' => $discountAccountId,
+                    'transaction_type' => 'Debit',
+                    'transaction_amount' => $totalDiscount,
+                    'reference' => 'Sales Receipt Journal',
+                    'reference_id' => $journal->id,
+                    'reference_sub_id' => $journalItem->id,
+                    'date' => $journal->date,
+                    'product_id' => $salesReceipt->id,
+                    'product_type' => 'Sales Receipt Discount',
+                ], 'create');
+            }
+        }
+
+        // ============================================================
+        // 5. Debit entry for Bank/Cash (Deposit To)
+        // ============================================================
+        $bankAccountId = null;
+        if ($salesReceipt->deposit_to) {
+            $bankAccount = $BankAccount::find($salesReceipt->deposit_to);
+            if ($bankAccount && $bankAccount->chart_account_id) {
+                $bankAccountId = $bankAccount->chart_account_id;
+            }
+        }
+
+        // If no bank account, use default Cash account
+        if (!$bankAccountId) {
+            $bankAccountId = $this->getOrCreateCashAccount($salesReceipt->created_by);
+        }
+
+        // The bank debit should equal the total amount received
+        // Total Amount = Subtotal - Discount + Tax
+        $amountReceived = floatval($salesReceipt->total_amount ?? 0);
+
+        if ($bankAccountId && $amountReceived > 0) {
+            $journalItem = new $JournalItem();
+            $journalItem->journal = $journal->id;
+            $journalItem->account = $bankAccountId;
+            $journalItem->description = 'Payment received for Sales Receipt No: ' . $salesReceipt->sales_receipt_id;
+            $journalItem->credit = 0;
+            $journalItem->debit = $amountReceived;
+            $journalItem->type = 'Sales Receipt';
+            $journalItem->name = $customerName;
+            $journalItem->customer_id = $customerId;
+            $journalItem->save();
+            $totalDebits += $amountReceived;
+
+            $Utility::addTransactionLines([
+                'account_id' => $bankAccountId,
+                'transaction_type' => 'Debit',
+                'transaction_amount' => $amountReceived,
+                'reference' => 'Sales Receipt Journal',
+                'reference_id' => $journal->id,
+                'reference_sub_id' => $journalItem->id,
+                'date' => $journal->date,
+                'product_id' => $salesReceipt->id,
+                'product_type' => 'Sales Receipt Bank Deposit',
+            ], 'create');
+        }
+
+        // Save voucher ID to sales receipt
+        $salesReceipt->voucher_id = $journal->id;
         $salesReceipt->save();
 
-        return $voucherId;
+        return $journal->id;
+    }
+
+    /**
+     * Get or create Tax Liability account
+     */
+    private function getOrCreateTaxLiabilityAccount($createdBy)
+    {
+        $ChartOfAccount = \App\Models\ChartOfAccount::class;
+        $ChartOfAccountType = \App\Models\ChartOfAccountType::class;
+        $ChartOfAccountSubType = \App\Models\ChartOfAccountSubType::class;
+
+        $types = $ChartOfAccountType::where('created_by', '=', $createdBy)->where('name', 'Liabilities')->first();
+        if (!$types) return null;
+
+        $subType = $ChartOfAccountSubType::where('type', $types->id)->where('name', 'Current Liabilities')->first();
+        if (!$subType) return null;
+
+        $account = $ChartOfAccount::where('type', $types->id)
+            ->where('sub_type', $subType->id)
+            ->where('name', 'Sales Tax Payable')
+            ->first();
+
+        if (!$account) {
+            $account = $ChartOfAccount::create([
+                'name' => 'Sales Tax Payable',
+                'code' => '20100',
+                'type' => $types->id,
+                'sub_type' => $subType->id,
+                'is_enabled' => 1,
+                'created_by' => $createdBy,
+            ]);
+        }
+
+        return $account->id;
+    }
+
+    /**
+     * Get or create Sales Discount account
+     */
+    private function getOrCreateSalesDiscountAccount($createdBy)
+    {
+        $ChartOfAccount = \App\Models\ChartOfAccount::class;
+        $ChartOfAccountType = \App\Models\ChartOfAccountType::class;
+        $ChartOfAccountSubType = \App\Models\ChartOfAccountSubType::class;
+
+        // Sales Discount is typically an Income contra account (reduces revenue)
+        $types = $ChartOfAccountType::where('created_by', '=', $createdBy)->where('name', 'Income')->first();
+        if (!$types) return null;
+
+        $subType = $ChartOfAccountSubType::where('type', $types->id)->first();
+        if (!$subType) return null;
+
+        $account = $ChartOfAccount::where('type', $types->id)
+            ->where('name', 'Sales Discounts')
+            ->first();
+
+        if (!$account) {
+            $account = $ChartOfAccount::create([
+                'name' => 'Sales Discounts',
+                'code' => '40100',
+                'type' => $types->id,
+                'sub_type' => $subType->id,
+                'is_enabled' => 1,
+                'created_by' => $createdBy,
+            ]);
+        }
+
+        return $account->id;
+    }
+
+    /**
+     * Get or create Cash account
+     */
+    private function getOrCreateCashAccount($createdBy)
+    {
+        $ChartOfAccount = \App\Models\ChartOfAccount::class;
+        $ChartOfAccountType = \App\Models\ChartOfAccountType::class;
+        $ChartOfAccountSubType = \App\Models\ChartOfAccountSubType::class;
+
+        $types = $ChartOfAccountType::where('created_by', '=', $createdBy)->where('name', 'Assets')->first();
+        if (!$types) return null;
+
+        $subType = $ChartOfAccountSubType::where('type', $types->id)->where('name', 'Current Asset')->first();
+        if (!$subType) return null;
+
+        $account = $ChartOfAccount::where('type', $types->id)
+            ->where('sub_type', $subType->id)
+            ->whereRaw('LOWER(name) LIKE ?', ['%cash%'])
+            ->first();
+
+        if (!$account) {
+            $account = $ChartOfAccount::create([
+                'name' => 'Cash',
+                'code' => '10100',
+                'type' => $types->id,
+                'sub_type' => $subType->id,
+                'is_enabled' => 1,
+                'created_by' => $createdBy,
+            ]);
+        }
+
+        return $account->id;
     }
 
     /**
@@ -479,6 +804,12 @@ class SalesReceipt extends Controller
                 $product_services = \App\Models\ProductService::get()->pluck('name', 'id');
                 $product_services->prepend('--', '');
                 $taxes = \App\Models\Tax::where('created_by', \Auth::user()->creatorId())->get();
+                
+                // Get bank accounts for deposit_to dropdown
+                $bank_Account = BankAccount::select('*', \DB::raw("CONCAT(bank_name,' ',holder_name) AS name"))
+                    ->where('created_by', \Auth::user()->creatorId())
+                    ->get()->pluck('name', 'id')->toArray();
+                $accounts = ['' => 'Select Bank Account'] + $bank_Account;
 
                 // Populate customer data
                 $customerId = $salesReceipt->customer_id;
@@ -506,7 +837,10 @@ class SalesReceipt extends Controller
                     'category_id' => $salesReceipt->category_id,
                     'subtotal' => $salesReceipt->subtotal,
                     'taxable_subtotal' => $salesReceipt->taxable_subtotal,
+                    'discount_type' => $salesReceipt->discount_type,
+                    'discount_value' => $salesReceipt->discount_value,
                     'total_discount' => $salesReceipt->total_discount,
+                    'sales_tax_rate' => $salesReceipt->sales_tax_rate,
                     'total_tax' => $salesReceipt->total_tax,
                     'sales_tax_amount' => $salesReceipt->sales_tax_amount,
                     'total_amount' => $salesReceipt->total_amount,
@@ -534,7 +868,7 @@ class SalesReceipt extends Controller
                         ->toArray(),
                 ];
 
-                return view('sales-reciepts.sales-reciepts', compact('customers', 'invoice_number', 'product_services', 'category', 'customFields', 'customerId', 'taxes', 'billTo', 'salesReceiptData'))->with('mode', 'edit');
+                return view('sales-reciepts.sales-reciepts', compact('customers', 'invoice_number', 'product_services', 'category', 'customFields', 'customerId', 'taxes', 'billTo', 'salesReceiptData', 'accounts'))->with('mode', 'edit');
             } else {
                 return redirect()->back()->with('error', __('Permission denied.'));
             }
@@ -754,6 +1088,19 @@ class SalesReceipt extends Controller
                     $salesReceiptProduct->save();
                 }
 
+                // Update Journal Voucher - delete old entries and create new voucher
+                if ($salesReceipt->voucher_id) {
+                    // Delete old journal items and transaction lines
+                    \App\Models\JournalItem::where('journal', $salesReceipt->voucher_id)->delete();
+                    \App\Models\TransactionLines::where('reference_id', $salesReceipt->voucher_id)
+                        ->where('reference', 'Sales Receipt Journal')
+                        ->delete();
+                    \App\Models\JournalEntry::where('id', $salesReceipt->voucher_id)->delete();
+                }
+                
+                // Create new voucher
+                $this->createSalesReceiptJournalVoucher($salesReceipt);
+
                 \App\Models\Utility::makeActivityLog(\Auth::user()->id, 'Sales Receipt', $salesReceipt->id, 'Update Sales Receipt', 'Sales Receipt Updated');
 
                 \DB::commit();
@@ -817,8 +1164,11 @@ class SalesReceipt extends Controller
 
                 // Delete journal entry if exists
                 if ($salesReceipt->voucher_id) {
-                    \App\Models\JournalEntry::where('id', $salesReceipt->voucher_id)->where('category', 'Sales Receipt')->delete();
+                    \App\Models\TransactionLines::where('reference_id', $salesReceipt->voucher_id)
+                        ->where('reference', 'Sales Receipt Journal')
+                        ->delete();
                     \App\Models\JournalItem::where('journal', $salesReceipt->voucher_id)->delete();
+                    \App\Models\JournalEntry::where('id', $salesReceipt->voucher_id)->where('category', 'Sales Receipt')->delete();
                 }
 
                 // Delete attachments

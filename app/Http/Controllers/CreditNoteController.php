@@ -84,6 +84,9 @@ class CreditNoteController extends Controller
 
             $product_services = ProductService::where($column, $ownerId)->get()->pluck('name', 'id');
             $product_services->prepend('--', '');
+            
+            // Get taxes for tax dropdown
+            $taxes = \App\Models\Tax::where('created_by', \Auth::user()->creatorId())->get();
 
             return view('creditmemo.create', compact(
                 'customers',
@@ -91,7 +94,8 @@ class CreditNoteController extends Controller
                 'product_services',
                 'category',
                 'customFields',
-                'customerId'
+                'customerId',
+                'taxes'
             ));
         } else {
             return response()->json(['error' => __('Permission denied.')], 401);
@@ -113,6 +117,7 @@ class CreditNoteController extends Controller
 
     public function store(Request $request, $invoice_id)
     {
+         dd($request->all(),'ss');
         \DB::beginTransaction();
         try {
         if(\Auth::user()->can('create credit note'))
@@ -364,6 +369,7 @@ class CreditNoteController extends Controller
 
     public function customStore(Request $request)
     {
+        dd($request->all(),'asd');
         if(\Auth::user()->can('create credit note'))
         {
             $validator = \Validator::make(
@@ -412,4 +418,354 @@ class CreditNoteController extends Controller
         echo json_encode($invoice->getDue());
     }
 
+    /**
+     * Create Journal Voucher for Credit Memo
+     * Credit Memo Accounting:
+     * - DEBIT: Sales/Income accounts (reversing sales)
+     * - DEBIT: Tax Liability accounts (reversing tax collected)
+     * - CREDIT: Accounts Receivable (reducing what customer owes)
+     * - CREDIT: Discount account (if discount was given, remove it)
+     */
+    private function createCreditMemoJournalVoucher($creditMemo)
+    {
+        // Import required models
+        $JournalEntry = \App\Models\JournalEntry::class;
+        $JournalItem = \App\Models\JournalItem::class;
+        $ChartOfAccount = \App\Models\ChartOfAccount::class;
+        $ChartOfAccountType = \App\Models\ChartOfAccountType::class;
+        $ChartOfAccountSubType = \App\Models\ChartOfAccountSubType::class;
+        $ProductService = \App\Models\ProductService::class;
+        $Tax = \App\Models\Tax::class;
+        $Utility = \App\Models\Utility::class;
+        $TransactionLines = \App\Models\TransactionLines::class;
+
+        // Get next journal ID
+        $latest = $JournalEntry::where('created_by', '=', $creditMemo->created_by)
+            ->where('voucher_type', 'JV')
+            ->orderBy('id', 'Desc')
+            ->first();
+        $journalId = $latest ? $latest->journal_id + 1 : 1;
+
+        // Create Journal Entry
+        $journal = new $JournalEntry();
+        $journal->journal_id = $journalId;
+        $journal->date = $creditMemo->issue_date ?? now()->format('Y-m-d');
+        $journal->reference = $creditMemo->credit_memo_id ?? $creditMemo->id;
+        $journal->description = 'Credit Memo No: ' . ($creditMemo->credit_memo_id ?? $creditMemo->id);
+        $journal->reference_id = $creditMemo->id;
+        $journal->category = 'Credit Memo';
+        $journal->voucher_type = 'JV';
+        $journal->owned_by = $creditMemo->owned_by;
+        $journal->created_by = $creditMemo->created_by;
+        $journal->save();
+
+        $totalCredits = 0; // A/R + Discount
+        $totalDebits = 0;  // Sales + Tax
+
+        // Get customer info for journal items
+        $customer = \App\Models\Customer::find($creditMemo->customer_id);
+        $customerName = $customer ? $customer->name : '';
+        $customerId = $creditMemo->customer_id;
+
+        // ============================================================
+        // 1. Debit entries for each product (Reversing Sales Revenue)
+        // ============================================================
+        if (method_exists($creditMemo, 'items') || property_exists($creditMemo, 'items')) {
+            $creditMemoProducts = $creditMemo->items;
+            foreach ($creditMemoProducts as $product) {
+                if (!$product->product_id) continue;
+
+                $productService = $ProductService::find($product->product_id);
+                if (!$productService || !$productService->sale_chartaccount_id) continue;
+
+                // Calculate product amount (qty * price - line discount)
+                $lineAmount = (floatval($product->quantity) * floatval($product->price)) - floatval($product->discount);
+
+                // Debit Sales/Income account (reversing sale)
+                $journalItem = new $JournalItem();
+                $journalItem->journal = $journal->id;
+                $journalItem->account = $productService->sale_chartaccount_id;
+                $journalItem->product_ids = $product->id;
+                $journalItem->description = 'Credit Memo - ' . ($productService->name ?? 'Product');
+                $journalItem->credit = 0;
+                $journalItem->debit = $lineAmount;
+                $journalItem->type = 'Credit Memo';
+                $journalItem->name = $customerName;
+                $journalItem->customer_id = $customerId;
+                $journalItem->save();
+                $totalDebits += $lineAmount;
+
+                // Create transaction line
+                $Utility::addTransactionLines([
+                    'account_id' => $productService->sale_chartaccount_id,
+                    'transaction_type' => 'Debit',
+                    'transaction_amount' => $lineAmount,
+                    'reference' => 'Credit Memo Journal',
+                    'reference_id' => $journal->id,
+                    'reference_sub_id' => $journalItem->id,
+                    'date' => $journal->date,
+                    'product_id' => $creditMemo->id,
+                    'product_type' => 'Credit Memo',
+                    'product_item_id' => $product->id,
+                ], 'create');
+
+                // ============================================================
+                // 2. Debit entry for item-level tax (if any)
+                // ============================================================
+                $itemTax = floatval($product->item_tax_price ?? 0);
+                if ($itemTax > 0 && $product->tax) {
+                    $taxModel = $Tax::find($product->tax);
+                    $taxAccountId = $taxModel ? $taxModel->chart_account_id : null;
+
+                    if (!$taxAccountId) {
+                        $taxAccountId = $this->getOrCreateTaxLiabilityAccount($creditMemo->created_by);
+                    }
+
+                    if ($taxAccountId) {
+                        $journalItem = new $JournalItem();
+                        $journalItem->journal = $journal->id;
+                        $journalItem->account = $taxAccountId;
+                        $journalItem->prod_tax_id = $product->id;
+                        $journalItem->description = 'Tax on Credit Memo No: ' . ($creditMemo->credit_memo_id ?? $creditMemo->id);
+                        $journalItem->credit = 0;
+                        $journalItem->debit = $itemTax;
+                        $journalItem->type = 'Credit Memo';
+                        $journalItem->name = $customerName;
+                        $journalItem->customer_id = $customerId;
+                        $journalItem->save();
+                        $totalDebits += $itemTax;
+
+                        $Utility::addTransactionLines([
+                            'account_id' => $taxAccountId,
+                            'transaction_type' => 'Debit',
+                            'transaction_amount' => $itemTax,
+                            'reference' => 'Credit Memo Journal',
+                            'reference_id' => $journal->id,
+                            'reference_sub_id' => $journalItem->id,
+                            'date' => $journal->date,
+                            'product_id' => $creditMemo->id,
+                            'product_type' => 'Credit Memo Tax',
+                            'product_item_id' => $product->id,
+                        ], 'create');
+                    }
+                }
+            }
+        }
+
+        // ============================================================
+        // 3. Debit entry for invoice-level Sales Tax (if any)
+        // ============================================================
+        $invoiceTax = floatval($creditMemo->sales_tax_amount ?? 0);
+        if ($invoiceTax > 0) {
+            $taxAccountId = null;
+            if ($creditMemo->sales_tax_rate) {
+                $taxModel = $Tax::find($creditMemo->sales_tax_rate);
+                $taxAccountId = $taxModel ? $taxModel->chart_account_id : null;
+            }
+            if (!$taxAccountId) {
+                $taxAccountId = $this->getOrCreateTaxLiabilityAccount($creditMemo->created_by);
+            }
+
+            if ($taxAccountId) {
+                $journalItem = new $JournalItem();
+                $journalItem->journal = $journal->id;
+                $journalItem->account = $taxAccountId;
+                $journalItem->description = 'Sales Tax on Credit Memo No: ' . ($creditMemo->credit_memo_id ?? $creditMemo->id);
+                $journalItem->credit = 0;
+                $journalItem->debit = $invoiceTax;
+                $journalItem->type = 'Credit Memo';
+                $journalItem->name = $customerName;
+                $journalItem->customer_id = $customerId;
+                $journalItem->save();
+                $totalDebits += $invoiceTax;
+
+                $Utility::addTransactionLines([
+                    'account_id' => $taxAccountId,
+                    'transaction_type' => 'Debit',
+                    'transaction_amount' => $invoiceTax,
+                    'reference' => 'Credit Memo Journal',
+                    'reference_id' => $journal->id,
+                    'reference_sub_id' => $journalItem->id,
+                    'date' => $journal->date,
+                    'product_id' => $creditMemo->id,
+                    'product_type' => 'Credit Memo Sales Tax',
+                ], 'create');
+            }
+        }
+
+        // ============================================================
+        // 4. Credit entry for Discount (if any) - Reversing discount given
+        // ============================================================
+        $totalDiscount = floatval($creditMemo->total_discount ?? 0);
+        if ($totalDiscount > 0) {
+            $discountAccountId = $this->getOrCreateSalesDiscountAccount($creditMemo->created_by);
+
+            if ($discountAccountId) {
+                $journalItem = new $JournalItem();
+                $journalItem->journal = $journal->id;
+                $journalItem->account = $discountAccountId;
+                $journalItem->description = 'Discount on Credit Memo No: ' . ($creditMemo->credit_memo_id ?? $creditMemo->id);
+                $journalItem->credit = $totalDiscount;
+                $journalItem->debit = 0;
+                $journalItem->type = 'Credit Memo';
+                $journalItem->name = $customerName;
+                $journalItem->customer_id = $customerId;
+                $journalItem->save();
+                $totalCredits += $totalDiscount;
+
+                $Utility::addTransactionLines([
+                    'account_id' => $discountAccountId,
+                    'transaction_type' => 'Credit',
+                    'transaction_amount' => $totalDiscount,
+                    'reference' => 'Credit Memo Journal',
+                    'reference_id' => $journal->id,
+                    'reference_sub_id' => $journalItem->id,
+                    'date' => $journal->date,
+                    'product_id' => $creditMemo->id,
+                    'product_type' => 'Credit Memo Discount',
+                ], 'create');
+            }
+        }
+
+        // ============================================================
+        // 5. Credit entry for Accounts Receivable (Reducing customer debt)
+        // ============================================================
+        $receivableAccountId = $this->getOrCreateAccountReceivable($creditMemo->created_by);
+
+        // The A/R credit should equal the total credit memo amount
+        $creditMemoTotal = floatval($creditMemo->total_amount ?? 0);
+
+        if ($receivableAccountId && $creditMemoTotal > 0) {
+            $journalItem = new $JournalItem();
+            $journalItem->journal = $journal->id;
+            $journalItem->account = $receivableAccountId;
+            $journalItem->description = 'Credit applied to customer for Credit Memo No: ' . ($creditMemo->credit_memo_id ?? $creditMemo->id);
+            $journalItem->credit = $creditMemoTotal;
+            $journalItem->debit = 0;
+            $journalItem->type = 'Credit Memo';
+            $journalItem->name = $customerName;
+            $journalItem->customer_id = $customerId;
+            $journalItem->save();
+            $totalCredits += $creditMemoTotal;
+
+            $Utility::addTransactionLines([
+                'account_id' => $receivableAccountId,
+                'transaction_type' => 'Credit',
+                'transaction_amount' => $creditMemoTotal,
+                'reference' => 'Credit Memo Journal',
+                'reference_id' => $journal->id,
+                'reference_sub_id' => $journalItem->id,
+                'date' => $journal->date,
+                'product_id' => $creditMemo->id,
+                'product_type' => 'Credit Memo A/R',
+            ], 'create');
+        }
+
+        // Save voucher ID to credit memo
+        $creditMemo->voucher_id = $journal->id;
+        $creditMemo->save();
+
+        return $journal->id;
+    }
+
+    /**
+     * Get or create Tax Liability account
+     */
+    private function getOrCreateTaxLiabilityAccount($createdBy)
+    {
+        $ChartOfAccount = \App\Models\ChartOfAccount::class;
+        $ChartOfAccountType = \App\Models\ChartOfAccountType::class;
+        $ChartOfAccountSubType = \App\Models\ChartOfAccountSubType::class;
+
+        $types = $ChartOfAccountType::where('created_by', '=', $createdBy)->where('name', 'Liabilities')->first();
+        if (!$types) return null;
+
+        $subType = $ChartOfAccountSubType::where('type', $types->id)->where('name', 'Current Liabilities')->first();
+        if (!$subType) return null;
+
+        $account = $ChartOfAccount::where('code', 'TAX-LIAB')
+            ->where('created_by', $createdBy)
+            ->first();
+
+        if (!$account) {
+            $account = new $ChartOfAccount();
+            $account->code = 'TAX-LIAB';
+            $account->name = 'Sales Tax Payable';
+            $account->type = $types->id;
+            $account->sub_type = $subType->id;
+            $account->is_enabled = 1;
+            $account->created_by = $createdBy;
+            $account->save();
+        }
+
+        return $account->id;
+    }
+
+    /**
+     * Get or create Sales Discount account
+     */
+    private function getOrCreateSalesDiscountAccount($createdBy)
+    {
+        $ChartOfAccount = \App\Models\ChartOfAccount::class;
+        $ChartOfAccountType = \App\Models\ChartOfAccountType::class;
+        $ChartOfAccountSubType = \App\Models\ChartOfAccountSubType::class;
+
+        $types = $ChartOfAccountType::where('created_by', '=', $createdBy)->where('name', 'Expenses')->first();
+        if (!$types) return null;
+
+        $subType = $ChartOfAccountSubType::where('type', $types->id)->first();
+        if (!$subType) return null;
+
+        $account = $ChartOfAccount::where('code', 'SALES-DISC')
+            ->where('created_by', $createdBy)
+            ->first();
+
+        if (!$account) {
+            $account = new $ChartOfAccount();
+            $account->code = 'SALES-DISC';
+            $account->name = 'Sales Discounts';
+            $account->type = $types->id;
+            $account->sub_type = $subType->id;
+            $account->is_enabled = 1;
+            $account->created_by = $createdBy;
+            $account->save();
+        }
+
+        return $account->id;
+    }
+
+    /**
+     * Get or create Accounts Receivable account
+     */
+    private function getOrCreateAccountReceivable($createdBy)
+    {
+        $ChartOfAccount = \App\Models\ChartOfAccount::class;
+        $ChartOfAccountType = \App\Models\ChartOfAccountType::class;
+        $ChartOfAccountSubType = \App\Models\ChartOfAccountSubType::class;
+
+        $types = $ChartOfAccountType::where('created_by', '=', $createdBy)->where('name', 'Assets')->first();
+        if (!$types) return null;
+
+        $subType = $ChartOfAccountSubType::where('type', $types->id)->where('name', 'Current Assets')->first();
+        if (!$subType) return null;
+
+        $account = $ChartOfAccount::where('name', 'Accounts Receivable')
+            ->where('created_by', $createdBy)
+            ->first();
+
+        if (!$account) {
+            $account = new $ChartOfAccount();
+            $account->code = 'AR';
+            $account->name = 'Accounts Receivable';
+            $account->type = $types->id;
+            $account->sub_type = $subType->id;
+            $account->is_enabled = 1;
+            $account->created_by = $createdBy;
+            $account->save();
+        }
+
+        return $account->id;
+    }
+
 }
+

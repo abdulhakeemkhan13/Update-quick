@@ -800,6 +800,7 @@ Route::group(['middleware' => ['verified']], function () {
             Route::get('creditmemo', [CreditNoteController::class, 'creditmemoIndex'])->name('creditmemo.index');
             //sales reciepts create
             Route::get('creditmemo/create/{cid}', [CreditNoteController::class, 'creditmemoCreate'])->name('creditmemo.create');
+            Route::post('creditmemo/store', [CreditNoteController::class, 'creditmemoStore'])->name('creditmemo.store');
         }
     );
 
